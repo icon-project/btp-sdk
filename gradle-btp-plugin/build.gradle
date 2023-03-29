@@ -1,0 +1,77 @@
+//same as META-INF/gradle-plugins/foundation.icon.btp.properties
+//```
+//implementation-class=foundation.icon.gradle.plugins.btp.BTPPlugin
+//```
+plugins {
+    id 'java-gradle-plugin'
+    id 'com.gradle.plugin-publish' version '1.1.0'
+}
+
+gradlePlugin {
+//    website = '<substitute your project website>'
+//    vcsUrl = '<uri to project source repository>'
+    plugins {
+        BTPPlugin {
+            id = 'foundation.icon.btp'
+            implementationClass = 'foundation.icon.gradle.plugins.btp.BTPPlugin'
+        }
+    }
+}
+
+version = getProperty(project.name+".version") + (rootProject.hasProperty('release') ? '' : '-SNAPSHOT')
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+ext {
+    javaeePluginVersion = getProperty("javaee-plugin.version")
+    javaeeVersion = getProperty("javaee.version")
+    jacksonVersion = getProperty("jackson.version")
+}
+
+dependencies {
+    implementation "foundation.icon:gradle-javaee-plugin:$javaeePluginVersion"
+    implementation "foundation.icon:javaee-tooling:$javaeeVersion"
+    implementation "foundation.icon:javaee-api:$javaeeVersion"
+    implementation "foundation.icon:javaee-rt:$javaeeVersion"
+
+    implementation 'org.msgpack:msgpack-core:0.8.17'
+    implementation 'org.ow2.asm:asm:7.0'
+    implementation 'org.ow2.asm:asm-commons:7.0'
+    implementation 'org.ow2.asm:asm-tree:7.0'
+    implementation 'org.ow2.asm:asm-util:7.0'
+    implementation 'org.slf4j:slf4j-api:1.7.26'
+
+    implementation "com.fasterxml.jackson.core:jackson-databind:$jacksonVersion"
+
+    compileOnly 'org.projectlombok:lombok:1.18.26'
+    annotationProcessor 'org.projectlombok:lombok:1.18.26'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.0'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+java {
+    withSourcesJar()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'gradle-btp-plugin'
+
+            from components.java
+        }
+    }
+}
