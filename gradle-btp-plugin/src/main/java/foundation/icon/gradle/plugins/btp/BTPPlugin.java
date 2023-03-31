@@ -28,7 +28,6 @@ public class BTPPlugin extends JavaeePlugin {
         project.getTasks().register("generateContractSpec", GenerateContractSpecTask.class, (task) -> {
             Jar jarTask = (Jar)project.getTasks().getByName("jar");
             task.dependsOn(jarTask);
-            task.getSpecVersion().value("V1");
             task.getJarFile().set(jarTask.getArchiveFile().get());
             task.getContractSpecFile().set(project.getBuildDir().toPath()
                     .resolve("generated").resolve("contractSpec.json").toFile());

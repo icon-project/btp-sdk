@@ -25,6 +25,7 @@ import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFile;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.TaskAction;
 
@@ -38,6 +39,7 @@ abstract public class GenerateContractSpecTask extends DefaultTask {
     @OutputFile
     abstract public RegularFileProperty getContractSpecFile();
 
+    @Optional
     @Input
     abstract public Property<String> getSpecVersion();
 
@@ -45,7 +47,6 @@ abstract public class GenerateContractSpecTask extends DefaultTask {
     public void process() throws IOException {
         byte[] jarBytes = Files.readAllBytes(getJarFile().get().getAsFile().toPath());
         var out = getContractSpecFile().get().getAsFile().toPath();
-        String specVersion = getSpecVersion().getOrNull();
         ContractSpec value = ContractSpecGenerator.generateFromJar(jarBytes);
         ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
         mapper.writeValue(out.toFile(), value);
