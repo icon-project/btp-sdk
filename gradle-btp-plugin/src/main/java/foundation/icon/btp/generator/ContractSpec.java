@@ -48,6 +48,8 @@ public class ContractSpec {
     public static class NameAndTypeSpec {
         private String name;
         private TypeSpec type;
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        private Boolean optional;
     }
 
     @NoArgsConstructor
@@ -61,7 +63,6 @@ public class ContractSpec {
         private TypeID typeID;
         @JsonInclude(JsonInclude.Include.NON_NULL)
         private Integer dimension;
-        //[]TypeID
         @NotNull
         private String name;
     }

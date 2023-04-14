@@ -70,8 +70,14 @@ public class ContractSpecGenerator {
                         Type argType = argTypes[i];
                         ContractSpec.NameAndTypeSpec fieldSpec = toNameAndTypeSpec(
                                 structDB, structSpecMap, input.getName(), typeIDMap, argType, true);
+                        if (input.isOptional()) {
+                            fieldSpec.setOptional(true);
+                        }
                         inputSpecs.add(fieldSpec);
-                        System.out.printf("%s%s", i > 0 ? "," : "", fieldType[input.getType() & 0xF]);
+                        System.out.printf("%s%s%s",
+                                i > 0 ? "," : "",
+                                input.isOptional() ? "@" : "",
+                                fieldType[input.getType() & 0xF]);
                     }
                     Type returnType = Type.getReturnType(descriptor);
                     System.out.printf(")%s\n", fieldType[method.getOutput() & 0xF]);
