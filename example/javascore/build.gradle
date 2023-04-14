@@ -1,0 +1,92 @@
+buildscript {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'foundation.icon:gradle-btp-plugin:0.1.0-SNAPSHOT'
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'foundation.icon.btp'
+
+version = '0.1.0'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+ext {
+    javaeeVersion = getProperty("javaee.version")
+    jacksonVersion = getProperty("jackson.version")
+    scoreClientVersion = "0.10.3"
+}
+
+dependencies {
+    implementation "foundation.icon:javaee-api:$javaeeVersion"
+    implementation("foundation.icon:javaee-scorex:0.5.3")
+
+    compileOnly 'org.projectlombok:lombok:1.18.26'
+    annotationProcessor 'org.projectlombok:lombok:1.18.26'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.0'
+
+    testAnnotationProcessor "foundation.icon:javaee-score-client:$scoreClientVersion"
+    testImplementation "foundation.icon:javaee-score-client:$scoreClientVersion"
+
+    // for ReflectionToStringBuilder
+    testImplementation 'org.apache.commons:commons-lang3:3.12.0'
+
+    // for FieldVisibility
+    testImplementation "com.fasterxml.jackson.core:jackson-databind:$jacksonVersion"
+}
+
+jar {
+    manifest {
+        attributes(
+                'Main-Class' : 'foundation.icon.btp.example.HelloWorld'
+        )
+    }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    } { exclude "score/*" }
+}
+
+optimizedJar {
+    mainClassName = 'foundation.icon.btp.example.HelloWorld'
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    } { exclude "score/*" }
+    enableDebug = true
+}
+
+generateContractSpec {
+}
+
+generateContractSpecV0 {
+
+}
+
+test {
+    useJUnitPlatform()
+    options {
+        testLogging.showStandardStreams = true
+
+        systemProperty 'url', 'http://localhost:19080/api/v3/icon'
+        systemProperty 'nid', '0x3'
+        systemProperty 'keyStore', "$keystoreName"
+        systemProperty 'keyPassword', "$keystorePass"
+        systemProperty 'address', "cxfdc9126bcd0416e30b907d7408810d7ba312d695"
+        systemProperty 'isUpdate', "true"
+        dependsOn optimizedJar
+        systemProperty 'scoreFilePath', project.tasks.optimizedJar.outputJarName
+    }
+}
