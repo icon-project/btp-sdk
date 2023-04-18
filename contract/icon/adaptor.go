@@ -19,7 +19,6 @@ package icon
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"reflect"
 	"time"
 
@@ -59,10 +58,7 @@ type AdaptorOption struct {
 
 func NewAdaptor(endpoint string, options contract.Options, l log.Logger) (contract.Adaptor, error) {
 	c := client.NewClient(endpoint, l)
-	hc := &http.Client{
-		Transport: contract.NewHttpTransport(l),
-	}
-	c.Client = jsonrpc.NewJsonRpcClient(hc, endpoint)
+	c.Client = jsonrpc.NewJsonRpcClient(contract.NewHttpClient(l), endpoint)
 	a := &Adaptor{
 		Client: c,
 		l:      l,

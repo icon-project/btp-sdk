@@ -19,7 +19,6 @@ package eth
 import (
 	"context"
 	"math/big"
-	"net/http"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -62,10 +61,7 @@ func NewAdaptor(endpoint string, options contract.Options, l log.Logger) (contra
 		l.Log(log.Level(r.Lvl+1), r.Msg)
 		return nil
 	}))
-	hc := &http.Client{
-		Transport: contract.NewHttpTransport(l),
-	}
-	rpcClient, err := rpc.DialHTTPWithClient(endpoint, hc)
+	rpcClient, err := rpc.DialHTTPWithClient(endpoint, contract.NewHttpClient(l))
 	//rpcClient, err := rpc.Dial(endpoint)
 	if err != nil {
 		return nil, err

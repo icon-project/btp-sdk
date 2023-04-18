@@ -62,3 +62,9 @@ func NewHttpTransport(l log.Logger) *HttpTransport {
 		l:         l,
 	}
 }
+
+func NewHttpClient(l log.Logger) *http.Client {
+	return &http.Client{
+		Transport: NewHttpTransport(l),
+	}
+}
