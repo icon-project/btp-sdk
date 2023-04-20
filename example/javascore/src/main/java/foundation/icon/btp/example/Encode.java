@@ -78,4 +78,14 @@ public class Encode {
         w.end();
         return w.toByteArray();
     }
+
+    public static byte[] encode(HelloWorld.OutputStruct[] arr) {
+        ByteArrayObjectWriter w = Context.newByteArrayObjectWriter("RLPn");
+        w.beginList(arr.length);
+        for (HelloWorld.OutputStruct v : arr) {
+            w.writeListOf(v.getBooleanVal());
+        }
+        w.end();
+        return w.toByteArray();
+    }
 }

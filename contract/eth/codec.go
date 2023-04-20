@@ -17,7 +17,6 @@
 package eth
 
 import (
-	"math/big"
 	"reflect"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -57,43 +56,49 @@ func encodePrimitive(s abi.Type, value interface{}) (interface{}, error) {
 		if !ok {
 			return nil, errors.Errorf("fail encodePrimitive integer, invalid type %T", value)
 		}
+		bi, err := v.AsBigInt()
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive integer, err:%s", err.Error())
+		}
+		bl := s.Size
+		if s.T == abi.IntTy {
+			bl = bl + 1
+		} else {
+			if bi.Sign() < 0 {
+				return nil, errors.Errorf("fail encodePrimitive integer, invalid sign")
+			}
+		}
+		if bl < bi.BitLen() {
+			return nil, errors.Errorf("fail encodePrimitive integer, invalid bit length expected:%d actual:%d",
+				bl, bi.BitLen())
+		}
 		switch s.Size {
 		case 8, 16, 32, 64:
 			if s.T == abi.IntTy {
-				if i, err := v.AsInt64(); err != nil {
-					return nil, errors.Wrapf(err, "fail encodePrimitive integer, err:%s", err.Error())
-				} else {
-					switch s.Size {
-					case 8:
-						return int8(i), nil
-					case 16:
-						return int16(i), nil
-					case 32:
-						return int32(i), nil
-					}
-					return i, nil
+				i := bi.Int64()
+				switch s.Size {
+				case 8:
+					return int8(i), nil
+				case 16:
+					return int16(i), nil
+				case 32:
+					return int32(i), nil
 				}
+				return i, nil
 			} else {
-				if i, err := v.AsUint64(); err != nil {
-					return nil, errors.Wrapf(err, "fail encodePrimitive integer, err:%s", err.Error())
-				} else {
-					switch s.Size {
-					case 8:
-						return uint8(i), nil
-					case 16:
-						return uint16(i), nil
-					case 32:
-						return uint32(i), nil
-					}
-					return i, nil
+				i := bi.Uint64()
+				switch s.Size {
+				case 8:
+					return uint8(i), nil
+				case 16:
+					return uint16(i), nil
+				case 32:
+					return uint32(i), nil
 				}
-			}
-		default:
-			if i, err := v.AsBigInt(); err != nil {
-				return nil, errors.Wrapf(err, "fail encodePrimitive integer, err:%s", err.Error())
-			} else {
 				return i, nil
 			}
+		default:
+			return bi, nil
 		}
 	case abi.StringTy:
 		if v, ok := value.(contract.String); !ok {
@@ -125,18 +130,24 @@ func encodePrimitive(s abi.Type, value interface{}) (interface{}, error) {
 }
 
 func encodeStruct(s abi.Type, value interface{}) (interface{}, error) {
-	m, ok := value.(map[string]interface{})
-	if !ok {
-		return nil, errors.Errorf("fail encodeStruct, invalid type %T", value)
+	var m map[string]interface{}
+	st, ok := value.(contract.Struct)
+	if ok {
+		m = st.Params()
+	} else {
+		if m, ok = value.(contract.Params); !ok {
+			if m, ok = value.(map[string]interface{}); !ok {
+				return nil, errors.Errorf("fail encodeStruct, invalid type %T", value)
+			}
+		}
 	}
+
 	ret := reflect.New(s.TupleType).Elem()
-	log.Printf("encodeStruct type:%+v value:%+v", s.TupleType, ret)
 	for i, n := range s.TupleRawNames {
 		field, err := encode(*s.TupleElems[i], m[n])
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("encodeStruct field name:%s type:%+v value:%T %+v", n, s.TupleElems[i], field, field)
 		v := reflect.ValueOf(field)
 		ret.Field(i).Set(v)
 	}
@@ -181,18 +192,7 @@ func decodePrimitive(s contract.TypeTag, value interface{}) (interface{}, error)
 	codecLogger.Traceln("decodePrimitive type:", s.String(), "reflect:", s.Type(), value)
 	switch s {
 	case contract.TInteger:
-		v := reflect.ValueOf(value)
-		if v.CanInt() {
-			return contract.FromInt64(v.Int()), nil
-		} else if v.CanUint() {
-			return contract.FromUint64(v.Uint()), nil
-		} else {
-			i, ok := value.(*big.Int)
-			if !ok {
-				return nil, errors.Errorf("fail decodePrimitive integer, invalid type %T", value)
-			}
-			return contract.FromBigInt(i), nil
-		}
+		return contract.IntegerOf(value)
 	case contract.TString:
 		v, ok := value.(string)
 		if !ok {
@@ -224,18 +224,22 @@ func decodePrimitive(s contract.TypeTag, value interface{}) (interface{}, error)
 
 func decodeStruct(s *contract.StructSpec, value interface{}) (interface{}, error) {
 	codecLogger.Traceln("decodeStruct spec:", s.Name, value)
-	ret := make(map[string]interface{})
 	v := reflect.ValueOf(value)
 	if v.Kind() != reflect.Struct {
 		return nil, errors.Errorf("fail decodeStruct, invalid type %T", value)
 	}
-	var err error
-	for i, field := range s.Fields {
-		if ret[field.Name], err = decode(field.Type, v.Field(i).Interface()); err != nil {
+	fields := make([]contract.KeyValue, len(s.Fields))
+	for i, f := range s.Fields {
+		fv, err := decode(f.Type, v.Field(i).Interface())
+		if err != nil {
 			return nil, err
 		}
+		fields[i] = contract.KeyValue{Key: f.Name, Value: fv}
 	}
-	return ret, nil
+	return contract.Struct{
+		Name:   s.Name,
+		Fields: fields,
+	}, nil
 }
 
 func decodeArray(s contract.TypeSpec, dimension int, v reflect.Value) (interface{}, error) {

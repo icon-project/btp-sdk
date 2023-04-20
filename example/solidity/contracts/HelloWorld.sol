@@ -103,24 +103,26 @@ contract HelloWorld {
         bool booleanVal;
     }
 
-    function callPrimitiveArray(
+    function callArray(
         int[] memory arg1,
         bool[] memory arg2,
         string[] memory arg3,
         bytes[] memory arg4,
-        address[] memory arg5
+        address[] memory arg5,
+        InputStruct[] memory arg6
     ) external view returns (
-        PrimitiveArrays memory
+        Arrays memory
     ) {
-        return PrimitiveArrays(arg1, arg2, arg3, arg4, arg5);
+        return Arrays(arg1, arg2, arg3, arg4, arg5, arg6);
     }
 
-    struct PrimitiveArrays {
+    struct Arrays {
         int[] arg1;
         bool[] arg2;
         string[] arg3;
         bytes[] arg4;
         address[] arg5;
+        InputStruct[] arg6;
     }
 
     function callOptional(
@@ -186,29 +188,27 @@ contract HelloWorld {
         emit StructEvent(out);
         return out;
     }
-    event StructEvent(OutputStruct arg1);
+    event StructEvent(OutputStruct indexed arg1);
 
-    function invokePrimitiveArray(
+    function invokeArray(
         int[] memory arg1,
         bool[] memory arg2,
         string[] memory arg3,
         bytes[] memory arg4,
-        address[] memory arg5
+        address[] memory arg5,
+        InputStruct[] memory arg6
     ) external {
-        emit PrimitiveArrayEvent(arg1, arg2, arg3, arg4, arg5);
+        OutputStruct[] memory _arg6 = new OutputStruct[](arg6.length);
+        for (uint256 i = 0; i < arg6.length; i++) {
+            _arg6[i] = OutputStruct(arg6[i].booleanVal);
+        }
+        emit ArrayEvent(arg1, arg2, arg3, arg4, arg5, _arg6);
     }
-    event PrimitiveArrayEvent(
+    event ArrayEvent(
         int[] indexed arg1,
         bool[] indexed arg2,
         string[] indexed arg3,
         bytes[] arg4,
-        address[] arg5);
-
-    function invokeStructArray(
-        InputStruct[] memory arg1
-    ) external {
-        emit StructArrayEvent(arg1);
-    }
-    event StructArrayEvent(
-        InputStruct[] indexed arg1);
+        address[] arg5,
+        OutputStruct[] arg6);
 }

@@ -19,11 +19,12 @@ package icon
 import (
 	"fmt"
 	"io/ioutil"
-	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/icon-project/btp2/chain/icon/client"
 	"github.com/icon-project/btp2/common/codec"
+	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/wallet"
 	"github.com/stretchr/testify/assert"
@@ -55,7 +56,9 @@ var (
 	stringVal     = contract.String("string")
 	bytesVal      = contract.Bytes("bytes")
 	addressVal    = contract.Address(w.Address())
-
+	structVal     = struct {
+		BooleanVal contract.Boolean `json:"booleanVal"`
+	}{booleanVal}
 	adaptorOpt = AdaptorOption{
 		NetworkID: client.HexInt(nid),
 	}
@@ -71,6 +74,22 @@ func loadWallet(keyStoreFile, keyPassword string) wallet.Wallet {
 		panic(err)
 	}
 	return w
+}
+
+func assertStruct(t *testing.T, expected, actual interface{}) {
+	var ep contract.Params
+	switch e := expected.(type) {
+	case contract.Struct:
+		ep = e.Params()
+	case contract.Params:
+		ep = e
+	default:
+		assert.FailNow(t, "invalid expected type", "%T", expected)
+	}
+	a, ok := actual.(contract.Struct)
+	assert.True(t, ok, "invalid actual type %T", actual)
+	ap := a.Params()
+	assert.Equal(t, ep, ap)
 }
 
 func handler(t *testing.T) *Handler {
@@ -112,11 +131,28 @@ func Test_callInteger(t *testing.T) {
 	assert.NoError(t, err)
 	t.Log(r)
 
-	ret, ok := r.(map[string]interface{})
-	assert.True(t, ok)
-	for k, v := range params {
-		assert.Equal(t, v, ret[k])
-	}
+	assertStruct(t, params, r)
+}
+
+func Test_callUnsignedInteger(t *testing.T) {
+	h := handler(t)
+	method := "callUnsignedInteger"
+	params := make(contract.Params)
+	params["arg1"] = contract.Integer("0x" + strings.Repeat("ff", 1))
+	params["arg2"] = charVal
+	params["arg3"] = contract.Integer("0x" + strings.Repeat("ff", 4))
+	params["arg4"] = contract.Integer("0x" + strings.Repeat("ff", 8))
+	params["arg5"] = contract.Integer("0x" + strings.Repeat("ff", 3))
+	params["arg6"] = contract.Integer("0x" + strings.Repeat("ff", 5))
+	params["arg7"] = contract.Integer("0x" + strings.Repeat("ff", 9))
+	params["arg8"] = contract.Integer("0x" + strings.Repeat("ff", 32))
+
+	options := make(contract.Options)
+	r, err := h.Call(method, params, options)
+	assert.NoError(t, err)
+	t.Log(r)
+
+	assertStruct(t, params, r)
 }
 
 func Test_callPrimitive(t *testing.T) {
@@ -134,59 +170,48 @@ func Test_callPrimitive(t *testing.T) {
 	assert.NoError(t, err)
 	t.Log(r)
 
-	ret, ok := r.(map[string]interface{})
-	assert.True(t, ok)
-	for k, v := range params {
-		assert.Equal(t, v, ret[k])
-	}
+	assertStruct(t, params, r)
 }
 
 func Test_callStruct(t *testing.T) {
 	h := handler(t)
 	method := "callStruct"
-	input := struct {
-		BooleanVal contract.Boolean
-	}{
-		BooleanVal: booleanVal,
-	}
 	params := make(contract.Params)
-	params["arg1"] = contract.StructToMap(input)
+	params["arg1"] = contract.MustStructOf(structVal)
 	options := make(contract.Options)
 	r, err := h.Call(method, params, options)
 	assert.NoError(t, err)
 	t.Log(r)
 
-	ret, ok := r.(map[string]interface{})
-	assert.True(t, ok)
-	for k, v := range params["arg1"].(map[string]interface{}) {
-		assert.Equal(t, v, ret[k])
-	}
+	assertStruct(t, params["arg1"], r)
 }
 
-func Test_callPrimitiveArray(t *testing.T) {
+func Test_callArray(t *testing.T) {
 	h := handler(t)
-	method := "callPrimitiveArray"
+	method := "callArray"
 	params := make(contract.Params)
 	params["arg1"] = []contract.Integer{bigIntegerVal}
 	params["arg2"] = []contract.Boolean{booleanVal}
 	params["arg3"] = []contract.String{stringVal}
 	params["arg4"] = []contract.Bytes{bytesVal}
 	params["arg5"] = []contract.Address{addressVal}
+	params["arg6"] = []contract.Struct{contract.MustStructOf(structVal)}
 	options := make(contract.Options)
 	r, err := h.Call(method, params, options)
 	assert.NoError(t, err)
 	t.Logf("params:%+v ret:%+v", params, r)
 
-	ret, ok := r.(map[string]interface{})
+	ret, ok := r.(contract.Struct)
 	assert.True(t, ok)
-	t.Logf("%+v\n", ret)
+	rp := ret.Params()
 	for k, v := range params {
-		pl := reflect.ValueOf(v)
-		rl := reflect.ValueOf(ret[k])
-		t.Logf("pl:%+v rl:%+v\n", pl, rl)
-		assert.Equal(t, pl.Len(), rl.Len())
-		for i := 0; i < pl.Len(); i++ {
-			assert.Equal(t, pl.Index(i).Interface(), rl.Index(i).Interface())
+		if k == "arg6" {
+			al := rp[k].([]contract.Struct)
+			for i, es := range v.([]contract.Struct) {
+				assert.Equal(t, es.Params(), al[i].Params())
+			}
+		} else {
+			assert.Equal(t, v, rp[k])
 		}
 	}
 }
@@ -221,7 +246,7 @@ func autoSign(w wallet.Wallet, h *Handler, method string, params contract.Params
 		if rse, ok := err.(contract.RequireSignatureError); ok {
 			var sig []byte
 			if sig, err = w.Sign(rse.Data()); err != nil {
-				return nil, err
+				return nil, errors.Wrapf(err, "fail to Sign err:%s", err.Error())
 			}
 			if err = contract.DecodeOptions(rse.Options(), opt); err != nil {
 				return nil, err
@@ -244,7 +269,8 @@ func assertBaseEvent(t *testing.T, el contract.BaseEvent, address contract.Addre
 	assert.Equal(t, indexed, el.Indexed())
 	for i := 0; i < el.Indexed(); i++ {
 		v := params[fmt.Sprintf("arg%d", i+1)]
-		assert.True(t, el.IndexedValue(i).Match(v))
+		assert.True(t, el.IndexedValue(i).Match(v),
+			"index:%d expected:%v actual:%v", i, v, el.IndexedValue(i))
 	}
 }
 
@@ -289,14 +315,18 @@ func Test_invokeInteger(t *testing.T) {
 	assertBaseEvent(t, el, address, sig, indexed, params)
 
 	event := "IntegerEvent"
-	ef, err := h.EventFilter(event, params)
-	assert.NoError(t, err)
+	evtParams := make(contract.Params)
+	for k, v := range params {
+		evtParams[k] = v
+		ef, err := h.EventFilter(event, evtParams)
+		assert.NoError(t, err)
 
-	e, err := ef.Filter(el)
-	assert.NoError(t, err)
-	assert.NotNil(t, e, "event should match")
+		e, err := ef.Filter(el)
+		assert.NoError(t, err)
+		assert.NotNil(t, e, "event should match")
 
-	assertEvent(t, e, address, sig, indexed, params)
+		assertEvent(t, e, address, sig, indexed, params)
+	}
 }
 
 func Test_invokePrimitive(t *testing.T) {
@@ -325,26 +355,25 @@ func Test_invokePrimitive(t *testing.T) {
 	assertBaseEvent(t, el, address, sig, indexed, params)
 
 	event := "PrimitiveEvent"
-	ef, err := h.EventFilter(event, params)
-	assert.NoError(t, err)
+	evtParams := make(contract.Params)
+	for k, v := range params {
+		evtParams[k] = v
+		ef, err := h.EventFilter(event, evtParams)
+		assert.NoError(t, err)
 
-	e, err := ef.Filter(el)
-	assert.NoError(t, err)
-	assert.NotNil(t, e, "event should match")
+		e, err := ef.Filter(el)
+		assert.NoError(t, err)
+		assert.NotNil(t, e, "event should match")
 
-	assertEvent(t, e, address, sig, indexed, params)
+		assertEvent(t, e, address, sig, indexed, params)
+	}
 }
 
 func Test_invokeStruct(t *testing.T) {
 	h := handler(t)
 	method := "invokeStruct"
-	input := struct {
-		BooleanVal contract.Boolean
-	}{
-		BooleanVal: booleanVal,
-	}
 	params := make(contract.Params)
-	params["arg1"] = contract.StructToMap(input)
+	params["arg1"] = contract.MustStructOf(structVal)
 
 	txId, err := autoSign(w, h, method, params)
 	assert.NoError(t, err)
@@ -358,12 +387,58 @@ func Test_invokeStruct(t *testing.T) {
 	el := r.Events()[0]
 	address := contract.Address(h.address)
 	sig := "StructEvent(bytes)"
-	indexed := 0
+	indexed := 1
 	evtParams := make(contract.Params)
-	evtParams["arg1"] = contract.Bytes(codec.RLP.MustMarshalToBytes(input))
+	evtParams["arg1"] = contract.Bytes(codec.RLP.MustMarshalToBytes(structVal))
 	assertBaseEvent(t, el, address, sig, indexed, evtParams)
 
 	event := "StructEvent"
+	ef, err := h.EventFilter(event, evtParams)
+	assert.NoError(t, err)
+
+	e, err := ef.Filter(el)
+	assert.NoError(t, err)
+	assert.NotNil(t, e, "event should match")
+
+	assertEvent(t, e, address, sig, indexed, evtParams)
+}
+
+func Test_invokeArray(t *testing.T) {
+	h := handler(t)
+	method := "invokeArray"
+	params := make(contract.Params)
+	params["arg1"] = []contract.Integer{bigIntegerVal}
+	params["arg2"] = []contract.Boolean{booleanVal}
+	params["arg3"] = []contract.String{stringVal}
+	params["arg4"] = []contract.Bytes{bytesVal}
+	params["arg5"] = []contract.Address{addressVal}
+	params["arg6"] = []contract.Struct{contract.MustStructOf(structVal)}
+
+	txId, err := autoSign(w, h, method, params)
+	assert.NoError(t, err)
+	t.Log(txId)
+
+	r, err := h.GetResult(txId)
+	assert.NoError(t, err)
+	assert.True(t, r.Success())
+	assert.Equal(t, 1, len(r.Events()))
+
+	el := r.Events()[0]
+	address := contract.Address(h.address)
+	sig := "ArrayEvent(bytes,bytes,bytes,bytes,bytes,bytes)"
+	indexed := 3
+	evtParams := make(contract.Params)
+	bs, _ := bigIntegerVal.AsBytes()
+	evtParams["arg1"] = contract.Bytes(codec.RLP.MustMarshalToBytes([][]byte{bs}))
+	evtParams["arg2"] = contract.Bytes(codec.RLP.MustMarshalToBytes(params["arg2"]))
+	evtParams["arg3"] = contract.Bytes(codec.RLP.MustMarshalToBytes(params["arg3"]))
+	evtParams["arg4"] = contract.Bytes(codec.RLP.MustMarshalToBytes(params["arg4"]))
+	b, _ := client.Address(addressVal).Value()
+	evtParams["arg5"] = contract.Bytes(codec.RLP.MustMarshalToBytes([]contract.Bytes{b}))
+	evtParams["arg6"] = contract.Bytes(codec.RLP.MustMarshalToBytes([]interface{}{structVal}))
+	assertBaseEvent(t, el, address, sig, indexed, evtParams)
+
+	event := "ArrayEvent"
 	ef, err := h.EventFilter(event, evtParams)
 	assert.NoError(t, err)
 

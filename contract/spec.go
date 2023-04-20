@@ -17,15 +17,14 @@
 package contract
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math/big"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/icon-project/btp2/common/errors"
+	"github.com/icon-project/btp2/common/intconv"
 	"github.com/icon-project/btp2/common/log"
 )
 
@@ -60,15 +59,14 @@ func (t TypeTag) Type() reflect.Type {
 
 var (
 	typeIdToNames = []string{"Unknown", "Void", "Integer", "Boolean", "String", "Bytes", "Struct", "Address"}
-	nilInterface  interface{}
 	typeIdToType  = []reflect.Type{
 		nil,
 		nil,
 		reflect.TypeOf(Integer("")),
 		reflect.TypeOf(Boolean(true)),
 		reflect.TypeOf(String("")),
-		reflect.TypeOf(Bytes("")),
-		reflect.MapOf(reflect.TypeOf(""), reflect.TypeOf(&nilInterface)),
+		reflect.TypeOf(Bytes([]byte{})),
+		reflect.TypeOf(Struct{}),
 		reflect.TypeOf(Address("")),
 	}
 	signatureTypeNames = map[TypeTag]string{
@@ -96,45 +94,83 @@ func TypeIDByName(name string) TypeTag {
 	return TUnknown
 }
 
+func TypeIDByType(v reflect.Type) TypeTag {
+	for i, t := range typeIdToType[TInteger:] {
+		if t == v {
+			return TypeTag(int(TInteger) + i)
+		}
+	}
+	return TUnknown
+}
+
+func TypeIDOf(value interface{}) TypeTag {
+	if value == nil {
+		return TVoid
+	}
+	return TypeIDByType(reflect.TypeOf(value))
+}
+
 type Integer string
 
-func (i Integer) clearPrefix() string {
-	s := string(i)
-	if strings.HasPrefix(s, "0x") {
-		s = s[2:]
-	}
-	return s
-}
 func (i Integer) AsUint64() (uint64, error) {
-	return strconv.ParseUint(i.clearPrefix(), 16, 64)
+	bi, err := i.AsBigInt()
+	if err != nil {
+		return 0, err
+	}
+	if !bi.IsUint64() {
+		return 0, errors.New("cannot convert to uint64")
+	}
+	return bi.Uint64(), nil
 }
 
 func (i Integer) AsInt64() (int64, error) {
-	return strconv.ParseInt(i.clearPrefix(), 16, 64)
+	bi, err := i.AsBigInt()
+	if err != nil {
+		return 0, err
+	}
+	if !bi.IsInt64() {
+		return 0, errors.New("cannot convert to uint64")
+	}
+	return bi.Int64(), nil
 }
 
 func (i Integer) AsBigInt() (*big.Int, error) {
-	r, ok := new(big.Int), false
-	if r, ok = r.SetString(i.clearPrefix(), 16); !ok {
-		return nil, errors.New("fail to convert big.Int")
+	bi := new(big.Int)
+	if err := intconv.ParseBigInt(bi, string(i)); err != nil {
+		return nil, err
 	}
-	return r, nil
+	return bi, nil
 }
-func FromUint64(i uint64) Integer {
-	return Integer("0x" + strconv.FormatUint(i, 16))
-}
-func FromInt64(i int64) Integer {
-	return Integer("0x" + strconv.FormatInt(i, 16))
-}
-func FromBigInt(i *big.Int) Integer {
-	return Integer("0x" + hex.EncodeToString(i.Bytes()))
+
+func (i Integer) AsBytes() ([]byte, error) {
+	bi, err := i.AsBigInt()
+	if err != nil {
+		return nil, err
+	}
+	return intconv.BigIntToBytes(bi), nil
 }
 
 type Boolean bool
 type String string
 type Bytes []byte
 type Address string
+type Struct struct {
+	Name   string
+	Fields []KeyValue
+}
 
+func (s Struct) Params() Params {
+	ret := make(Params)
+	for _, f := range s.Fields {
+		ret[f.Key] = f.Value
+	}
+	return ret
+}
+
+type KeyValue struct {
+	Key   string
+	Value interface{}
+}
 type HashValue interface {
 	Match(v interface{}) bool
 	Bytes() []byte
@@ -180,6 +216,7 @@ func (s *TypeSpec) resolveType(structMap map[string]*StructSpec) error {
 		if ok {
 			s.TypeID = TStruct
 			s.Resolved = v
+			s.Type = v.Type
 		}
 	}
 	t := s.TypeID.Type()
@@ -270,10 +307,9 @@ func (s *EventSpec) resolveType(structMap map[string]*StructSpec) error {
 			return errors.Errorf("invalid event type name:%s id:%s",
 				v.Type.Name, v.Type.TypeID)
 		} else {
-			inputTypes[i] = inputType
+			inputTypes[i] = inputType + strings.Repeat("[]", v.Type.Dimension)
 		}
 	}
-	//FIXME event signature
 	s.Signature = fmt.Sprintf("%s(%s)",
 		s.Name, strings.Join(inputTypes, ","))
 	return nil
@@ -284,6 +320,7 @@ type StructSpec struct {
 	Fields []NameAndTypeSpec `json:"fields"`
 
 	FieldMap map[string]*NameAndTypeSpec `json:"-"`
+	Type     reflect.Type                `json:"-"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler interface.
@@ -307,6 +344,16 @@ func (s *StructSpec) resolveType(structMap map[string]*StructSpec) error {
 			return err
 		}
 	}
+	fields := make([]reflect.StructField, 0)
+	for _, v := range s.Fields {
+		f := reflect.StructField{
+			Name: strings.ToUpper(v.Name[:1]) + v.Name[1:],
+			Type: v.Type.Type,
+			Tag:  reflect.StructTag("json:" + v.Name),
+		}
+		fields = append(fields, f)
+	}
+	s.Type = reflect.StructOf(fields)
 	return nil
 }
 
@@ -361,7 +408,7 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 }
 
 func ParamsTypeCheck(s *EventSpec, params Params) error {
-	if len(params) != len(s.InputMap) {
+	if len(params) > len(s.InputMap) {
 		return errors.Errorf("invalid length params")
 	}
 	for k, v := range params {
@@ -378,7 +425,7 @@ func typeCheck(s *NameAndTypeSpec, value interface{}) error {
 	specLogger.Traceln("typeCheck name:", s.Name, "typeName:", s.Type.Name, "type:", s.Type.TypeID.String(),
 		"reflect:", s.Type.Type)
 	if s.Type.Dimension > 0 {
-		return errors.New("not implemented")
+		return arrayTypeCheck(s, 1, reflect.ValueOf(value))
 	} else {
 		switch s.Type.TypeID {
 		case TStruct:
@@ -416,11 +463,19 @@ func primitiveTypeCheck(s *NameAndTypeSpec, value interface{}) error {
 
 func structTypeCheck(s *NameAndTypeSpec, value interface{}) error {
 	specLogger.Traceln("structTypeCheck name:", s.Name, "typeName:", s.Type.Name, value)
-	m, ok := value.(map[string]interface{})
-	if !ok {
-		return errors.Errorf("invalid param type name:%s, expected:%s actual:%T",
-			s.Name, s.Type.TypeID.String(), value)
+	var m map[string]interface{}
+	st, ok := value.(Struct)
+	if ok {
+		m = st.Params()
+	} else {
+		if m, ok = value.(Params); !ok {
+			if m, ok = value.(map[string]interface{}); !ok {
+				return errors.Errorf("invalid param type name:%s, expected:%s actual:%T",
+					s.Name, s.Type.TypeID.String(), value)
+			}
+		}
 	}
+
 	for k, v := range m {
 		spec, ok := s.Type.Resolved.FieldMap[k]
 		if !ok {
@@ -433,22 +488,27 @@ func structTypeCheck(s *NameAndTypeSpec, value interface{}) error {
 	return nil
 }
 
-func StructToMap(obj interface{}) map[string]interface{} {
-	v := reflect.ValueOf(obj)
-	t := v.Type()
-	if t.Kind() != reflect.Struct {
-		panic("invalid type")
+func arrayTypeCheck(s *NameAndTypeSpec, dimension int, v reflect.Value) error {
+	specLogger.Traceln("arrayTypeCheck name:", s.Name, "typeName:", s.Type.Name, v.Interface())
+	if v.Kind() != reflect.Array && v.Kind() != reflect.Slice {
+		return errors.Errorf("invalid param type name:%s, expected:%s actual:%v",
+			s.Name, s.Type.TypeID.String(), v.Type())
 	}
-	ret := make(map[string]interface{})
-	for i := 0; i < v.NumField(); i++ {
-		ft := t.Field(i)
-		name := strings.ToLower(ft.Name[:1]) + ft.Name[1:]
-		fv := v.Field(i).Interface()
-		if ft.Type.Kind() == reflect.Struct {
-			ret[name] = StructToMap(fv)
+	for i := 0; i < v.Len(); i++ {
+		var err error
+		if s.Type.Dimension == dimension {
+			switch s.Type.TypeID {
+			case TStruct:
+				err = structTypeCheck(s, v.Index(i).Interface())
+			default:
+				err = primitiveTypeCheck(s, v.Index(i).Interface())
+			}
 		} else {
-			ret[name] = fv
+			err = arrayTypeCheck(s, dimension+1, v.Index(i))
+		}
+		if err != nil {
+			return err
 		}
 	}
-	return ret
+	return nil
 }

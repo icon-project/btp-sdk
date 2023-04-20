@@ -195,8 +195,14 @@ func (h *Handler) newBaseTx(opt *InvokeOptions, data []byte) (p *baseTx, err err
 
 func (h *Handler) prepareSign(opt *InvokeOptions, p *baseTx) (optUpdated bool, err error) {
 	if len(opt.GasLimit) == 0 {
-		//h.a.EstimateGas()
-		opt.GasLimit = contract.FromUint64(p.GasLimit)
+		//if p.GasLimit, err = h.a.EstimateGas(context.Background(), ethereum.CallMsg{
+		//	To:    &h.address,
+		//	Data:  p.Data,
+		//	Value: p.Value,
+		//}); err != nil {
+		//	return false, errors.Wrapf(err, "fail to EstimateGas err:%s", err.Error())
+		//}
+		opt.GasLimit = contract.MustIntegerOf(p.GasLimit)
 		optUpdated = true
 	}
 	if len(opt.Nonce) == 0 {
@@ -208,7 +214,7 @@ func (h *Handler) prepareSign(opt *InvokeOptions, p *baseTx) (optUpdated bool, e
 		if p.Nonce, err = h.a.PendingNonceAt(context.Background(), from); err != nil {
 			return false, errors.Wrapf(err, "fail to PendingNonceAt err:%s", err.Error())
 		}
-		opt.Nonce = contract.FromUint64(p.Nonce)
+		opt.Nonce = contract.MustIntegerOf(p.Nonce)
 		optUpdated = true
 	}
 
@@ -223,7 +229,7 @@ func (h *Handler) prepareSign(opt *InvokeOptions, p *baseTx) (optUpdated bool, e
 					if p.GasTipCap, err = h.a.SuggestGasTipCap(context.Background()); err != nil {
 						return false, errors.Wrapf(err, "fail to SuggestGasTipCap err:%s", err.Error())
 					}
-					opt.GasTipCap = contract.FromBigInt(p.GasTipCap)
+					opt.GasTipCap = contract.MustIntegerOf(p.GasTipCap)
 					optUpdated = true
 				}
 				if p.GasFeeCap == nil {
@@ -231,7 +237,7 @@ func (h *Handler) prepareSign(opt *InvokeOptions, p *baseTx) (optUpdated bool, e
 						p.GasTipCap,
 						new(big.Int).Mul(head.BaseFee, big.NewInt(2)),
 					)
-					opt.GasFeeCap = contract.FromBigInt(p.GasFeeCap)
+					opt.GasFeeCap = contract.MustIntegerOf(p.GasFeeCap)
 					optUpdated = true
 				}
 				if p.GasFeeCap.Cmp(p.GasTipCap) < 0 {
@@ -242,7 +248,7 @@ func (h *Handler) prepareSign(opt *InvokeOptions, p *baseTx) (optUpdated bool, e
 				if p.GasPrice, err = h.a.SuggestGasPrice(context.Background()); err != nil {
 					return false, err
 				}
-				opt.GasPrice = contract.FromBigInt(p.GasPrice)
+				opt.GasPrice = contract.MustIntegerOf(p.GasPrice)
 				optUpdated = true
 			}
 		}
@@ -375,21 +381,30 @@ func (h *Handler) EventFilter(name string, params contract.Params) (contract.Eve
 	if !has {
 		return nil, errors.New("not found event from out")
 	}
-	var indexed abi.Arguments
-	for _, arg := range out.Inputs {
-		if arg.Indexed {
-			indexed = append(indexed, arg)
-		}
-	}
 	if err := contract.ParamsTypeCheck(in, params); err != nil {
 		return nil, err
 	}
+	hashedParams := make(map[string]Topic)
+	var outIndexed abi.Arguments
+	for _, arg := range out.Inputs {
+		if arg.Indexed {
+			outIndexed = append(outIndexed, arg)
+			if p, ok := params[arg.Name]; ok {
+				t, err := NewTopic(p)
+				if err != nil {
+					return nil, err
+				}
+				hashedParams[arg.Name] = t
+			}
+		}
+	}
 	return &EventFilter{
-		in:      *in,
-		out:     out,
-		indexed: indexed,
-		address: contract.Address(h.address.String()),
-		params:  params,
+		in:           *in,
+		out:          out,
+		outIndexed:   outIndexed,
+		address:      contract.Address(h.address.String()),
+		params:       params,
+		hashedParams: hashedParams,
 	}, nil
 }
 

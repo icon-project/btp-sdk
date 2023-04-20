@@ -1,7 +1,6 @@
 package foundation.icon.btp.example;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
-import com.fasterxml.jackson.annotation.PropertyAccessor;
 import foundation.icon.jsonrpc.model.TransactionResult;
 import foundation.icon.score.client.DefaultScoreClient;
 import foundation.icon.score.client.ScoreClient;
@@ -13,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import score.Address;
 
 import java.math.BigInteger;
+import java.util.Objects;
 import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -35,6 +35,8 @@ class HelloWorldTest {
     static String stringVal = "string";
     static byte[] bytesVal = "bytes".getBytes();
     static Address addressVal = DefaultScoreClient.wallet(System.getProperties()).getAddress();
+    static InputStruct inputStructVal = new InputStruct(booleanVal);
+    static OutputStruct outputStructVal = new OutputStruct(inputStructVal);
 
     @BeforeAll
     static void beforeAll() {
@@ -57,6 +59,23 @@ class HelloWorldTest {
     }
 
     @Test
+    void callUnsignedInteger() {
+        HelloWorld.UnsignedIntegers p = new HelloWorld.UnsignedIntegers(
+                new BigInteger("ff", 16),
+                charVal,
+                new BigInteger("ff".repeat(4), 16),
+                new BigInteger("ff".repeat(8), 16),
+                new BigInteger("ff".repeat(3), 16),
+                new BigInteger("ff".repeat(5), 16),
+                new BigInteger("ff".repeat(9), 16),
+                new BigInteger("ff".repeat(32), 16));
+        HelloWorld.UnsignedIntegers ret = client.callUnsignedInteger(p.getArg1(), p.getArg2(), p.getArg3(), p.getArg4(),
+                p.getArg5(), p.getArg6(), p.getArg7(), p.getArg8());
+        assertEquals(p, ret);
+        print(ret);
+    }
+
+    @Test
     void callPrimitive() {
         HelloWorld.Primitives p = new HelloWorld.Primitives(
                 bigIntegerVal, booleanVal, stringVal, bytesVal, addressVal);
@@ -72,25 +91,54 @@ class HelloWorldTest {
      */
     @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
     public static class InputStruct extends HelloWorld.InputStruct {
+        public InputStruct() {
+        }
+
+        public InputStruct(Boolean booleanVal) {
+            super();
+            setBooleanVal(booleanVal);
+        }
+    }
+
+    public static class OutputStruct extends HelloWorld.OutputStruct {
+        public OutputStruct() {
+        }
+
+        public OutputStruct(InputStruct inputStruct) {
+            super();
+            super.booleanVal = inputStruct.booleanVal;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj instanceof HelloWorld.OutputStruct) {
+                return Objects.equals(booleanVal, ((HelloWorld.OutputStruct) obj).getBooleanVal());
+            }
+            return super.equals(obj);
+        }
     }
 
     @Test
     void callStruct() {
-        HelloWorld.InputStruct input = new InputStruct();
-        input.setBooleanVal(booleanVal);
-        HelloWorld.OutputStruct ret = client.callStruct(input);
-        assertEquals(booleanVal, ret.getBooleanVal());
+        HelloWorld.OutputStruct ret = client.callStruct(inputStructVal);
+        assertEquals(outputStructVal, ret);
         print(ret);
     }
 
     @Test
-    void callPrimitiveArray() {
-        HelloWorld.PrimitiveArrays p = new HelloWorld.PrimitiveArrays(
-          new BigInteger[]{bigIntegerVal}, new boolean[]{booleanVal}, new String[]{stringVal},
-          new byte[][]{bytesVal}, new Address[]{addressVal});
-        HelloWorld.PrimitiveArrays ret = client.callPrimitiveArray(
-                p.getArg1(), p.getArg2(), p.getArg3(), p.getArg4(), p.getArg5());
-        assertEquals(p, ret);
+    void callArray() {
+        HelloWorld.Arrays p = new HelloWorld.Arrays(
+                new BigInteger[]{bigIntegerVal}, new boolean[]{booleanVal}, new String[]{stringVal},
+                new byte[][]{bytesVal}, new Address[]{addressVal}, new HelloWorld.OutputStruct[]{outputStructVal});
+        HelloWorld.Arrays ret = client.callArray(
+                p.getArg1(), p.getArg2(), p.getArg3(), p.getArg4(), p.getArg5(),
+                new HelloWorld.InputStruct[]{inputStructVal});
+        assertArrayEquals(p.getArg1(), ret.getArg1());
+        assertArrayEquals(p.getArg2(), ret.getArg2());
+        assertArrayEquals(p.getArg3(), ret.getArg3());
+        assertArrayEquals(p.getArg4(), ret.getArg4());
+        assertArrayEquals(p.getArg5(), ret.getArg5());
+        assertArrayEquals(p.getArg6(), ret.getArg6());
         print(ret);
     }
 
@@ -138,23 +186,38 @@ class HelloWorldTest {
 
     @Test
     void invokeStruct() {
-        HelloWorld.InputStruct input = new InputStruct();
-        input.setBooleanVal(booleanVal);
         Consumer<TransactionResult> consumer = client.StructEvent(l -> {
             assertEquals(1, l.size());
             HelloWorldScoreClient.StructEvent el = l.get(0);
-            HelloWorld.OutputStruct out = new HelloWorld.OutputStruct();
-            out.booleanVal = booleanVal;
-            assertArrayEquals(Encode.encode(out), el.getArg1());
+            assertArrayEquals(Encode.encode(outputStructVal), el.getArg1());
             print(el);
         }, null);
         client.invokeStruct(consumer,
-                input);
+                inputStructVal);
     }
 
     @Disabled("not implemented")
     @Test
-    void invokePrimitiveArray() {
+    void invokeArray() {
+        HelloWorld.Arrays p = new HelloWorld.Arrays(
+                new BigInteger[]{bigIntegerVal}, new boolean[]{booleanVal}, new String[]{stringVal},
+                new byte[][]{bytesVal}, new Address[]{addressVal}, new HelloWorld.OutputStruct[]{outputStructVal});
+        Consumer<TransactionResult> consumer = client.ArrayEvent(l -> {
+            assertEquals(1, l.size());
+            HelloWorldScoreClient.ArrayEvent el = l.get(0);
+            assertArrayEquals(Encode.encode(outputStructVal), el.getArg1());
+            assertArrayEquals(Encode.encode(p.getArg1()), el.getArg1());
+            assertArrayEquals(Encode.encode(p.getArg2()), el.getArg2());
+            assertArrayEquals(Encode.encode(p.getArg3()), el.getArg3());
+            assertArrayEquals(Encode.encode(p.getArg4()), el.getArg4());
+            assertArrayEquals(Encode.encode(p.getArg5()), el.getArg5());
+            assertArrayEquals(Encode.encode(p.getArg6()), el.getArg6());
+            print(el);
+        }, null);
+        client.invokeArray(consumer,
+                p.getArg1(), p.getArg2(), p.getArg3(), p.getArg4(), p.getArg5(),
+                new HelloWorld.InputStruct[]{inputStructVal});
+
     }
 
     @Disabled("not implemented")

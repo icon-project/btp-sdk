@@ -86,9 +86,16 @@ func encodePrimitive(s contract.TypeTag, value interface{}) (interface{}, error)
 }
 
 func encodeStruct(s *contract.StructSpec, value interface{}) (interface{}, error) {
-	m, ok := value.(map[string]interface{})
-	if !ok {
-		return nil, errors.Errorf("fail encodeStruct, invalid type %T", value)
+	var m map[string]interface{}
+	st, ok := value.(contract.Struct)
+	if ok {
+		m = st.Params()
+	} else {
+		if m, ok = value.(contract.Params); !ok {
+			if m, ok = value.(map[string]interface{}); !ok {
+				return nil, errors.Errorf("fail encodeStruct, invalid type %T", value)
+			}
+		}
 	}
 	ret := make(map[string]interface{})
 	var err error
@@ -112,9 +119,9 @@ func encodeArray(s contract.TypeSpec, dimension int, v reflect.Value) ([]interfa
 			l[i], err = encodeArray(s, dimension+1, element)
 		} else {
 			if s.TypeID == contract.TStruct {
-				l[i], err = encodeStruct(s.Resolved, element)
+				l[i], err = encodeStruct(s.Resolved, element.Interface())
 			} else {
-				l[i], err = encodePrimitive(s.TypeID, element)
+				l[i], err = encodePrimitive(s.TypeID, element.Interface())
 			}
 		}
 		if err != nil {
@@ -176,18 +183,22 @@ func decodePrimitive(s contract.TypeTag, value interface{}) (interface{}, error)
 
 func decodeStruct(s *contract.StructSpec, value interface{}) (interface{}, error) {
 	codecLogger.Traceln("decodeStruct spec:", s.Name)
-	ret := make(map[string]interface{})
 	m, ok := value.(map[string]interface{})
 	if !ok {
 		return nil, errors.Errorf("fail decodeStruct, invalid type %T", value)
 	}
-	var err error
-	for k, v := range s.FieldMap {
-		if ret[k], err = decode(v.Type, m[k]); err != nil {
+	fields := make([]contract.KeyValue, len(s.Fields))
+	for i, f := range s.Fields {
+		fv, err := decode(f.Type, m[f.Name])
+		if err != nil {
 			return nil, err
 		}
+		fields[i] = contract.KeyValue{Key: f.Name, Value: fv}
 	}
-	return ret, nil
+	return contract.Struct{
+		Name:   s.Name,
+		Fields: fields,
+	}, nil
 }
 
 func decodeArray(s contract.TypeSpec, dimension int, v reflect.Value) (interface{}, error) {

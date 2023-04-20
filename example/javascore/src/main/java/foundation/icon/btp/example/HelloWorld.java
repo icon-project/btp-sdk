@@ -45,6 +45,13 @@ public class HelloWorld {
     @External(readonly = true)
     public UnsignedIntegers callUnsignedInteger(BigInteger arg1, char arg2, BigInteger arg3, BigInteger arg4,
                                                 BigInteger arg5, BigInteger arg6, BigInteger arg7, BigInteger arg8) {
+        Context.require(arg1.signum() >= 0 && arg1.bitLength() <= 8);
+        Context.require(arg3.signum() >= 0 && arg1.bitLength() <= 32);
+        Context.require(arg4.signum() >= 0 && arg1.bitLength() <= 64);
+        Context.require(arg5.signum() >= 0 && arg1.bitLength() <= 24);
+        Context.require(arg6.signum() >= 0 && arg1.bitLength() <= 40);
+        Context.require(arg7.signum() >= 0 && arg1.bitLength() <= 72);
+        Context.require(arg8.signum() >= 0 && arg1.bitLength() <= 256);
         return new UnsignedIntegers(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
     }
 
@@ -62,11 +69,15 @@ public class HelloWorld {
     }
 
     @External(readonly = true)
-    public PrimitiveArrays callPrimitiveArray(BigInteger[] arg1, boolean[] arg2, String[] arg3, byte[][] arg4, Address[] arg5) {
+    public Arrays callArray(BigInteger[] arg1, boolean[] arg2, String[] arg3, byte[][] arg4, Address[] arg5, InputStruct[] arg6) {
         for (BigInteger v : arg1) {
             Context.require(v.bitLength() < 256);
         }
-        return new PrimitiveArrays(arg1, arg2, arg3, arg4, arg5);
+        OutputStruct[] _arg6 = new OutputStruct[arg6.length];
+        for (int i = 0; i < arg6.length; i++) {
+            _arg6[i] = callStruct(arg6[i]);
+        }
+        return new Arrays(arg1, arg2, arg3, arg4, arg5, _arg6);
     }
 
     @External(readonly = true)
@@ -110,34 +121,25 @@ public class HelloWorld {
     /**
      * Eventlog does not allow struct
      */
-    @EventLog
+    @EventLog(indexed = 1)
     public void StructEvent(byte[] arg1) {
 
     }
 
     @External
-    public void invokePrimitiveArray(BigInteger[] arg1, boolean[] arg2, String[] arg3, byte[][] arg4, Address[] arg5) {
-        PrimitiveArrayEvent(encode(arg1), encode(arg2), encode(arg3), encode(arg4), encode(arg5));
+    public void invokeArray(BigInteger[] arg1, boolean[] arg2, String[] arg3, byte[][] arg4, Address[] arg5, InputStruct[] arg6) {
+        OutputStruct[] _arg6 = new OutputStruct[arg6.length];
+        for (int i = 0; i < arg6.length; i++) {
+            _arg6[i] = callStruct(arg6[i]);
+        }
+        ArrayEvent(encode(arg1), encode(arg2), encode(arg3), encode(arg4), encode(arg5), encode(_arg6));
     }
 
     /**
      * Eventlog does not allow array except byte array
      */
     @EventLog(indexed = 3)
-    public void PrimitiveArrayEvent(byte[] arg1, byte[] arg2, byte[] arg3, byte[] arg4, byte[] arg5) {
-
-    }
-
-    @External
-    public void invokeStructArray(InputStruct[] arg1, InputStruct[] arg2) {
-
-    }
-
-    /**
-     * Eventlog does not allow array except byte array
-     */
-    @EventLog(indexed = 1)
-    public void StructArrayEvent(byte[] arg1, byte[] arg2, byte[] arg3, byte[] arg4, byte[] arg5) {
+    public void ArrayEvent(byte[] arg1, byte[] arg2, byte[] arg3, byte[] arg4, byte[] arg5, byte[] arg6) {
 
     }
 
@@ -201,12 +203,13 @@ public class HelloWorld {
     @AllArgsConstructor
     @Getter
     @Setter
-    public static class PrimitiveArrays {
+    public static class Arrays {
         private BigInteger[] arg1;
         private boolean[] arg2;
         private String[] arg3;
         private byte[][] arg4;
         private Address[] arg5;
+        private OutputStruct[] arg6;
     }
 
 }
