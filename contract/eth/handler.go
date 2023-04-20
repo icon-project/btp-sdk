@@ -318,10 +318,13 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 }
 
 func (h *Handler) GetResult(id contract.TxID) (contract.TxResult, error) {
-	txh := common.HexToHash(id.(string))
-	txr, err := h.a.TransactionReceipt(context.Background(), txh)
+	txh, ok := id.(string)
+	if !ok {
+		return nil, errors.Errorf("fail GetResult, invalid type %T", id)
+	}
+	txr, err := h.a.TransactionReceipt(context.Background(), common.HexToHash(txh))
 	if err != nil {
-		return nil, errors.Wrapf(err, "fail to GetResult err:%s", err.Error())
+		return nil, errors.Wrapf(err, "fail to TransactionReceipt err:%s", err.Error())
 	}
 	return NewTxResult(txr)
 }

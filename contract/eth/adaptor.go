@@ -82,45 +82,16 @@ func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handl
 	return NewHandler(spec, addr, a, a.l)
 }
 
-func (a *Adaptor) SendTransaction(ctx context.Context, tx *types.Transaction) error {
-	return a.Client.SendTransaction(ctx, tx)
+func (a *Adaptor) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
+	for {
+		_, pending, err := a.Client.TransactionByHash(ctx, txHash)
+		if err != nil {
+			return nil, err
+		}
+		if pending {
+			<-time.After(DefaultGetResultInterval)
+			continue
+		}
+		return a.Client.TransactionReceipt(ctx, txHash)
+	}
 }
-
-//
-//func (c *Adaptor) Call(from, to string, method string, params interface{}, opt interface{}) (interface{}, error) {
-//	//TODO implement me
-//	panic("implement me")
-//}
-//
-//func (c *Adaptor) NewRawTx(from, to string, method string, params interface{}, opt interface{}) ([]byte, error) {
-//	tx := types.DynamicFeeTx{
-//		ChainID:    nil,
-//		Nonce:      0,   //option, generate
-//		GasTipCap:  nil, //option
-//		GasFeeCap:  nil, //option
-//		Gas:        0,
-//		To:         nil,
-//		Value:      nil,
-//		Data:       nil,
-//		AccessList: nil,
-//		V:          nil,
-//		R:          nil,
-//		S:          nil,
-//	}
-//	//TODO implement me
-//	panic("implement me")
-//}
-//
-//func (c *Adaptor) Send(signature, rawTx []byte, opt interface{}) (contract.TxID, error) {
-//	p := types.Transaction{}
-//	if err := json.Unmarshal(rawTx, &p); err != nil {
-//		return nil, err
-//	}
-//	//types.NewTx()
-//	return nil, nil
-//}
-//
-//func (c *Adaptor) GetResult(id contract.TxID, opt interface{}) (contract.TxResult, error) {
-//	//TODO implement me
-//	panic("implement me")
-//}

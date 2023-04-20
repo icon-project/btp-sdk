@@ -7,6 +7,10 @@ const config: HardhatUserConfig = {
   defaultNetwork: "hardhat",
   networks: {
     hardhat: {
+      // mining: {
+      //   auto: false,
+      //   interval: 3000
+      // },
       allowUnlimitedContractSize: true,
       // blockGasLimit: 0x1fffffffffffff,
       // gas:  0xffffffffff,

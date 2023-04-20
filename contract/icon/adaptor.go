@@ -18,8 +18,6 @@ package icon
 
 import (
 	"encoding/json"
-	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/icon-project/btp2/chain/icon/client"
@@ -73,15 +71,6 @@ func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handl
 	return NewHandler(spec, client.Address(address), a, a.l)
 }
 
-func (a *Adaptor) SendTransaction(p *client.TransactionParam) (*client.HexBytes, error) {
-	txh, err := a.Client.SendTransaction(p)
-	if err != nil {
-		return nil, errors.Wrapf(err, "fail to SendTransaction err:%s", err.Error())
-	}
-	a.l.Debugln(*txh)
-	return txh, nil
-}
-
 func (a *Adaptor) GetTransactionResult(p *client.TransactionHashParam) (*client.TransactionResult, error) {
 	for {
 		txr, err := a.Client.GetTransactionResult(p)
@@ -93,20 +82,10 @@ func (a *Adaptor) GetTransactionResult(p *client.TransactionHashParam) (*client.
 					continue
 				}
 			}
-			return nil, errors.Wrapf(err, "fail to GetTransactionResult err:%s", err.Error())
+			return nil, err
 		}
-		b, _ := json.Marshal(txr)
-		a.l.Debugln(string(b))
 		return txr, nil
 	}
-}
-
-func (a *Adaptor) Call(p *client.CallParam, r interface{}) error {
-	if err := a.Client.Call(p, r); err != nil {
-		return errors.Wrapf(err, "fail to Call err:%s", err.Error())
-	}
-	a.l.Debugln(reflect.ValueOf(r).Elem())
-	return nil
 }
 
 func (a *Adaptor) NewTransactionParam(to client.Address, data *client.CallData) *client.TransactionParam {
@@ -142,7 +121,7 @@ func (b HexBool) Value() (bool, error) {
 	} else if b == "0x0" {
 		return false, nil
 	} else {
-		return false, fmt.Errorf("invalid value %s", b)
+		return false, errors.Errorf("invalid value %s", b)
 	}
 }
 

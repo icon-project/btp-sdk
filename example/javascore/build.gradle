@@ -71,10 +71,6 @@ optimizedJar {
 generateContractSpec {
 }
 
-generateContractSpecV0 {
-
-}
-
 test {
     useJUnitPlatform()
     options {

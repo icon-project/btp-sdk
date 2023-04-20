@@ -51,32 +51,35 @@ func encodePrimitive(s contract.TypeTag, value interface{}) (interface{}, error)
 	}
 	switch s {
 	case contract.TInteger:
-		if _, ok := value.(contract.Integer); !ok {
+		v, ok := value.(contract.Integer)
+		if !ok {
 			return nil, errors.Errorf("fail encodePrimitive integer, invalid type %T", value)
 		}
-		return value, nil
+		return client.HexInt(v), nil
 	case contract.TString:
-		if _, ok := value.(contract.String); !ok {
+		v, ok := value.(contract.String)
+		if !ok {
 			return nil, errors.Errorf("fail encodePrimitive string, invalid type %T", value)
 		}
-		return value, nil
+		return string(v), nil
 	case contract.TAddress:
-		if _, ok := value.(contract.Address); !ok {
+		v, ok := value.(contract.Address)
+		if !ok {
 			return nil, errors.Errorf("fail encodePrimitive address, invalid type %T", value)
 		}
-		return value, nil
+		return client.Address(v), nil
 	case contract.TBytes:
-		b, ok := value.(contract.Bytes)
+		v, ok := value.(contract.Bytes)
 		if !ok {
 			return nil, errors.Errorf("fail encodePrimitive []byte, invalid type %T", value)
 		}
-		return client.NewHexBytes(b), nil
+		return client.NewHexBytes(v), nil
 	case contract.TBoolean:
-		b, ok := value.(contract.Boolean)
+		v, ok := value.(contract.Boolean)
 		if !ok {
 			return nil, errors.Errorf("fail encodePrimitive bool, invalid type %T", value)
 		}
-		return NewHexBool(bool(b)), nil
+		return NewHexBool(bool(v)), nil
 	default:
 		return nil, errors.New("fail encodePrimitive, not supported")
 	}

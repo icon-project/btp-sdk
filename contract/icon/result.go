@@ -59,21 +59,6 @@ func NewTxResult(txr *client.TransactionResult) (contract.TxResult, error) {
 	return r, nil
 }
 
-func (h *Handler) GetResult(id contract.TxID) (contract.TxResult, error) {
-	txh, ok := id.(*client.HexBytes)
-	if !ok {
-		return nil, errors.Errorf("fail GetResult, invalid type %T", id)
-	}
-	p := &client.TransactionHashParam{
-		Hash: *txh,
-	}
-	txr, err := h.a.GetTransactionResult(p)
-	if err != nil {
-		return nil, err
-	}
-	return NewTxResult(txr)
-}
-
 type BaseEvent struct {
 	addr      contract.Address
 	signature EventSignature

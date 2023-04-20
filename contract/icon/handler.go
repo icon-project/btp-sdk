@@ -73,6 +73,8 @@ func (h *Handler) callData(m *contract.MethodSpec, params contract.Params) (*cli
 				return nil, err
 			}
 		}
+		h.l.Tracef("callData name:%s param:%v encoded:%v type:%T\n",
+			v.Name, param, r[k], r[k])
 	}
 	return &client.CallData{
 		Method: m.Name,
@@ -134,8 +136,24 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 		return nil, contract.NewRequireSignatureError(hash, options)
 	}
 	p.Signature = base64.StdEncoding.EncodeToString(opt.Signature)
-	//FIXME convert client.HexBytes to contract.TxID
-	return h.a.SendTransaction(p)
+	var txh *client.HexBytes
+	if txh, err = h.a.SendTransaction(p); err != nil {
+		return nil, errors.Wrapf(err, "fail to SendTransaction err:%s", err.Error())
+	}
+	return *txh, err
+}
+
+func (h *Handler) GetResult(id contract.TxID) (contract.TxResult, error) {
+	txh, ok := id.(client.HexBytes)
+	if !ok {
+		return nil, errors.Errorf("fail GetResult, invalid type %T", id)
+	}
+	p := &client.TransactionHashParam{Hash: txh}
+	txr, err := h.a.GetTransactionResult(p)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fail to GetTransactionResult err:%s", err.Error())
+	}
+	return NewTxResult(txr)
 }
 
 type CallOption struct {
@@ -167,7 +185,7 @@ func (h *Handler) Call(method string, params contract.Params, options contract.O
 
 	var ret interface{}
 	if err = h.a.Call(p, &ret); err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "fail to Call err:%s", err.Error())
 	}
 	return decode(m.Output, ret)
 }

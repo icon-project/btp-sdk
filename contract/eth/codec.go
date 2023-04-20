@@ -33,7 +33,7 @@ var (
 )
 
 func init() {
-	codecLogger.SetLevel(log.TraceLevel)
+	codecLogger.SetLevel(log.DebugLevel)
 }
 
 func encode(s abi.Type, value interface{}) (interface{}, error) {
