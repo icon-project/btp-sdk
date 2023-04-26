@@ -17,8 +17,6 @@
 package icon
 
 import (
-	"bytes"
-
 	"github.com/icon-project/btp2/chain/icon/client"
 	"github.com/icon-project/btp2/common/errors"
 
@@ -48,30 +46,67 @@ func NewTxResult(txr *client.TransactionResult) (contract.TxResult, error) {
 		TransactionResult: txr,
 		events:            make([]contract.BaseEvent, len(txr.EventLogs)),
 	}
+	h, err := txr.BlockHeight.Value()
+	if err != nil {
+		return nil, err
+	}
+	bh, err := txr.BlockHash.Value()
+	if err != nil {
+		return nil, err
+	}
+	txh, err := txr.TxHash.Value()
+	if err != nil {
+		return nil, err
+	}
 	for i, l := range txr.EventLogs {
 		r.events[i] = &BaseEvent{
-			addr:      contract.Address(l.Addr),
-			signature: EventSignature(l.Indexed[0]),
-			indexed:   len(l.Indexed) - 1,
-			values:    append(l.Indexed[1:], l.Data...),
+			blockHeight: h,
+			blockHash:   bh,
+			txHash:      txh,
+			indexInTx:   i,
+			addr:        contract.Address(l.Addr),
+			sigMatcher:  SignatureMatcher(l.Indexed[0]),
+			indexed:     len(l.Indexed) - 1,
+			values:      append(l.Indexed[1:], l.Data...),
 		}
 	}
 	return r, nil
 }
 
+func NewBaseEvents(logs []struct {
+	Addr    client.Address `json:"scoreAddress"`
+	Indexed []string       `json:"indexed"`
+	Data    []string       `json:"data"`
+}) []contract.BaseEvent {
+	events := make([]contract.BaseEvent, len(logs))
+	for i, l := range logs {
+		events[i] = &BaseEvent{
+			addr:       contract.Address(l.Addr),
+			sigMatcher: SignatureMatcher(l.Indexed[0]),
+			indexed:    len(l.Indexed) - 1,
+			values:     append(l.Indexed[1:], l.Data...),
+		}
+	}
+	return events
+}
+
 type BaseEvent struct {
-	addr      contract.Address
-	signature EventSignature
-	indexed   int
-	values    []string
+	blockHeight int64
+	blockHash   []byte
+	txHash      []byte
+	indexInTx   int
+	addr        contract.Address
+	sigMatcher  SignatureMatcher
+	indexed     int
+	values      []string
 }
 
 func (e *BaseEvent) Address() contract.Address {
 	return e.addr
 }
 
-func (e *BaseEvent) Signature() contract.EventSignature {
-	return e.signature
+func (e *BaseEvent) MatchSignature(v string) bool {
+	return e.sigMatcher.Match(v)
 }
 
 func (e *BaseEvent) Indexed() int {
@@ -85,9 +120,9 @@ func (e *BaseEvent) IndexedValue(i int) contract.EventIndexedValue {
 	return nil
 }
 
-type EventSignature string
+type SignatureMatcher string
 
-func (s EventSignature) Match(v string) bool {
+func (s SignatureMatcher) Match(v string) bool {
 	return string(s) == v
 }
 
@@ -111,11 +146,32 @@ func (i EventIndexedValue) Match(v interface{}) bool {
 
 type Event struct {
 	*BaseEvent
-	params contract.Params
+	signature string
+	params    contract.Params
+}
+
+func (e *Event) Signature() string {
+	return e.signature
 }
 
 func (e *Event) Params() contract.Params {
 	return e.params
+}
+
+func NewEvent(spec contract.EventSpec, be *BaseEvent) (*Event, error) {
+	params := make(contract.Params)
+	for i, s := range spec.Inputs {
+		v, err := decode(s.Type, be.values[i])
+		if err != nil {
+			return nil, err
+		}
+		params[s.Name] = v
+	}
+	return &Event{
+		BaseEvent: be,
+		signature: spec.Signature,
+		params:    params,
+	}, nil
 }
 
 const (
@@ -128,70 +184,56 @@ type EventFilter struct {
 	params  contract.Params
 }
 
-func (e *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
-	if e.address != event.Address() {
+func (f *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
+	if f.address != event.Address() {
 		if failIfNotMatchedInEventFilter {
 			return nil, errors.Errorf("address expect:%v actual:%v",
-				e.address, event.Address())
+				f.address, event.Address())
 		}
 		return nil, nil
 	}
-	if !event.Signature().Match(e.spec.Signature) {
+	if !event.MatchSignature(f.spec.Signature) {
 		if failIfNotMatchedInEventFilter {
 			return nil, errors.Errorf("signature expect:%v actual:%v",
-				e.spec.Signature, event.Signature().(*EventSignature))
+				f.spec.Signature, event.(*BaseEvent).sigMatcher)
 		}
 		return nil, nil
 	}
-	if e.spec.Indexed != event.Indexed() {
+	if f.spec.Indexed != event.Indexed() {
 		if failIfNotMatchedInEventFilter {
 			return nil, errors.Errorf("indexed expect:%v actual:%v",
-				e.spec.Indexed, event.Indexed())
+				f.spec.Indexed, event.Indexed())
 		}
 		return nil, nil
 	}
-	l, ok := event.(*BaseEvent)
+	be, ok := event.(*BaseEvent)
 	if !ok {
 		return nil, errors.Errorf("invalid type event %T", event)
 	}
-	params := make(contract.Params)
-	for i, s := range e.spec.Inputs {
-		v, err := decode(s.Type, l.values[i])
-		if err != nil {
-			return nil, err
-		}
-		params[s.Name] = v
-		if p, exists := e.params[s.Name]; exists {
+	e, err := NewEvent(f.spec, be)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range f.params {
+		if p, exists := e.params[k]; exists {
 			equals := false
-			switch s.Type.TypeID {
-			case contract.TInteger:
-				equals = p.(contract.Integer) == v.(contract.Integer)
-			case contract.TString:
-				equals = p.(contract.String) == v.(contract.String)
-			case contract.TAddress:
-				equals = p.(contract.Address) == v.(contract.Address)
-			case contract.TBytes:
-				equals = bytes.Equal(p.(contract.Bytes), v.(contract.Bytes))
-			case contract.TBoolean:
-				equals = p.(contract.Boolean) == v.(contract.Boolean)
-			default:
-				panic("unreachable code")
+			if equals, err = contract.EqualParam(f.spec.InputMap[k].Type, p, v); err != nil {
+				return nil, err
 			}
 			if !equals {
 				if failIfNotMatchedInEventFilter {
 					return nil, errors.Errorf("equality name:%s expect:%v actual:%v",
-						s.Name, p, v)
+						k, p, v)
 				}
 				return nil, nil
 			}
+		} else {
+			return nil, errors.Errorf("not exists param in event name:%s", k)
 		}
 	}
-	return &Event{
-		BaseEvent: l,
-		params:    params,
-	}, nil
+	return e, nil
 }
 
-func (e *EventFilter) Signature() string {
-	return e.spec.Signature
+func (f *EventFilter) Signature() string {
+	return f.spec.Signature
 }

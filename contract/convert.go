@@ -17,6 +17,7 @@
 package contract
 
 import (
+	"bytes"
 	"math/big"
 	"reflect"
 	"strings"
@@ -226,6 +227,25 @@ func StructOf(value interface{}) (Struct, error) {
 	}
 }
 
+func MustAddressOf(value interface{}) Address {
+	ret, err := AddressOf(value)
+	if err != nil {
+		log.Panicf("fail to AddressOf err:%v", err)
+	}
+	return ret
+}
+
+func AddressOf(value interface{}) (Address, error) {
+	switch v := value.(type) {
+	case Address:
+		return v, nil
+	case string:
+		return Address(v), nil
+	default:
+		return "", errors.Errorf("invalid type %T", v)
+	}
+}
+
 func MustParamsOf(value interface{}) Params {
 	ret, err := ParamsOf(value)
 	if err != nil {
@@ -260,5 +280,104 @@ func ParamsOf(value interface{}) (Params, error) {
 			ret[k.String()] = p
 		}
 		return ret, nil
+	}
+}
+
+func EqualParam(s TypeSpec, a, b interface{}) (equals bool, err error) {
+	if s.Dimension == 0 {
+		switch s.TypeID {
+		case TInteger:
+			var ca, cb Integer
+			if ca, err = IntegerOf(a); err != nil {
+				return false, err
+			}
+			if cb, err = IntegerOf(b); err != nil {
+				return false, err
+			}
+			return ca == cb, nil
+		case TBoolean:
+			var ca, cb Boolean
+			if ca, err = BooleanOf(a); err != nil {
+				return false, err
+			}
+			if cb, err = BooleanOf(b); err != nil {
+				return false, err
+			}
+			return ca == cb, nil
+		case TString:
+			var ca, cb String
+			if ca, err = StringOf(a); err != nil {
+				return false, err
+			}
+			if cb, err = StringOf(b); err != nil {
+				return false, err
+			}
+			return ca == cb, nil
+		case TBytes:
+			var ca, cb Bytes
+			if ca, err = BytesOf(a); err != nil {
+				return false, err
+			}
+			if cb, err = BytesOf(b); err != nil {
+				return false, err
+			}
+			return bytes.Equal(ca, cb), nil
+		case TStruct:
+			var ca, cb Struct
+			if ca, err = StructOf(a); err != nil {
+				return false, err
+			}
+			if cb, err = StructOf(b); err != nil {
+				return false, err
+			}
+			pa, pb := ca.Params(), cb.Params()
+			for n, f := range s.Resolved.FieldMap {
+				if equals, err = EqualParam(f.Type, pa[n], pb[n]); err != nil {
+					return false, err
+				} else if !equals {
+					return false, nil
+				}
+			}
+			return true, nil
+		case TAddress:
+			var ca, cb Address
+			if ca, err = AddressOf(a); err != nil {
+				return false, err
+			}
+			if cb, err = AddressOf(b); err != nil {
+				return false, err
+			}
+			return ca == cb, nil
+		default:
+			return false, errors.Errorf("not comparable spec %v", s)
+		}
+	} else {
+		av, bv := reflect.ValueOf(a), reflect.ValueOf(b)
+		if av.Kind() != reflect.Array && av.Kind() != reflect.Slice &&
+			bv.Kind() != reflect.Array && bv.Kind() != reflect.Slice {
+			return false, errors.Errorf("invalid type a:%T b:%T", a, b)
+		}
+		if av.Len() != bv.Len() {
+			return false, nil
+		}
+		es := TypeSpec{
+			Name:      s.Name,
+			Dimension: s.Dimension - 1,
+			Type:      s.Type,
+			TypeID:    s.TypeID,
+			Resolved:  s.Resolved,
+		}
+		for i := 0; i < av.Len(); i++ {
+			ae := av.Index(i).Interface()
+			be := bv.Index(i).Interface()
+			equals, err = EqualParam(es, ae, be)
+			if err != nil {
+				return false, err
+			}
+			if !equals {
+				return false, nil
+			}
+		}
+		return true, nil
 	}
 }

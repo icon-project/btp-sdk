@@ -40,7 +40,7 @@ const (
 )
 
 var (
-	DefaultStepLimit = uint64(8000000)
+	DefaultGasLimit = uint64(8000000)
 )
 
 func init() {

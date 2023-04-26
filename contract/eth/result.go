@@ -57,9 +57,9 @@ func NewTxResult(txr *types.Receipt) (contract.TxResult, error) {
 	}
 	for i, l := range txr.Logs {
 		r.events[i] = &BaseEvent{
-			Log:       l,
-			signature: EventSignature(l.Topics[0].String()),
-			indexed:   len(l.Topics) - 1,
+			Log:        l,
+			sigMatcher: SignatureMatcher(l.Topics[0].String()),
+			indexed:    len(l.Topics) - 1,
 		}
 	}
 	return r, nil
@@ -67,16 +67,17 @@ func NewTxResult(txr *types.Receipt) (contract.TxResult, error) {
 
 type BaseEvent struct {
 	*types.Log
-	signature EventSignature
-	indexed   int
+	sigMatcher SignatureMatcher
+	indexed    int
+	indexInTx  int
 }
 
 func (e *BaseEvent) Address() contract.Address {
 	return contract.Address(e.Log.Address.String())
 }
 
-func (e *BaseEvent) Signature() contract.EventSignature {
-	return e.signature
+func (e *BaseEvent) MatchSignature(v string) bool {
+	return e.sigMatcher.Match(v)
 }
 
 func (e *BaseEvent) Indexed() int {
@@ -90,9 +91,9 @@ func (e *BaseEvent) IndexedValue(i int) contract.EventIndexedValue {
 	return nil
 }
 
-type EventSignature string
+type SignatureMatcher string
 
-func (s EventSignature) Match(v string) bool {
+func (s SignatureMatcher) Match(v string) bool {
 	return string(s) == crypto.Keccak256Hash([]byte(v)).String()
 }
 
@@ -191,11 +192,50 @@ func makeWords(value interface{}) ([]byte, error) {
 
 type Event struct {
 	contract.BaseEvent
-	params contract.Params
+	signature string
+	params    contract.Params
+}
+
+func (e *Event) Signature() string {
+	return e.signature
 }
 
 func (e *Event) Params() contract.Params {
 	return e.params
+}
+
+func NewEvent(in contract.EventSpec, out abi.Event, outIndexed abi.Arguments, be *BaseEvent) (*Event, error) {
+	m := make(map[string]interface{})
+	for i, arg := range outIndexed {
+		if arg.Type.T == abi.TupleTy {
+			m[arg.Name] = be.Topics[i+1]
+		} else {
+			if err := abi.ParseTopicsIntoMap(m, abi.Arguments{arg}, be.Topics[i+1:i+2]); err != nil {
+				return nil, errors.Wrapf(err, "fail to ParseTopicsIntoMap err:%s", err.Error())
+			}
+		}
+	}
+	if err := out.Inputs.NonIndexed().UnpackIntoMap(m, be.Data); err != nil {
+		return nil, errors.Wrapf(err, "fail to UnpackIntoMap err:%s", err.Error())
+	}
+	params := make(contract.Params)
+	for i, s := range in.Inputs {
+		if i < in.Indexed && (s.Type.Dimension > 0 || s.Type.TypeID == contract.TStruct ||
+			s.Type.TypeID == contract.TString || s.Type.TypeID == contract.TBytes) {
+			v := Topic(be.Topics[i+1].Bytes())
+			params[s.Name] = v
+		} else {
+			v, err := decode(s.Type, m[s.Name])
+			if err != nil {
+				return nil, err
+			}
+			params[s.Name] = v
+		}
+	}
+	return &Event{
+		BaseEvent: be,
+		params:    params,
+	}, nil
 }
 
 const (
@@ -211,165 +251,68 @@ type EventFilter struct {
 	hashedParams map[string]Topic
 }
 
-func (e *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
-	if e.address != event.Address() {
+func (f *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
+	if f.address != event.Address() {
 		if failIfNotMatchedInEventFilter {
 			return nil, errors.Errorf("address expect:%v actual:%v",
-				e.address, event.Address())
+				f.address, event.Address())
 		}
 		return nil, nil
 	}
-	if !event.Signature().Match(e.out.Sig) {
+	if !event.MatchSignature(f.out.Sig) {
 		if failIfNotMatchedInEventFilter {
 			return nil, errors.Errorf("signature expect:%v actual:%v",
-				e.out.Sig, event.Signature().(*EventSignature))
+				f.out.Sig, event.(*BaseEvent).sigMatcher)
 		}
 		return nil, nil
 	}
-	if event.Indexed() != e.in.Indexed {
+	if event.Indexed() != f.in.Indexed {
 		if failIfNotMatchedInEventFilter {
 			return nil, errors.Errorf("indexed expect:%v actual:%v",
-				e.in.Indexed, event.Indexed())
+				f.in.Indexed, event.Indexed())
 		}
 		return nil, nil
 	}
-	l, ok := event.(*BaseEvent)
+	be, ok := event.(*BaseEvent)
 	if !ok {
 		return nil, errors.Errorf("invalid type event %T", event)
 	}
-	out := make(map[string]interface{})
-	for i, arg := range e.outIndexed {
-		if arg.Type.T == abi.TupleTy {
-			out[arg.Name] = l.Topics[i+1]
-		} else {
-			if err := abi.ParseTopicsIntoMap(out, abi.Arguments{arg}, l.Topics[i+1:i+2]); err != nil {
-				return nil, errors.Wrapf(err, "fail to ParseTopicsIntoMap err:%s", err.Error())
-			}
-		}
+	e, err := NewEvent(f.in, f.out, f.outIndexed, be)
+	if err != nil {
+		return nil, err
 	}
-	if err := e.out.Inputs.NonIndexed().UnpackIntoMap(out, l.Data); err != nil {
-		return nil, errors.Wrapf(err, "fail to UnpackIntoMap err:%s", err.Error())
-	}
-
-	params := make(contract.Params)
-	for i, s := range e.in.Inputs {
-		if i < e.in.Indexed && (s.Type.Dimension > 0 || s.Type.TypeID == contract.TStruct ||
-			s.Type.TypeID == contract.TString || s.Type.TypeID == contract.TBytes) {
-			v := Topic(l.Topics[i+1].Bytes())
-			params[s.Name] = v
-			if p, exists := e.hashedParams[s.Name]; exists {
-				if !v.Match(p) {
+	for k, v := range f.params {
+		if p, exists := e.params[k]; exists {
+			s := f.in.InputMap[k]
+			if hp, hashed := f.hashedParams[k]; hashed && (s.Type.Dimension > 0 || s.Type.TypeID == contract.TStruct ||
+				s.Type.TypeID == contract.TString || s.Type.TypeID == contract.TBytes) {
+				if !hp.Match(p) {
 					if failIfNotMatchedInEventFilter {
 						return nil, errors.Errorf("name:%s expect:%v actual:%v",
 							s.Name, p, v)
 					}
 					return nil, nil
 				}
-			}
-		} else {
-			v, err := decode(s.Type, out[s.Name])
-			if err != nil {
-				return nil, err
-			}
-			params[s.Name] = v
-			if p, exists := e.params[s.Name]; exists {
-				equals, err := equalEventValue(s.Type, p, v)
-				if err != nil {
+			} else {
+				equals := false
+				if equals, err = contract.EqualParam(s.Type, p, v); err != nil {
 					return nil, err
 				}
 				if !equals {
 					if failIfNotMatchedInEventFilter {
-						return nil, errors.Errorf("name:%s expect:%v actual:%v",
-							s.Name, p, v)
+						return nil, errors.Errorf("equality name:%s expect:%v actual:%v",
+							k, p, v)
 					}
 					return nil, nil
 				}
 			}
-		}
-	}
-	return &Event{
-		BaseEvent: event,
-		params:    params,
-	}, nil
-}
-
-func equalEventValue(s contract.TypeSpec, p, v interface{}) (equals bool, err error) {
-	if s.Dimension > 0 {
-		return equalEventArrayValue(s, 1, reflect.ValueOf(p), reflect.ValueOf(v))
-	} else {
-		return equalEventPrimitiveValue(s, p, v)
-	}
-}
-
-func equalEventPrimitiveValue(s contract.TypeSpec, p, v interface{}) (equals bool, err error) {
-	switch s.TypeID {
-	case contract.TInteger:
-		equals = p.(contract.Integer) == v.(contract.Integer)
-	case contract.TString:
-		equals = p.(contract.String) == v.(contract.String)
-	case contract.TAddress:
-		equals = p.(contract.Address) == v.(contract.Address)
-	case contract.TBytes:
-		equals = bytes.Equal(p.(contract.Bytes), v.(contract.Bytes))
-	case contract.TBoolean:
-		equals = p.(contract.Boolean) == v.(contract.Boolean)
-	case contract.TStruct:
-		var m1, m2 map[string]interface{}
-		if m1, err = structToMap(p); err != nil {
-			return false, err
-		}
-		if m2, err = structToMap(v); err != nil {
-			return false, err
-		}
-		for n, f := range s.Resolved.FieldMap {
-			if equals, err = equalEventValue(f.Type, m1[n], m2[n]); err != nil {
-				return false, err
-			} else if !equals {
-				return false, nil
-			}
-		}
-		return true, nil
-	default:
-		return false, errors.New("unreachable code")
-	}
-	return equals, nil
-}
-
-func equalEventArrayValue(s contract.TypeSpec, dimension int, p, v reflect.Value) (equals bool, err error) {
-	if p.Len() != v.Len() {
-		return false, errors.New("mismatch array length")
-	}
-	for i := 0; i < p.Len(); i++ {
-		if s.Dimension == dimension {
-			equals, err = equalEventPrimitiveValue(s, p.Index(i).Interface(), v.Index(i).Interface())
 		} else {
-			equals, err = equalEventArrayValue(s, dimension+1, p.Index(i), v.Index(i))
-		}
-		if err != nil {
-			return false, err
-		}
-		if !equals {
-			return false, nil
+			return nil, errors.Errorf("not exists param in event name:%s", k)
 		}
 	}
-	return true, nil
+	return e, nil
 }
 
-func structToMap(obj interface{}) (map[string]interface{}, error) {
-	var m map[string]interface{}
-	st, ok := obj.(contract.Struct)
-	if ok {
-		m = st.Params()
-	} else {
-		if m, ok = obj.(contract.Params); !ok {
-			if m, ok = obj.(map[string]interface{}); !ok {
-				return nil, errors.Errorf("fail encodeStruct, invalid type %T", obj)
-			}
-		}
-	}
-	return m, nil
-}
-
-func (e *EventFilter) Signature() string {
-	return e.out.Sig
+func (f *EventFilter) Signature() string {
+	return f.out.Sig
 }

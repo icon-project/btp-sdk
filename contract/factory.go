@@ -33,13 +33,14 @@ type TxResult interface {
 }
 type BaseEvent interface {
 	Address() Address
-	Signature() EventSignature
+	MatchSignature(v string) bool
 	Indexed() int
 	IndexedValue(i int) EventIndexedValue
 }
 
 type Event interface {
 	BaseEvent
+	Signature() string
 	Params() Params
 }
 
@@ -48,7 +49,7 @@ type EventFilter interface {
 	Signature() string
 }
 
-type EventSignature interface {
+type SignatureMatcher interface {
 	Match(v string) bool
 }
 

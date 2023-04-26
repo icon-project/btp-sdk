@@ -127,8 +127,8 @@ func (b HexBool) Value() (bool, error) {
 
 func NewHexBool(v bool) HexBool {
 	if v {
-		return HexBool("0x1")
+		return "0x1"
 	} else {
-		return HexBool("0x0")
+		return "0x0"
 	}
 }

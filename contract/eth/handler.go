@@ -155,7 +155,7 @@ func (h *Handler) newBaseTx(opt *InvokeOptions, data []byte) (p *baseTx, err err
 		ChainID:  h.a.chainID,
 		To:       &h.address,
 		Data:     data,
-		GasLimit: DefaultStepLimit,
+		GasLimit: DefaultGasLimit,
 	}
 	if len(opt.Value) > 0 {
 		if p.Value, err = opt.Value.AsBigInt(); err != nil {
@@ -384,11 +384,10 @@ func (h *Handler) EventFilter(name string, params contract.Params) (contract.Eve
 	if err := contract.ParamsTypeCheck(in, params); err != nil {
 		return nil, err
 	}
+	outIndexed := getIndexedArguments(out)
 	hashedParams := make(map[string]Topic)
-	var outIndexed abi.Arguments
-	for _, arg := range out.Inputs {
+	for _, arg := range outIndexed {
 		if arg.Indexed {
-			outIndexed = append(outIndexed, arg)
 			if p, ok := params[arg.Name]; ok {
 				t, err := NewTopic(p)
 				if err != nil {
@@ -406,6 +405,16 @@ func (h *Handler) EventFilter(name string, params contract.Params) (contract.Eve
 		params:       params,
 		hashedParams: hashedParams,
 	}, nil
+}
+
+func getIndexedArguments(spec abi.Event) abi.Arguments {
+	var outIndexed abi.Arguments
+	for _, arg := range spec.Inputs {
+		if arg.Indexed {
+			outIndexed = append(outIndexed, arg)
+		}
+	}
+	return outIndexed
 }
 
 func (h *Handler) Spec() contract.Spec {

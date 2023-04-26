@@ -304,7 +304,7 @@ func autoSign(w wallet.Wallet, h *Handler, method string, params contract.Params
 
 func assertBaseEvent(t *testing.T, el contract.BaseEvent, address contract.Address, signature string, indexed int, params contract.Params) {
 	assert.Equal(t, address, el.Address())
-	assert.True(t, el.Signature().Match(signature))
+	assert.True(t, el.MatchSignature(signature))
 	assert.Equal(t, indexed, el.Indexed())
 	for i := 0; i < el.Indexed(); i++ {
 		name := fmt.Sprintf("arg%d", i+1)
