@@ -35,9 +35,10 @@ const (
 )
 
 var (
-	DefaultVersion      = client.NewHexInt(client.JsonrpcApiVersion)
-	DefaultStepLimit    = client.NewHexInt(2500000000) //client.HexInt("0x9502f900")
-	txSerializeExcludes = map[string]bool{"signature": true}
+	DefaultVersion           = client.NewHexInt(client.JsonrpcApiVersion)
+	DefaultStepLimit         = client.NewHexInt(2500000000) //client.HexInt("0x9502f900")
+	txSerializeExcludes      = map[string]bool{"signature": true}
+	DefaultTransportLogLevel = log.TraceLevel.String()
 )
 
 func init() {
@@ -51,20 +52,30 @@ type Adaptor struct {
 }
 
 type AdaptorOption struct {
-	NetworkID client.HexInt `json:"nid"`
+	NetworkID         client.HexInt `json:"nid"`
+	TransportLogLevel string        `json:"transport-log-level"`
 }
 
 func NewAdaptor(endpoint string, options contract.Options, l log.Logger) (contract.Adaptor, error) {
-	c := client.NewClient(endpoint, l)
-	c.Client = jsonrpc.NewJsonRpcClient(contract.NewHttpClient(l), endpoint)
-	a := &Adaptor{
-		Client: c,
-		l:      l,
-	}
-	if err := contract.DecodeOptions(options, &a.opt); err != nil {
+	opt := &AdaptorOption{}
+	if err := contract.DecodeOptions(options, &opt); err != nil {
 		return nil, err
 	}
-	return a, nil
+	if len(opt.TransportLogLevel) == 0 {
+		opt.TransportLogLevel = DefaultTransportLogLevel
+	}
+	tlv, err := log.ParseLevel(opt.TransportLogLevel)
+	if err != nil {
+		return nil, err
+	}
+	c := client.NewClient(endpoint, l)
+	c.Client = jsonrpc.NewJsonRpcClient(contract.NewHttpClient(tlv, l), endpoint)
+
+	return &Adaptor{
+		Client:      c,
+		opt:         *opt,
+		l:           l,
+	}, nil
 }
 
 func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handler, error) {

@@ -40,7 +40,8 @@ const (
 )
 
 var (
-	DefaultGasLimit = uint64(8000000)
+	DefaultGasLimit          = uint64(8000000)
+	DefaultTransportLogLevel = log.TraceLevel.String()
 )
 
 func init() {
@@ -49,31 +50,49 @@ func init() {
 
 type Adaptor struct {
 	*ethclient.Client
-	chainID *big.Int
-	l       log.Logger
+	chainID     *big.Int
+	opt         AdaptorOption
+	l           log.Logger
 }
 
 type AdaptorOption struct {
+	TransportLogLevel string           `json:"transport-log-level"`
 }
 
 func NewAdaptor(endpoint string, options contract.Options, l log.Logger) (contract.Adaptor, error) {
+	opt := &AdaptorOption{}
+	if err := contract.DecodeOptions(options, &opt); err != nil {
+		return nil, err
+	}
+	if len(opt.TransportLogLevel) == 0 {
+		opt.TransportLogLevel = DefaultTransportLogLevel
+	}
+	tlv, err := log.ParseLevel(opt.TransportLogLevel)
+	if err != nil {
+		return nil, err
+	}
 	ethLog.Root().SetHandler(ethLog.FuncHandler(func(r *ethLog.Record) error {
 		l.Log(log.Level(r.Lvl+1), r.Msg)
 		return nil
 	}))
-	rpcClient, err := rpc.DialHTTPWithClient(endpoint, contract.NewHttpClient(l))
-	//rpcClient, err := rpc.Dial(endpoint)
+	rc, err := rpc.DialOptions(
+		context.Background(),
+		endpoint,
+		rpc.WithHTTPClient(contract.NewHttpClient(tlv, l)))
 	if err != nil {
 		return nil, err
 	}
-	a := &Adaptor{
-		Client: ethclient.NewClient(rpcClient),
-		l:      l,
-	}
-	if a.chainID, err = a.ChainID(context.Background()); err != nil {
+	c := ethclient.NewClient(rc)
+	chainID, err := c.ChainID(context.Background())
+	if err != nil {
 		return nil, errors.Wrapf(err, "fail to ChainID err:%s", err.Error())
 	}
-	return a, nil
+	return &Adaptor{
+		Client:      c,
+		chainID:     chainID,
+		opt:         *opt,
+		l:           l,
+	}, nil
 }
 
 func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handler, error) {

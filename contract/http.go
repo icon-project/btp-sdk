@@ -28,7 +28,8 @@ import (
 
 type HttpTransport struct {
 	*http.Transport
-	l log.Logger
+	lv log.Level
+	l  log.Logger
 }
 
 func (t *HttpTransport) log(rc io.ReadCloser) (io.ReadCloser, error) {
@@ -39,7 +40,7 @@ func (t *HttpTransport) log(rc io.ReadCloser) (io.ReadCloser, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to ioutil.ReadAll err:%s", err.Error())
 	}
-	t.l.Debugln(string(b))
+	t.l.Logln(t.lv, string(b))
 	return ioutil.NopCloser(bytes.NewBuffer(b)), nil
 }
 
@@ -56,15 +57,16 @@ func (t *HttpTransport) RoundTrip(req *http.Request) (resp *http.Response, err e
 	return resp, err
 }
 
-func NewHttpTransport(l log.Logger) *HttpTransport {
+func NewHttpTransport(lv log.Level, l log.Logger) *HttpTransport {
 	return &HttpTransport{
 		Transport: &http.Transport{},
+		lv:        lv,
 		l:         l,
 	}
 }
 
-func NewHttpClient(l log.Logger) *http.Client {
+func NewHttpClient(lv log.Level, l log.Logger) *http.Client {
 	return &http.Client{
-		Transport: NewHttpTransport(l),
+		Transport: NewHttpTransport(lv, l),
 	}
 }
