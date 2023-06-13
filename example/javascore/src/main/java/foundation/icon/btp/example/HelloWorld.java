@@ -32,6 +32,17 @@ public class HelloWorld {
         return varDB.get();
     }
 
+    @External
+    public void setName(String name) {
+        varDB.set(name);
+        HelloEvent(name);
+    }
+
+    @EventLog
+    public void HelloEvent(String name) {
+
+    }
+
     @External(readonly = true)
     public Integers callInteger(byte arg1, short arg2, int arg3, long arg4,
                                 BigInteger arg5, BigInteger arg6, BigInteger arg7, BigInteger arg8) {

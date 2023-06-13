@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/icon-project/btp2/chain/icon/client"
 	"github.com/icon-project/btp2/common/codec"
@@ -33,16 +34,10 @@ import (
 )
 
 const (
-	endpoint     = "http://localhost:19080/api/v3/icon"
-	nid          = "0x3"
-	spec         = "../../example/javascore/build/generated/contractSpec.json"
-	addr         = "cxfdc9126bcd0416e30b907d7408810d7ba312d695"
-	keystoreName = "../../example/javascore/src/test/resources/keystore.json"
-	keystorePass = "gochain"
+	specFile = "../../example/javascore/build/generated/contractSpec.json"
 )
 
 var (
-	w             = loadWallet(keystoreName, keystorePass)
 	byteVal       = contract.Integer("0x7f")
 	shortVal      = contract.Integer("0x7fff")
 	intVal        = contract.Integer("0x7fffffff")
@@ -59,22 +54,7 @@ var (
 	structVal     = struct {
 		BooleanVal contract.Boolean `json:"booleanVal"`
 	}{booleanVal}
-	adaptorOpt = AdaptorOption{
-		NetworkID: client.HexInt(nid),
-	}
 )
-
-func loadWallet(keyStoreFile, keyPassword string) wallet.Wallet {
-	ks, err := ioutil.ReadFile(keyStoreFile)
-	if err != nil {
-		panic(err)
-	}
-	w, err := wallet.DecryptKeyStore(ks, []byte(keyPassword))
-	if err != nil {
-		panic(err)
-	}
-	return w
-}
 
 func assertStruct(t *testing.T, expected, actual interface{}) {
 	var ep contract.Params
@@ -93,20 +73,13 @@ func assertStruct(t *testing.T, expected, actual interface{}) {
 }
 
 func handler(t *testing.T) *Handler {
-	l := log.GlobalLogger()
-	opt, err := contract.EncodeOptions(adaptorOpt)
-	if err != nil {
-		assert.FailNow(t, "fail to EncodeOptions", err)
-	}
-	a, err := contract.NewAdaptor(NetworkType, endpoint, opt, l)
-	if err != nil {
-		assert.FailNow(t, "fail to NewAdaptor", err)
-	}
-	b, err := ioutil.ReadFile(spec)
+	b, err := ioutil.ReadFile(specFile)
 	if err != nil {
 		assert.FailNow(t, "fail to read file", err)
 	}
-	h, err := NewHandler(b, addr, a.(*Adaptor), l)
+	l := log.GlobalLogger()
+	a := adaptor(t)
+	h, err := NewHandler(b, addr, a, l)
 	if err != nil {
 		assert.FailNow(t, "fail to NewHandler", err)
 	}
@@ -447,4 +420,21 @@ func Test_invokeArray(t *testing.T) {
 	assert.NotNil(t, e, "event should match")
 
 	assertEvent(t, e, address, sig, indexed, evtParams)
+
+	var height int64
+	if height, err = r.(*TxResult).BlockHeight.Value(); err != nil {
+		assert.FailNow(t, "invalid blockHeight err:%s", err.Error())
+	}
+	ch := make(chan contract.Event, 1)
+	go func() {
+		err = h.MonitorEvent(func(e contract.Event) {
+			ch <- e
+		}, event, height)
+	}()
+	select {
+	case actual := <-ch:
+		assert.Equal(t, e, actual)
+	case <-time.After(time.Second * 5):
+		assert.FailNow(t, "timeout")
+	}
 }

@@ -512,3 +512,82 @@ func arrayTypeCheck(s *NameAndTypeSpec, dimension int, v reflect.Value) error {
 	}
 	return nil
 }
+
+// TypeSpecOf returns TypeSpec of given value,
+//type of value should be one of Integer, Boolean, String, Bytes, Address, Struct
+func TypeSpecOf(value interface{}) (*TypeSpec, error) {
+	specLogger.Tracef("TypeSpecOf type:%T value:%v", value, value)
+	v := reflect.ValueOf(value)
+	s := TypeIDByType(v.Type())
+	switch s {
+	case TUnknown:
+		if v.Type().Kind() == reflect.Array || v.Type().Kind() == reflect.Slice {
+			if v.Len() == 0 {
+				log.Panicln("invalid array length")
+			}
+			spec, err := TypeSpecOf(v.Index(0).Interface())
+			if err != nil {
+				return nil, err
+			}
+			return &TypeSpec{
+				Name:      spec.Name,
+				Dimension: spec.Dimension + 1,
+				TypeID:    spec.TypeID,
+				Type:      reflect.SliceOf(spec.Type),
+			}, nil
+		}
+		return nil, errors.Errorf("not supported type %v", v.Type())
+	case TStruct:
+		st, ok := v.Interface().(Struct)
+		if !ok {
+			return nil, errors.Errorf("invalid type %v", v.Type())
+		}
+		spec := &StructSpec{
+			Name:     st.Name,
+			Fields:   make([]NameAndTypeSpec, len(st.Fields)),
+			FieldMap: make(map[string]*NameAndTypeSpec),
+		}
+		sfs := make([]reflect.StructField, 0)
+		for i, f := range st.Fields {
+			fs, err := TypeSpecOf(f.Value)
+			if err != nil {
+				return nil, err
+			}
+			spec.Fields[i] = NameAndTypeSpec{
+				Name: f.Key,
+				Type: *fs,
+			}
+			spec.FieldMap[f.Key] = &spec.Fields[i]
+			sf := reflect.StructField{
+				Name: strings.ToUpper(f.Key[:1]) + f.Key[1:],
+				Type: fs.Type,
+				Tag:  reflect.StructTag("json:\"" + f.Key + "\""),
+			}
+			sfs = append(sfs, sf)
+		}
+		spec.Type = reflect.StructOf(sfs)
+		return &TypeSpec{
+			Name:     spec.Name,
+			Type:     spec.Type,
+			TypeID:   TStruct,
+			Resolved: spec,
+		}, nil
+	default:
+		types := []reflect.Type{
+			nil,
+			nil,
+			reflect.TypeOf(new(big.Int)),
+			reflect.TypeOf(true),
+			reflect.TypeOf(""),
+			reflect.TypeOf([]byte("")),
+			nil,
+			reflect.TypeOf(""),
+		}
+		//FIXME TypeSpec.Type should be golang type
+		return &TypeSpec{
+			Name:   s.String(),
+			Type:   types[s],
+			TypeID: s,
+		}, nil
+	}
+}

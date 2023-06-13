@@ -18,16 +18,14 @@ package eth
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/wallet"
@@ -37,15 +35,10 @@ import (
 )
 
 const (
-	endpoint     = "http://localhost:8545"
-	spec         = "../../example/solidity/artifacts/contracts/HelloWorld.sol/HelloWorld.json"
-	addr         = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
-	keystoreName = "../../example/solidity/test/keystore.json"
-	keystorePass = "hardhat"
+	specFile = "../../example/solidity/artifacts/contracts/HelloWorld.sol/HelloWorld.json"
 )
 
 var (
-	w             = loadWallet(keystoreName, keystorePass)
 	byteVal       = contract.Integer("0x7f")
 	shortVal      = contract.Integer("0x7fff")
 	intVal        = contract.Integer("0x7fffffff")
@@ -62,45 +55,7 @@ var (
 	structVal     = struct {
 		BooleanVal contract.Boolean `json:"booleanVal"`
 	}{booleanVal}
-
-	adaptorOpt = AdaptorOption{}
 )
-
-type Wallet struct {
-	*keystore.Key
-	PubKey *ecdsa.PublicKey
-}
-
-func (w *Wallet) Address() string {
-	return w.Key.Address.String()
-}
-
-func (w *Wallet) Sign(data []byte) ([]byte, error) {
-	return crypto.Sign(data, w.PrivateKey)
-}
-
-func (w *Wallet) PublicKey() []byte {
-	return crypto.FromECDSAPub(w.PubKey)
-}
-
-func (w *Wallet) ECDH(pubKey []byte) ([]byte, error) {
-	return nil, errors.New("not implemented")
-}
-
-func loadWallet(keyStoreFile, keyPassword string) wallet.Wallet {
-	ks, err := ioutil.ReadFile(keyStoreFile)
-	if err != nil {
-		panic(err)
-	}
-	key, err := keystore.DecryptKey(ks, keyPassword)
-	if err != nil {
-		panic(err)
-	}
-	return &Wallet{
-		Key:    key,
-		PubKey: &key.PrivateKey.PublicKey,
-	}
-}
 
 func assertStruct(t *testing.T, expected, actual interface{}) {
 	var ep contract.Params
@@ -119,17 +74,7 @@ func assertStruct(t *testing.T, expected, actual interface{}) {
 }
 
 func handler(t *testing.T) *Handler {
-	l := log.GlobalLogger()
-	l.SetLevel(log.TraceLevel)
-	opt, err := contract.EncodeOptions(adaptorOpt)
-	if err != nil {
-		assert.FailNow(t, "fail to EncodeOptions", err)
-	}
-	a, err := contract.NewAdaptor(NetworkType, endpoint, opt, l)
-	if err != nil {
-		assert.FailNow(t, "fail to NewAdaptor", err)
-	}
-	b, err := ioutil.ReadFile(spec)
+	b, err := ioutil.ReadFile(specFile)
 	if err != nil {
 		assert.FailNow(t, "fail to read file", err)
 	}
@@ -140,7 +85,10 @@ func handler(t *testing.T) *Handler {
 	if err != nil {
 		assert.FailNow(t, "fail to Unmarshal", err)
 	}
-	h, err := NewHandler(st.ABI, common.HexToAddress(addr), a.(*Adaptor), l)
+	a := adaptor(t, NetworkTypeEth2)
+	l := log.GlobalLogger()
+	l.SetLevel(log.TraceLevel)
+	h, err := NewHandler(st.ABI, common.HexToAddress(addr), a, l)
 	if err != nil {
 		assert.FailNow(t, "fail to NewHandler", err)
 	}
@@ -504,5 +452,29 @@ func Test_invokeArray(t *testing.T) {
 		assert.NotNil(t, e, "event should match")
 
 		assertEvent(t, e, address, sig, indexed, params)
+	}
+
+	ef, err := h.EventFilter(event, params)
+	assert.NoError(t, err)
+
+	e, err := ef.Filter(el)
+	assert.NoError(t, err)
+	assert.NotNil(t, e, "event should match")
+
+	assertEvent(t, e, address, sig, indexed, params)
+
+	height := r.(*TxResult).BlockNumber.Int64()
+	ch := make(chan contract.Event, 1)
+	go func() {
+		err = h.MonitorEvent(func(e contract.Event) {
+			ch <- e
+		}, event, height)
+	}()
+	select {
+	case actual := <-ch:
+		t.Logf("%+v", actual)
+		assert.Equal(t, e, actual)
+	case <-time.After(time.Second * 10):
+		assert.FailNow(t, "timeout")
 	}
 }

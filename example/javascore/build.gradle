@@ -68,6 +68,20 @@ optimizedJar {
     enableDebug = true
 }
 
+deployJar {
+    endpoints {
+        local {
+            uri = 'http://localhost:19080/api/v3/icon'
+            nid = 0x3
+        }
+    }
+    parameters {
+        arg('value', 'hello')
+    }
+    keystore = "$projectDir/src/test/resources/keystore.json"
+    password = file("$projectDir/src/test/resources/keysecret").text
+}
+
 generateContractSpec {
 }
 

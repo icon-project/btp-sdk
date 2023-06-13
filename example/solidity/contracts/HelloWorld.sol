@@ -15,6 +15,15 @@ contract HelloWorld {
         return _value;
     }
 
+    function setName(
+        string memory name
+    ) external {
+        _value = name;
+        emit HelloEvent(name);
+    }
+
+    event HelloEvent(string name);
+
     function callInteger(
         int8 arg1,
         int16 arg2,

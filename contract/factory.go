@@ -18,6 +18,7 @@ package contract
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
@@ -57,35 +58,80 @@ type EventIndexedValue interface {
 	Match(v interface{}) bool
 }
 
+type EventCallback func(e Event)
 type Handler interface {
 	Invoke(method string, params Params, options Options) (TxID, error)
 	GetResult(id TxID) (TxResult, error)
 	Call(method string, params Params, options Options) (ReturnValue, error)
 	EventFilter(name string, params Params) (EventFilter, error)
 	Spec() Spec
+	MonitorEvent(cb EventCallback, name string, height int64) error
 }
+
+type BaseEventCallback func(e BaseEvent)
+type BaseEventsCallback func(l []BaseEvent)
+
+const (
+	BlockStatusFinalized BlockStatus = iota
+	BlockStatusDropped
+	BlockStatusProposed
+)
+
+type BlockStatus int
+
+func (b BlockStatus) String() string {
+	switch b {
+	case BlockStatusFinalized:
+		return "Finalized"
+	case BlockStatusDropped:
+		return "Dropped"
+	case BlockStatusProposed:
+		return "Proposed"
+	default:
+		return fmt.Sprintf("Unknown %d", b)
+	}
+}
+
+type BlockInfo interface {
+	ID() []byte
+	Height() int64
+	Status() BlockStatus
+}
+
+type BlockMonitor interface {
+	Start(height int64, finalizedOnly bool) (<-chan BlockInfo, error)
+	Stop() error
+	BlockInfo(height int64) BlockInfo
+}
+
+//type BlockInfoCallback func(bi BlockInfo)
 
 type Adaptor interface {
 	Handler(spec []byte, address Address) (Handler, error)
+	BlockMonitor() BlockMonitor
+	MonitorEvent(cb BaseEventCallback, signature string, address Address, height int64) error
+	MonitorEvents(cb BaseEventsCallback, filter map[string][]Address, height int64) error
 }
 
 type Options map[string]interface{}
-type AdaptorFactory func(endpoint string, opt Options, l log.Logger) (Adaptor, error)
+type AdaptorFactory func(networkType string, endpoint string, opt Options, l log.Logger) (Adaptor, error)
 
 var (
 	afMap = make(map[string]AdaptorFactory)
 )
 
-func RegisterAdaptorFactory(networkType string, cf AdaptorFactory) {
-	if _, ok := afMap[networkType]; ok {
-		log.Panicln("already registered networkType:" + networkType)
+func RegisterAdaptorFactory(cf AdaptorFactory, networkTypes ...string) {
+	for _, networkType := range networkTypes {
+		if _, ok := afMap[networkType]; ok {
+			log.Panicln("already registered networkType:" + networkType)
+		}
+		afMap[networkType] = cf
 	}
-	afMap[networkType] = cf
 }
 
 func NewAdaptor(networkType string, endpoint string, opt Options, l log.Logger) (Adaptor, error) {
 	if cf, ok := afMap[networkType]; ok {
-		return cf(endpoint, opt, l)
+		return cf(networkType, endpoint, opt, l)
 	}
 	return nil, errors.New("not supported networkType:" + networkType)
 }
