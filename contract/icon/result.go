@@ -106,7 +106,7 @@ func (e *BaseEvent) Indexed() int {
 }
 
 func (e *BaseEvent) IndexedValue(i int) contract.EventIndexedValue {
-	if i <= e.indexed {
+	if i < e.indexed {
 		return EventIndexedValue(e.values[i])
 	}
 	return nil
