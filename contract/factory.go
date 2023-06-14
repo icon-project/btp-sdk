@@ -27,6 +27,7 @@ import (
 type Params map[string]interface{}
 type ReturnValue interface{}
 type TxID interface{}
+type BlockID interface{}
 type TxResult interface {
 	Success() bool
 	Events() []BaseEvent
@@ -37,6 +38,10 @@ type BaseEvent interface {
 	MatchSignature(v string) bool
 	Indexed() int
 	IndexedValue(i int) EventIndexedValue
+	BlockID() BlockID
+	BlockHeight() int64
+	TxID() TxID
+	IndexInTx() int
 }
 
 type Event interface {

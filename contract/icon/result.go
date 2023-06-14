@@ -17,6 +17,10 @@
 package icon
 
 import (
+	"encoding/hex"
+	"fmt"
+	"strings"
+
 	"github.com/icon-project/btp2/chain/icon/client"
 	"github.com/icon-project/btp2/common/errors"
 
@@ -112,6 +116,35 @@ func (e *BaseEvent) IndexedValue(i int) contract.EventIndexedValue {
 	return nil
 }
 
+func (e *BaseEvent) BlockID() contract.BlockID {
+	return e.blockHash
+}
+
+func (e *BaseEvent) BlockHeight() int64 {
+	return e.blockHeight
+}
+
+func (e *BaseEvent) TxID() contract.TxID {
+	return e.txHash
+}
+
+func (e *BaseEvent) IndexInTx() int {
+	return e.indexInTx
+}
+func (e *BaseEvent) Format(f fmt.State, c rune) {
+	switch c {
+	case 'v', 's':
+		if f.Flag('+') {
+			fmt.Fprintf(f, "BaseEvent{blockHeight:%d,blockHash:%s,txHash:%s,indexInTx:%d,addr:%s,signature:%s,indexed:%d,values:{%s}}",
+				e.blockHeight, hex.EncodeToString(e.blockHash), hex.EncodeToString(e.txHash), e.indexInTx,
+				e.addr, e.sigMatcher, e.indexed, strings.Join(e.values, ","))
+		} else {
+			fmt.Fprintf(f, "BaseEvent{addr:%s,signature:%s,indexed:%d,values:{%s}}",
+				e.addr, e.sigMatcher, e.indexed, strings.Join(e.values, ","))
+		}
+	}
+}
+
 type SignatureMatcher string
 
 func (s SignatureMatcher) Match(v string) bool {
@@ -136,6 +169,20 @@ func (i EventIndexedValue) Match(v interface{}) bool {
 	return false
 }
 
+type EventIndexedValueWithParam struct {
+	EventIndexedValue
+	spec  contract.NameAndTypeSpec
+	param interface{}
+}
+
+func (i EventIndexedValueWithParam) Spec() contract.NameAndTypeSpec {
+	return i.spec
+}
+
+func (i EventIndexedValueWithParam) Param() interface{} {
+	return i.param
+}
+
 type Event struct {
 	*BaseEvent
 	signature string
@@ -148,6 +195,20 @@ func (e *Event) Signature() string {
 
 func (e *Event) Params() contract.Params {
 	return e.params
+}
+
+func (e *Event) Format(f fmt.State, c rune) {
+	switch c {
+	case 'v', 's':
+		if f.Flag('+') {
+			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,indexInTx:%d,addr:%s,signature:%s,indexed:%d,values:{%s}}",
+				e.blockHeight, hex.EncodeToString(e.blockHash), hex.EncodeToString(e.txHash), e.indexInTx,
+				e.addr, e.sigMatcher, e.indexed, strings.Join(e.values, ","))
+		} else {
+			fmt.Fprintf(f, "Event{addr:%s,signature:%s,indexed:%d,values:{%s}}",
+				e.addr, e.sigMatcher, e.indexed, strings.Join(e.values, ","))
+		}
+	}
 }
 
 func NewEvent(spec contract.EventSpec, be *BaseEvent) (*Event, error) {

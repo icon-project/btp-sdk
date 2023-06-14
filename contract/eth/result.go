@@ -19,8 +19,10 @@ package eth
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"math/big"
 	"reflect"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -89,6 +91,40 @@ func (e *BaseEvent) IndexedValue(i int) contract.EventIndexedValue {
 		return Topic(e.Topics[i+1].Bytes())
 	}
 	return nil
+}
+
+func (e *BaseEvent) BlockID() contract.BlockID {
+	return e.Log.BlockHash.Bytes()
+}
+
+func (e *BaseEvent) BlockHeight() int64 {
+	return int64(e.Log.BlockNumber)
+}
+
+func (e *BaseEvent) TxID() contract.TxID {
+	return e.Log.TxHash.Bytes()
+}
+
+func (e *BaseEvent) IndexInTx() int {
+	return e.indexInTx
+}
+
+func (e *BaseEvent) Format(f fmt.State, c rune) {
+	indexedValues := make([]string, 0)
+	for i := 0; i < e.indexed; i++ {
+		indexedValues = append(indexedValues, hex.EncodeToString(e.IndexedValue(i).(Topic)))
+	}
+	switch c {
+	case 'v', 's':
+		if f.Flag('+') {
+			fmt.Fprintf(f, "BaseEvent{blockHeight:%d,blockHash:%s,txHash:%s,indexInTx:%d,addr:%s,signature:%s,indexed:%d,indexedValues:{%s},data:%s}",
+				e.BlockNumber, hex.EncodeToString(e.BlockHash.Bytes()), hex.EncodeToString(e.TxHash.Bytes()), e.indexInTx,
+				e.Address(), e.sigMatcher, e.indexed, strings.Join(indexedValues, ","), hex.EncodeToString(e.Data))
+		} else {
+			fmt.Fprintf(f, "BaseEvent{addr:%s,signature:%s,indexed:%d,indexedValues:{%s},data:%s}",
+				e.Address(), e.sigMatcher, e.indexed, strings.Join(indexedValues, ","), hex.EncodeToString(e.Data))
+		}
+	}
 }
 
 type SignatureMatcher string
@@ -191,7 +227,7 @@ func makeWords(value interface{}) ([]byte, error) {
 }
 
 type Event struct {
-	contract.BaseEvent
+	*BaseEvent
 	signature string
 	params    contract.Params
 }
@@ -202,6 +238,24 @@ func (e *Event) Signature() string {
 
 func (e *Event) Params() contract.Params {
 	return e.params
+}
+
+func (e *Event) Format(f fmt.State, c rune) {
+	indexedValues := make([]string, 0)
+	for i := 0; i < e.indexed; i++ {
+		indexedValues = append(indexedValues, hex.EncodeToString(e.IndexedValue(i).(Topic)))
+	}
+	switch c {
+	case 'v', 's':
+		if f.Flag('+') {
+			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,indexInTx:%d,addr:%s,signature:%s,indexed:%d,indexedValues:{%s},data:%s}",
+				e.BlockNumber, hex.EncodeToString(e.BlockHash.Bytes()), hex.EncodeToString(e.TxHash.Bytes()), e.indexInTx,
+				e.Address(), e.sigMatcher, e.indexed, strings.Join(indexedValues, ","), hex.EncodeToString(e.Data))
+		} else {
+			fmt.Fprintf(f, "Event{addr:%s,signature:%s,indexed:%d,indexedValues:{%s},data:%s}",
+				e.Address(), e.sigMatcher, e.indexed, strings.Join(indexedValues, ","), hex.EncodeToString(e.Data))
+		}
+	}
 }
 
 func NewEvent(in contract.EventSpec, out abi.Event, outIndexed abi.Arguments, be *BaseEvent) (*Event, error) {
@@ -234,6 +288,7 @@ func NewEvent(in contract.EventSpec, out abi.Event, outIndexed abi.Arguments, be
 	}
 	return &Event{
 		BaseEvent: be,
+		signature: out.Sig,
 		params:    params,
 	}, nil
 }
