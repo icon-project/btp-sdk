@@ -18,6 +18,7 @@ package icon
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -153,7 +154,13 @@ func (h *Handler) GetResult(id contract.TxID) (contract.TxResult, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to GetTransactionResult err:%s", err.Error())
 	}
-	return NewTxResult(txr)
+	txBlkHeight, _ := txr.BlockHeight.Value()
+	bp := &client.BlockHeightParam{
+		Height: client.NewHexInt(txBlkHeight + 1),
+	}
+	blk, _ := h.a.GetBlockByHeight(bp)
+	bh, _ := hex.DecodeString(blk.BlockHash)
+	return NewTxResult(txr, blk.Height, bh)
 }
 
 type CallOption struct {

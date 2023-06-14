@@ -17,7 +17,6 @@
 package icon
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -187,10 +186,7 @@ func (a *Adaptor) MonitorEvent(
 					h = h - 1
 					bp.Height = client.NewHexInt(h)
 					blk, _ := a.GetBlockByHeight(bp)
-					bh, _ := hex.DecodeString(blk.BlockHash)
 					for i, e := range events {
-						e.blockHeight = h
-						e.blockHash = bh
 						e.txHash, _ = blk.NormalTransactions[indexes[i]].TxHash.Value()
 						cb(e)
 					}

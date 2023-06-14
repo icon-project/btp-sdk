@@ -41,18 +41,10 @@ func (r *TxResult) Revert() interface{} {
 	panic("implement me")
 }
 
-func NewTxResult(txr *client.TransactionResult) (contract.TxResult, error) {
+func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []byte) (contract.TxResult, error) {
 	r := &TxResult{
 		TransactionResult: txr,
 		events:            make([]contract.BaseEvent, len(txr.EventLogs)),
-	}
-	h, err := txr.BlockHeight.Value()
-	if err != nil {
-		return nil, err
-	}
-	bh, err := txr.BlockHash.Value()
-	if err != nil {
-		return nil, err
 	}
 	txh, err := txr.TxHash.Value()
 	if err != nil {
@@ -60,8 +52,8 @@ func NewTxResult(txr *client.TransactionResult) (contract.TxResult, error) {
 	}
 	for i, l := range txr.EventLogs {
 		r.events[i] = &BaseEvent{
-			blockHeight: h,
-			blockHash:   bh,
+			blockHeight: blockHeight,
+			blockHash:   blockHash,
 			txHash:      txh,
 			indexInTx:   i,
 			addr:        contract.Address(l.Addr),
