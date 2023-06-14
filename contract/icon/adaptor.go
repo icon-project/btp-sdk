@@ -37,12 +37,11 @@ const (
 )
 
 var (
-	DefaultVersion           = client.NewHexInt(client.JsonrpcApiVersion)
-	DefaultStepLimit         = client.NewHexInt(2500000000) //client.HexInt("0x9502f900")
-	txSerializeExcludes      = map[string]bool{"signature": true}
-	DefaultTransportLogLevel = log.TraceLevel.String()
-	DefaultProgressInterval  = client.NewHexInt(10)
-	NetworkTypes             = []string{
+	DefaultVersion          = client.NewHexInt(client.JsonrpcApiVersion)
+	DefaultStepLimit        = client.NewHexInt(2500000000) //client.HexInt("0x9502f900")
+	txSerializeExcludes     = map[string]bool{"signature": true}
+	DefaultProgressInterval = client.NewHexInt(10)
+	NetworkTypes            = []string{
 		NetworkTypeIcon,
 	}
 )
@@ -60,8 +59,8 @@ type Adaptor struct {
 }
 
 type AdaptorOption struct {
-	NetworkID         client.HexInt `json:"nid"`
-	TransportLogLevel string        `json:"transport-log-level"`
+	NetworkID         client.HexInt     `json:"nid"`
+	TransportLogLevel contract.LogLevel `json:"transport-log-level,omitempty"`
 }
 
 func NewAdaptor(networkType string, endpoint string, options contract.Options, l log.Logger) (contract.Adaptor, error) {
@@ -69,15 +68,8 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 	if err := contract.DecodeOptions(options, &opt); err != nil {
 		return nil, err
 	}
-	if len(opt.TransportLogLevel) == 0 {
-		opt.TransportLogLevel = DefaultTransportLogLevel
-	}
-	tlv, err := log.ParseLevel(opt.TransportLogLevel)
-	if err != nil {
-		return nil, err
-	}
 	c := client.NewClient(endpoint, l)
-	c.Client = jsonrpc.NewJsonRpcClient(contract.NewHttpClient(tlv, l), endpoint)
+	c.Client = jsonrpc.NewJsonRpcClient(contract.NewHttpClient(opt.TransportLogLevel.Level(), l), endpoint)
 
 	bm := NewBlockMonitor(c, l)
 	return &Adaptor{
@@ -189,7 +181,7 @@ func (a *Adaptor) MonitorEvent(
 		switch n := v.(type) {
 		case *ProgressOrEventNotification:
 			if n.ProgressNotification != nil {
-				a.l.Tracef("ProgressNotification:%+v", n.ProgressNotification)
+				a.l.Logf(a.opt.TransportLogLevel.Level(), "ProgressNotification:%+v", n.ProgressNotification)
 				if len(events) > 0 {
 					h, _ := n.ProgressNotification.Progress.Value()
 					h = h - 1
@@ -205,7 +197,7 @@ func (a *Adaptor) MonitorEvent(
 					events = events[:0]
 				}
 			} else if n.EventNotification != nil {
-				a.l.Tracef("EventNotification:%+v", n.EventNotification)
+				a.l.Logf(a.opt.TransportLogLevel.Level(), "EventNotification:%+v", n.EventNotification)
 				h, _ := n.EventNotification.Height.Value()
 				bh, _ := n.EventNotification.Hash.Value()
 				index, _ := n.EventNotification.Index.Int()

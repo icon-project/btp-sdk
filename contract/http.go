@@ -26,6 +26,11 @@ import (
 	"github.com/icon-project/btp2/common/log"
 )
 
+const (
+	DefaultTransportLogLevel = log.TraceLevel
+	TransportLogLevelLimit   = log.InfoLevel
+)
+
 type HttpTransport struct {
 	*http.Transport
 	lv log.Level
@@ -58,6 +63,9 @@ func (t *HttpTransport) RoundTrip(req *http.Request) (resp *http.Response, err e
 }
 
 func NewHttpTransport(lv log.Level, l log.Logger) *HttpTransport {
+	if lv < TransportLogLevelLimit {
+		lv = DefaultTransportLogLevel
+	}
 	return &HttpTransport{
 		Transport: &http.Transport{},
 		lv:        lv,

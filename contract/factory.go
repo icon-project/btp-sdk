@@ -158,3 +158,30 @@ func DecodeOptions(options Options, v interface{}) error {
 	}
 	return nil
 }
+
+type LogLevel log.Level
+
+func (l LogLevel) Level() log.Level {
+	return log.Level(l)
+}
+func (l LogLevel) MarshalJSON() ([]byte, error) {
+	ll := log.Level(l)
+	if ll > log.TraceLevel || ll < log.PanicLevel {
+		return nil, errors.New("out of range log.Level")
+	}
+	return json.Marshal(ll.String())
+}
+
+func (l *LogLevel) UnmarshalJSON(input []byte) error {
+	var str string
+	err := json.Unmarshal(input, &str)
+	if err != nil {
+		return err
+	}
+	v, err := log.ParseLevel(str)
+	if err != nil {
+		return err
+	}
+	*l = LogLevel(v)
+	return nil
+}

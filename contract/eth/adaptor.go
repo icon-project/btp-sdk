@@ -43,9 +43,8 @@ const (
 )
 
 var (
-	DefaultGasLimit          = uint64(8000000)
-	DefaultTransportLogLevel = log.TraceLevel.String()
-	NetworkTypes             = []string{
+	DefaultGasLimit = uint64(8000000)
+	NetworkTypes    = []string{
 		NetworkTypeEth,
 		NetworkTypeEth2,
 	}
@@ -65,20 +64,13 @@ type Adaptor struct {
 }
 
 type AdaptorOption struct {
-	BlockMonitor      contract.Options `json:"block-monitor"`
-	TransportLogLevel string           `json:"transport-log-level"`
+	BlockMonitor      contract.Options  `json:"block-monitor"`
+	TransportLogLevel contract.LogLevel `json:"transport-log-level,omitempty"`
 }
 
 func NewAdaptor(networkType string, endpoint string, options contract.Options, l log.Logger) (contract.Adaptor, error) {
 	opt := &AdaptorOption{}
 	if err := contract.DecodeOptions(options, &opt); err != nil {
-		return nil, err
-	}
-	if len(opt.TransportLogLevel) == 0 {
-		opt.TransportLogLevel = DefaultTransportLogLevel
-	}
-	tlv, err := log.ParseLevel(opt.TransportLogLevel)
-	if err != nil {
 		return nil, err
 	}
 	ethLog.Root().SetHandler(ethLog.FuncHandler(func(r *ethLog.Record) error {
@@ -88,7 +80,7 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 	rc, err := rpc.DialOptions(
 		context.Background(),
 		endpoint,
-		rpc.WithHTTPClient(contract.NewHttpClient(tlv, l)))
+		rpc.WithHTTPClient(contract.NewHttpClient(opt.TransportLogLevel.Level(), l)))
 	if err != nil {
 		return nil, err
 	}
