@@ -174,7 +174,6 @@ func (a *Adaptor) MonitorEvent(
 		//Filters:          nil,
 	}
 	resp := &ProgressOrEventNotification{}
-	indexes := make([]int, 0)
 	events := make([]*BaseEvent, 0)
 	bp := &client.BlockHeightParam{}
 	return a.Client.Monitor("/event", req, resp, func(conn *websocket.Conn, v interface{}) {
@@ -187,8 +186,8 @@ func (a *Adaptor) MonitorEvent(
 					h = h - 1
 					bp.Height = client.NewHexInt(h)
 					blk, _ := a.GetBlockByHeight(bp)
-					for i, e := range events {
-						e.txHash, _ = blk.NormalTransactions[indexes[i]].TxHash.Value()
+					for _, e := range events {
+						e.txHash, _ = blk.NormalTransactions[e.txIndex].TxHash.Value()
 						cb(e)
 					}
 					events = events[:0]
@@ -198,12 +197,12 @@ func (a *Adaptor) MonitorEvent(
 				h, _ := n.EventNotification.Height.Value()
 				bh, _ := n.EventNotification.Hash.Value()
 				index, _ := n.EventNotification.Index.Int()
-				indexes = append(indexes, index)
 				for i, l := range n.EventNotification.Logs {
 					indexInTx, _ := n.EventNotification.Events[i].Int()
 					e := &BaseEvent{
 						blockHeight: h,
 						blockHash:   bh,
+						txIndex:     index,
 						indexInTx:   indexInTx,
 						addr:        contract.Address(l.Addr),
 						sigMatcher:  SignatureMatcher(l.Indexed[0]),

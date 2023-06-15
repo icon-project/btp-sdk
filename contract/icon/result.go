@@ -73,6 +73,7 @@ type BaseEvent struct {
 	blockHeight int64
 	blockHash   []byte
 	txHash      []byte
+	txIndex     int
 	indexInTx   int
 	addr        contract.Address
 	sigMatcher  SignatureMatcher
@@ -118,8 +119,8 @@ func (e *BaseEvent) Format(f fmt.State, c rune) {
 	switch c {
 	case 'v', 's':
 		if f.Flag('+') {
-			fmt.Fprintf(f, "BaseEvent{blockHeight:%d,blockHash:%s,txHash:%s,indexInTx:%d,addr:%s,signature:%s,indexed:%d,values:{%s}}",
-				e.blockHeight, hex.EncodeToString(e.blockHash), hex.EncodeToString(e.txHash), e.indexInTx,
+			fmt.Fprintf(f, "BaseEvent{blockHeight:%d,blockHash:%s,txHash:%s,txIndex:%d,indexInTx:%d,addr:%s,signature:%s,indexed:%d,values:{%s}}",
+				e.blockHeight, hex.EncodeToString(e.blockHash), hex.EncodeToString(e.txHash), e.txIndex, e.indexInTx,
 				e.addr, e.sigMatcher, e.indexed, strings.Join(e.values, ","))
 		} else {
 			fmt.Fprintf(f, "BaseEvent{addr:%s,signature:%s,indexed:%d,values:{%s}}",
@@ -184,8 +185,8 @@ func (e *Event) Format(f fmt.State, c rune) {
 	switch c {
 	case 'v', 's':
 		if f.Flag('+') {
-			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,indexInTx:%d,addr:%s,signature:%s,indexed:%d,params:%v}",
-				e.blockHeight, hex.EncodeToString(e.blockHash), hex.EncodeToString(e.txHash), e.indexInTx,
+			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,txIndex:%d,indexInTx:%d,addr:%s,signature:%s,indexed:%d,params:%v}",
+				e.blockHeight, hex.EncodeToString(e.blockHash), hex.EncodeToString(e.txHash), e.txIndex, e.indexInTx,
 				e.addr, e.signature, e.indexed, e.params)
 		} else {
 			fmt.Fprintf(f, "Event{addr:%s,signature:%s,indexed:%d,params:%v}",
