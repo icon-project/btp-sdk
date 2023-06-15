@@ -275,8 +275,9 @@ type EventSpec struct {
 	Indexed int               `json:"indexed,omitempty"`
 	Inputs  []NameAndTypeSpec `json:"inputs"`
 
-	InputMap  map[string]*NameAndTypeSpec `json:"-"`
-	Signature string                      `json:"-"`
+	InputMap    map[string]*NameAndTypeSpec `json:"-"`
+	Signature   string                      `json:"-"`
+	NameToIndex map[string]int              `json:"-"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler interface.
@@ -286,9 +287,11 @@ func (s *EventSpec) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	s.InputMap = make(map[string]*NameAndTypeSpec)
+	s.NameToIndex = make(map[string]int)
 	for i := 0; i < len(s.Inputs); i++ {
 		v := &s.Inputs[i]
 		s.InputMap[v.Name] = v
+		s.NameToIndex[v.Name] = i
 	}
 	return nil
 }

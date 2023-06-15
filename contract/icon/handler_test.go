@@ -251,8 +251,8 @@ func assertEvent(t *testing.T, e contract.Event, address contract.Address, signa
 	assertBaseEvent(t, e, address, signature, indexed, params)
 	for k, v := range params {
 		p := e.Params()[k]
-		if hv, ok := p.(contract.HashValue); ok {
-			assert.True(t, hv.Match(v))
+		if iv, ok := p.(contract.EventIndexedValue); ok {
+			assert.True(t, iv.Match(v))
 		} else {
 			assert.Equal(t, v, p)
 		}
@@ -433,7 +433,8 @@ func Test_invokeArray(t *testing.T) {
 	}()
 	select {
 	case actual := <-ch:
-		assert.Equal(t, e, actual)
+		t.Logf("%+v", actual)
+		assertEvent(t, actual, address, sig, indexed, evtParams)
 	case <-time.After(time.Second * 5):
 		assert.FailNow(t, "timeout")
 	}

@@ -271,7 +271,7 @@ func assertEvent(t *testing.T, e contract.Event, address contract.Address, signa
 	for k, v := range params {
 		p := e.Params()[k]
 		switch pv := p.(type) {
-		case contract.HashValue:
+		case contract.EventIndexedValue:
 			assert.True(t, pv.Match(v), "hashValue name:%s expected:%v actual:%v", k, v, pv)
 		case contract.Struct:
 			assertStruct(t, v, p)
@@ -473,7 +473,7 @@ func Test_invokeArray(t *testing.T) {
 	select {
 	case actual := <-ch:
 		t.Logf("%+v", actual)
-		assert.Equal(t, e, actual)
+		assertEvent(t, actual, address, sig, indexed, evtParams)
 	case <-time.After(time.Second * 10):
 		assert.FailNow(t, "timeout")
 	}

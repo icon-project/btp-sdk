@@ -63,6 +63,12 @@ type EventIndexedValue interface {
 	Match(v interface{}) bool
 }
 
+type EventIndexedValueWithParam interface {
+	EventIndexedValue
+	Spec() NameAndTypeSpec
+	Param() interface{}
+}
+
 type EventCallback func(e Event)
 type Handler interface {
 	Invoke(method string, params Params, options Options) (TxID, error)

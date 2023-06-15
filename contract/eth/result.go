@@ -226,6 +226,20 @@ func makeWords(value interface{}) ([]byte, error) {
 	}
 }
 
+type TopicWithParam struct {
+	Topic
+	spec  contract.NameAndTypeSpec
+	param interface{}
+}
+
+func (t *TopicWithParam) Spec() contract.NameAndTypeSpec {
+	return t.spec
+}
+
+func (t *TopicWithParam) Param() interface{} {
+	return t.param
+}
+
 type Event struct {
 	*BaseEvent
 	signature string
@@ -347,6 +361,11 @@ func (f *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
 							s.Name, p, v)
 					}
 					return nil, nil
+				}
+				e.params[k] = &TopicWithParam{
+					Topic: hp,
+					spec:  *f.in.InputMap[k],
+					param: v,
 				}
 			} else {
 				equals := false

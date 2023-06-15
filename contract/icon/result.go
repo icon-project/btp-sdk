@@ -69,23 +69,6 @@ func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []b
 	return r, nil
 }
 
-func NewBaseEvents(logs []struct {
-	Addr    client.Address `json:"scoreAddress"`
-	Indexed []string       `json:"indexed"`
-	Data    []string       `json:"data"`
-}) []contract.BaseEvent {
-	events := make([]contract.BaseEvent, len(logs))
-	for i, l := range logs {
-		events[i] = &BaseEvent{
-			addr:       contract.Address(l.Addr),
-			sigMatcher: SignatureMatcher(l.Indexed[0]),
-			indexed:    len(l.Indexed) - 1,
-			values:     append(l.Indexed[1:], l.Data...),
-		}
-	}
-	return events
-}
-
 type BaseEvent struct {
 	blockHeight int64
 	blockHash   []byte
@@ -270,7 +253,8 @@ func (f *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
 	for k, v := range f.params {
 		if p, exists := e.params[k]; exists {
 			equals := false
-			if equals, err = contract.EqualParam(f.spec.InputMap[k].Type, p, v); err != nil {
+			s := f.spec.InputMap[k]
+			if equals, err = contract.EqualParam(s.Type, p, v); err != nil {
 				return nil, err
 			}
 			if !equals {
@@ -279,6 +263,14 @@ func (f *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
 						k, p, v)
 				}
 				return nil, nil
+			}
+			idx := f.spec.NameToIndex[k]
+			if idx < e.indexed {
+				e.params[k] = &EventIndexedValueWithParam{
+					EventIndexedValue: EventIndexedValue(e.values[idx]),
+					spec:              *s,
+					param:             v,
+				}
 			}
 		} else {
 			return nil, errors.Errorf("not exists param in event name:%s", k)
