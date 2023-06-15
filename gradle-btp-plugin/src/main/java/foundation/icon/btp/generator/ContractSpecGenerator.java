@@ -60,7 +60,7 @@ public class ContractSpecGenerator {
             @Override
             public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
                 Method method = methodMap.get(name);
-                if (method != null) {
+                if (method != null && equalsDescriptor(method, descriptor)) {
                     System.out.printf("%s(", method.getName());
                     Method.Parameter[] inputs = method.getInputs();
                     Type[] argTypes = Type.getArgumentTypes(descriptor);
@@ -120,8 +120,23 @@ public class ContractSpecGenerator {
         return contractSpec;
     }
 
+    static boolean equalsDescriptor(Method method, String descriptor) {
+        Method.Parameter[] inputs = method.getInputs();
+        Type[] argTypes = Type.getArgumentTypes(descriptor);
+        if (inputs.length != argTypes.length) {
+            return false;
+        }
+        for (int i = 0; i < inputs.length; i++) {
+            if (!inputs[i].getDescriptor().equals(argTypes[i].getDescriptor())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     static Map<String, ContractSpec.TypeSpec.TypeID> typeIDMap;
     static Map<String, ContractSpec.TypeSpec.TypeID> outputTypeIDMap;
+
     static {
         typeIDMap = new HashMap<>();
         typeIDMap.put(char.class.getTypeName(), ContractSpec.TypeSpec.TypeID.Integer);
@@ -193,6 +208,7 @@ public class ContractSpecGenerator {
         }
         return typeSpec;
     }
+
     static void collectStructSpec(
             StructDB structDB, Map<String, ContractSpec.StructSpec> map,
             Map<String, ContractSpec.TypeSpec.TypeID> typeIDMap, Type type, boolean in) {
@@ -202,7 +218,7 @@ public class ContractSpecGenerator {
             structSpec.setName(typeName);
             List<PropertyMember> props = in ? structDB.getWritableProperties(type) :
                     structDB.getReadableProperties(type);
-            Objects.requireNonNull(props, "not exists properties");
+            Objects.requireNonNull(props, "not exists properties typeName:" + typeName);
             structSpec.setFields(props.stream()
                     .map(v -> toNameAndTypeSpec(structDB, map, v.getName(), typeIDMap, v.getType(), in))
                     .collect(Collectors.toList()));
