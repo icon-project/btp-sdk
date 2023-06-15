@@ -63,12 +63,9 @@ func (t *HttpTransport) RoundTrip(req *http.Request) (resp *http.Response, err e
 }
 
 func NewHttpTransport(lv log.Level, l log.Logger) *HttpTransport {
-	if lv < TransportLogLevelLimit {
-		lv = DefaultTransportLogLevel
-	}
 	return &HttpTransport{
 		Transport: &http.Transport{},
-		lv:        lv,
+		lv:        EnsureTransportLogLevel(lv),
 		l:         l,
 	}
 }
@@ -77,4 +74,11 @@ func NewHttpClient(lv log.Level, l log.Logger) *http.Client {
 	return &http.Client{
 		Transport: NewHttpTransport(lv, l),
 	}
+}
+
+func EnsureTransportLogLevel(lv log.Level) log.Level {
+	if lv < TransportLogLevelLimit {
+		return DefaultTransportLogLevel
+	}
+	return lv
 }

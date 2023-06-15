@@ -73,6 +73,7 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 	if err := contract.DecodeOptions(options, &opt); err != nil {
 		return nil, err
 	}
+	opt.TransportLogLevel = contract.LogLevel(contract.EnsureTransportLogLevel(opt.TransportLogLevel.Level()))
 	ethLog.Root().SetHandler(ethLog.FuncHandler(func(r *ethLog.Record) error {
 		l.Log(log.Level(r.Lvl+1), r.Msg)
 		return nil
