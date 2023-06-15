@@ -255,19 +255,15 @@ func (e *Event) Params() contract.Params {
 }
 
 func (e *Event) Format(f fmt.State, c rune) {
-	indexedValues := make([]string, 0)
-	for i := 0; i < e.indexed; i++ {
-		indexedValues = append(indexedValues, hex.EncodeToString(e.IndexedValue(i).(Topic)))
-	}
 	switch c {
 	case 'v', 's':
 		if f.Flag('+') {
-			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,indexInTx:%d,addr:%s,signature:%s,indexed:%d,indexedValues:{%s},data:%s}",
+			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,indexInTx:%d,addr:%s,signature:%s,indexed:%d,params:%v}",
 				e.BlockNumber, hex.EncodeToString(e.BlockHash.Bytes()), hex.EncodeToString(e.TxHash.Bytes()), e.indexInTx,
-				e.Address(), e.sigMatcher, e.indexed, strings.Join(indexedValues, ","), hex.EncodeToString(e.Data))
+				e.Address(), e.signature, e.indexed, e.params)
 		} else {
-			fmt.Fprintf(f, "Event{addr:%s,signature:%s,indexed:%d,indexedValues:{%s},data:%s}",
-				e.Address(), e.sigMatcher, e.indexed, strings.Join(indexedValues, ","), hex.EncodeToString(e.Data))
+			fmt.Fprintf(f, "Event{addr:%s,signature:%s,indexed:%d,params:%v}",
+				e.Address(), e.signature, e.indexed, e.params)
 		}
 	}
 }

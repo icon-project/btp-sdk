@@ -184,12 +184,12 @@ func (e *Event) Format(f fmt.State, c rune) {
 	switch c {
 	case 'v', 's':
 		if f.Flag('+') {
-			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,indexInTx:%d,addr:%s,signature:%s,indexed:%d,values:{%s}}",
+			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,indexInTx:%d,addr:%s,signature:%s,indexed:%d,params:%v}",
 				e.blockHeight, hex.EncodeToString(e.blockHash), hex.EncodeToString(e.txHash), e.indexInTx,
-				e.addr, e.sigMatcher, e.indexed, strings.Join(e.values, ","))
+				e.addr, e.signature, e.indexed, e.params)
 		} else {
-			fmt.Fprintf(f, "Event{addr:%s,signature:%s,indexed:%d,values:{%s}}",
-				e.addr, e.sigMatcher, e.indexed, strings.Join(e.values, ","))
+			fmt.Fprintf(f, "Event{addr:%s,signature:%s,indexed:%d,params:%v}",
+				e.addr, e.signature, e.indexed, e.params)
 		}
 	}
 }
