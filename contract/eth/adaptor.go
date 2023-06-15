@@ -239,15 +239,19 @@ func (a *Adaptor) MonitorEvents(
 		sh := crypto.Keccak256Hash([]byte(signature))
 		fl[sh] = al
 	}
-	//TODO height
-	n, err := a.Client.BlockNumber(context.Background())
-	if err != nil {
-		return err
+	var current *big.Int
+	if height == 0 {
+		n, err := a.Client.BlockNumber(context.Background())
+		if err != nil {
+			return err
+		}
+		current = new(big.Int).SetUint64(n)
+	} else {
+		current = new(big.Int).SetUint64(uint64(height))
 	}
-	current := new(big.Int).SetUint64(n)
 	for {
-		var blk *types.Block
-		if blk, err = a.Client.BlockByNumber(context.Background(), current); err != nil {
+		blk, err := a.Client.BlockByNumber(context.Background(), current)
+		if err != nil {
 			if ethereum.NotFound == err {
 				a.l.Trace("Block not ready, will retry ", current)
 			} else {
