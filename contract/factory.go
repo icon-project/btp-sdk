@@ -73,7 +73,6 @@ type EventIndexedValueWithParam interface {
 type EventCallback func(e Event)
 type Handler interface {
 	Invoke(method string, params Params, options Options) (TxID, error)
-	GetResult(id TxID) (TxResult, error)
 	Call(method string, params Params, options Options) (ReturnValue, error)
 	EventFilter(name string, params Params) (EventFilter, error)
 	Spec() Spec
@@ -117,6 +116,7 @@ type BlockMonitor interface {
 }
 
 type Adaptor interface {
+	GetResult(id TxID) (TxResult, error)
 	Handler(spec []byte, address Address) (Handler, error)
 	BlockMonitor() BlockMonitor
 	MonitorEvent(cb EventCallback, efs []EventFilter, height int64) error

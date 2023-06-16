@@ -115,6 +115,18 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 	}, nil
 }
 
+func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
+	txh, ok := id.(string)
+	if !ok {
+		return nil, errors.Errorf("fail GetResult, invalid type %T", id)
+	}
+	txr, err := a.TransactionReceipt(context.Background(), common.HexToHash(txh))
+	if err != nil {
+		return nil, errors.Wrapf(err, "fail to TransactionReceipt err:%s", err.Error())
+	}
+	return NewTxResult(txr)
+}
+
 func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handler, error) {
 	//common.IsHexAddress(string(address))
 	addr := common.HexToAddress(string(address))

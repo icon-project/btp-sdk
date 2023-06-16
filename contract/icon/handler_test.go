@@ -72,22 +72,22 @@ func assertStruct(t *testing.T, expected, actual interface{}) {
 	assert.Equal(t, ep, ap)
 }
 
-func handler(t *testing.T) *Handler {
+func handler(t *testing.T, networkType string) (*Handler, *Adaptor) {
 	b, err := ioutil.ReadFile(specFile)
 	if err != nil {
 		assert.FailNow(t, "fail to read file", err)
 	}
 	l := log.GlobalLogger()
-	a := adaptor(t)
+	a := adaptor(t, networkType)
 	h, err := NewHandler(b, addr, a, l)
 	if err != nil {
 		assert.FailNow(t, "fail to NewHandler", err)
 	}
-	return h.(*Handler)
+	return h.(*Handler), a
 }
 
 func Test_callInteger(t *testing.T) {
-	h := handler(t)
+	h, _ := handler(t, NetworkTypeIcon)
 	method := "callInteger"
 	params := make(contract.Params)
 	params["arg1"] = byteVal
@@ -108,7 +108,7 @@ func Test_callInteger(t *testing.T) {
 }
 
 func Test_callUnsignedInteger(t *testing.T) {
-	h := handler(t)
+	h, _ := handler(t, NetworkTypeIcon)
 	method := "callUnsignedInteger"
 	params := make(contract.Params)
 	params["arg1"] = contract.Integer("0x" + strings.Repeat("ff", 1))
@@ -129,7 +129,7 @@ func Test_callUnsignedInteger(t *testing.T) {
 }
 
 func Test_callPrimitive(t *testing.T) {
-	h := handler(t)
+	h, _ := handler(t, NetworkTypeIcon)
 	method := "callPrimitive"
 	params := make(contract.Params)
 	params["arg1"] = bigIntegerVal
@@ -147,7 +147,7 @@ func Test_callPrimitive(t *testing.T) {
 }
 
 func Test_callStruct(t *testing.T) {
-	h := handler(t)
+	h, _ := handler(t, NetworkTypeIcon)
 	method := "callStruct"
 	params := make(contract.Params)
 	params["arg1"] = contract.MustStructOf(structVal)
@@ -160,7 +160,7 @@ func Test_callStruct(t *testing.T) {
 }
 
 func Test_callArray(t *testing.T) {
-	h := handler(t)
+	h, _ := handler(t, NetworkTypeIcon)
 	method := "callArray"
 	params := make(contract.Params)
 	params["arg1"] = []contract.Integer{bigIntegerVal}
@@ -190,7 +190,7 @@ func Test_callArray(t *testing.T) {
 }
 
 func Test_callOptional(t *testing.T) {
-	h := handler(t)
+	h, _ := handler(t, NetworkTypeIcon)
 	method := "callOptional"
 	params := make(contract.Params)
 	options := make(contract.Options)
@@ -260,7 +260,7 @@ func assertEvent(t *testing.T, e contract.Event, address contract.Address, signa
 }
 
 func Test_invokeInteger(t *testing.T) {
-	h := handler(t)
+	h, a := handler(t, NetworkTypeIcon)
 	method := "invokeInteger"
 	params := make(contract.Params)
 	params["arg1"] = byteVal
@@ -276,7 +276,7 @@ func Test_invokeInteger(t *testing.T) {
 	assert.NoError(t, err)
 	t.Log(txId)
 
-	r, err := h.GetResult(txId)
+	r, err := a.GetResult(txId)
 	assert.NoError(t, err)
 	assert.True(t, r.Success())
 	assert.Equal(t, 1, len(r.Events()))
@@ -303,7 +303,7 @@ func Test_invokeInteger(t *testing.T) {
 }
 
 func Test_invokePrimitive(t *testing.T) {
-	h := handler(t)
+	h, a := handler(t, NetworkTypeIcon)
 	method := "invokePrimitive"
 	params := make(contract.Params)
 	params["arg1"] = bigIntegerVal
@@ -316,7 +316,7 @@ func Test_invokePrimitive(t *testing.T) {
 	assert.NoError(t, err)
 	t.Log(txId)
 
-	r, err := h.GetResult(txId)
+	r, err := a.GetResult(txId)
 	assert.NoError(t, err)
 	assert.True(t, r.Success())
 	assert.Equal(t, 1, len(r.Events()))
@@ -343,7 +343,7 @@ func Test_invokePrimitive(t *testing.T) {
 }
 
 func Test_invokeStruct(t *testing.T) {
-	h := handler(t)
+	h, a := handler(t, NetworkTypeIcon)
 	method := "invokeStruct"
 	params := make(contract.Params)
 	params["arg1"] = contract.MustStructOf(structVal)
@@ -352,7 +352,7 @@ func Test_invokeStruct(t *testing.T) {
 	assert.NoError(t, err)
 	t.Log(txId)
 
-	r, err := h.GetResult(txId)
+	r, err := a.GetResult(txId)
 	assert.NoError(t, err)
 	assert.True(t, r.Success())
 	assert.Equal(t, 1, len(r.Events()))
@@ -377,7 +377,7 @@ func Test_invokeStruct(t *testing.T) {
 }
 
 func Test_invokeArray(t *testing.T) {
-	h := handler(t)
+	h, a := handler(t, NetworkTypeIcon)
 	method := "invokeArray"
 	params := make(contract.Params)
 	params["arg1"] = []contract.Integer{bigIntegerVal}
@@ -391,7 +391,7 @@ func Test_invokeArray(t *testing.T) {
 	assert.NoError(t, err)
 	t.Log(txId)
 
-	r, err := h.GetResult(txId)
+	r, err := a.GetResult(txId)
 	assert.NoError(t, err)
 	assert.True(t, r.Success())
 	assert.Equal(t, 1, len(r.Events()))

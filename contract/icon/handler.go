@@ -18,7 +18,6 @@ package icon
 
 import (
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -142,25 +141,6 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 		return nil, errors.Wrapf(err, "fail to SendTransaction err:%s", err.Error())
 	}
 	return *txh, err
-}
-
-func (h *Handler) GetResult(id contract.TxID) (contract.TxResult, error) {
-	txh, ok := id.(client.HexBytes)
-	if !ok {
-		return nil, errors.Errorf("fail GetResult, invalid type %T", id)
-	}
-	p := &client.TransactionHashParam{Hash: txh}
-	txr, err := h.a.GetTransactionResult(p)
-	if err != nil {
-		return nil, errors.Wrapf(err, "fail to GetTransactionResult err:%s", err.Error())
-	}
-	txBlkHeight, _ := txr.BlockHeight.Value()
-	bp := &client.BlockHeightParam{
-		Height: client.NewHexInt(txBlkHeight + 1),
-	}
-	blk, _ := h.a.GetBlockByHeight(bp)
-	bh, _ := hex.DecodeString(blk.BlockHash)
-	return NewTxResult(txr, blk.Height, bh)
 }
 
 type CallOption struct {

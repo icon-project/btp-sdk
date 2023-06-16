@@ -23,13 +23,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func blockMonitor(t *testing.T) *BlockMonitor {
-	a := adaptor(t)
+func blockMonitor(t *testing.T, networkType string) *BlockMonitor {
+	a := adaptor(t, networkType)
 	return a.BlockMonitor().(*BlockMonitor)
 }
 
 func Test_BlockMonitor(t *testing.T) {
-	m := blockMonitor(t)
+	m := blockMonitor(t, NetworkTypeIcon)
 	h := int64(0)
 	ch, err := m.Start(h, false)
 	if err != nil {

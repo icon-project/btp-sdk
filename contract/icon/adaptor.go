@@ -17,6 +17,7 @@
 package icon
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"time"
 
@@ -79,6 +80,25 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 		opt:         *opt,
 		l:           l,
 	}, nil
+}
+
+func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
+	txh, ok := id.(client.HexBytes)
+	if !ok {
+		return nil, errors.Errorf("fail GetResult, invalid type %T", id)
+	}
+	p := &client.TransactionHashParam{Hash: txh}
+	txr, err := a.GetTransactionResult(p)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fail to GetTransactionResult err:%s", err.Error())
+	}
+	txBlkHeight, _ := txr.BlockHeight.Value()
+	bp := &client.BlockHeightParam{
+		Height: client.NewHexInt(txBlkHeight + 1),
+	}
+	blk, _ := a.GetBlockByHeight(bp)
+	bh, _ := hex.DecodeString(blk.BlockHash)
+	return NewTxResult(txr, blk.Height, bh)
 }
 
 func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handler, error) {

@@ -62,13 +62,13 @@ func loadWallet(keyStoreFile, keyStoreSecret string) wallet.Wallet {
 	return w
 }
 
-func adaptor(t *testing.T) *Adaptor {
+func adaptor(t *testing.T, networkType string) *Adaptor {
 	l := log.GlobalLogger()
 	opt, err := contract.EncodeOptions(adaptorOpt)
 	if err != nil {
 		assert.FailNow(t, "fail to EncodeOptions", err)
 	}
-	a, err := contract.NewAdaptor(NetworkTypeIcon, endpoint, opt, l)
+	a, err := contract.NewAdaptor(networkType, endpoint, opt, l)
 	if err != nil {
 		assert.FailNow(t, "fail to NewAdaptor", err)
 	}
@@ -76,7 +76,7 @@ func adaptor(t *testing.T) *Adaptor {
 }
 
 func Test_MonitorEvents(t *testing.T) {
-	a := adaptor(t)
+	a := adaptor(t, NetworkTypeIcon)
 	go func() {
 		err := a.MonitorBaseEvent(func(be contract.BaseEvent) {
 			t.Logf("%+v", be)
