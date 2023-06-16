@@ -417,26 +417,27 @@ func getIndexedArguments(spec abi.Event) abi.Arguments {
 	return outIndexed
 }
 
-func (h *Handler) MonitorEvent(cb contract.EventCallback, name string, height int64) error {
-	in, has := h.in.EventMap[name]
-	if !has {
-		return errors.New("not found event from in")
-	}
-	out, has := h.out.Events[name]
-	if !has {
-		return errors.New("not found event from out")
-	}
-	outIndexed := getIndexedArguments(out)
-	return h.a.MonitorEvent(func(be contract.BaseEvent) {
-		e, _ := NewEvent(*in, out, outIndexed, be.(*BaseEvent))
-		cb(e)
-	}, out.Sig, contract.Address(h.address.String()), height)
-}
-
 func (h *Handler) Spec() contract.Spec {
 	return h.in
 }
 
 func (h *Handler) Address() contract.Address {
 	return contract.Address(h.address.String())
+}
+
+func (h *Handler) MonitorEvent(
+	cb contract.EventCallback,
+	nameToParams map[string][]contract.Params,
+	height int64) error {
+	efs := make([]contract.EventFilter, 0)
+	for name, l := range nameToParams {
+		for _, params := range l {
+			ef, err := h.EventFilter(name, params)
+			if err != nil {
+				return err
+			}
+			efs = append(efs, ef)
+		}
+	}
+	return h.a.MonitorEvent(cb, efs, height)
 }

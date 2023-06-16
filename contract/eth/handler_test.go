@@ -468,7 +468,7 @@ func Test_invokeArray(t *testing.T) {
 	go func() {
 		err = h.MonitorEvent(func(e contract.Event) {
 			ch <- e
-		}, event, height)
+		}, map[string][]contract.Params{event: nil}, height)
 	}()
 	select {
 	case actual := <-ch:

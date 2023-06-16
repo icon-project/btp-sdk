@@ -78,14 +78,12 @@ func adaptor(t *testing.T) *Adaptor {
 func Test_MonitorEvents(t *testing.T) {
 	a := adaptor(t)
 	go func() {
-		err := a.MonitorEvents(func(l []contract.BaseEvent) {
-			for _, el := range l {
-				t.Logf("%+v", el)
-				if v, err := decodePrimitive(contract.TString, el.(*BaseEvent).values[0]); err != nil {
-					assert.NoError(t, err, "fail to decodePrimitive")
-				} else {
-					t.Logf("%v", v)
-				}
+		err := a.MonitorBaseEvent(func(be contract.BaseEvent) {
+			t.Logf("%+v", be)
+			if paramValue, err := decodePrimitive(contract.TString, be.(*BaseEvent).values[0]); err != nil {
+				assert.NoError(t, err, "fail to decodePrimitive")
+			} else {
+				t.Logf("paramValue:%v", paramValue)
 			}
 		}, map[string][]contract.Address{
 			"HelloEvent(str)": {addr},

@@ -212,21 +212,27 @@ func (h *Handler) EventFilter(name string, params contract.Params) (contract.Eve
 	}, nil
 }
 
-func (h *Handler) MonitorEvent(cb contract.EventCallback, name string, height int64) error {
-	spec, has := h.spec.EventMap[name]
-	if !has {
-		return errors.New("not found event")
-	}
-	return h.a.MonitorEvent(func(be contract.BaseEvent) {
-		e, _ := NewEvent(*spec, be.(*BaseEvent))
-		cb(e)
-	}, spec.Signature, contract.Address(h.address), height)
-}
-
 func (h *Handler) Spec() contract.Spec {
 	return h.spec
 }
 
 func (h *Handler) Address() contract.Address {
 	return contract.Address(h.address)
+}
+
+func (h *Handler) MonitorEvent(
+	cb contract.EventCallback,
+	nameToParams map[string][]contract.Params,
+	height int64) error {
+	efs := make([]contract.EventFilter, 0)
+	for name, l := range nameToParams {
+		for _, params := range l {
+			ef, err := h.EventFilter(name, params)
+			if err != nil {
+				return err
+			}
+			efs = append(efs, ef)
+		}
+	}
+	return h.a.MonitorEvent(cb, efs, height)
 }

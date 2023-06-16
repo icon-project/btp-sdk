@@ -48,6 +48,7 @@ var (
 		NetworkTypeEth,
 		NetworkTypeEth2,
 	}
+	emptyAddr common.Address
 )
 
 func init() {
@@ -138,17 +139,58 @@ func (a *Adaptor) TransactionReceipt(ctx context.Context, txHash common.Hash) (*
 	}
 }
 
-func (a *Adaptor) MonitorEvent(
-	cb contract.BaseEventCallback,
-	signature string,
-	address contract.Address,
-	height int64) error {
+func newTopicToAddressesMap(sigToAddrs map[string][]contract.Address) map[common.Hash][]common.Address {
+	topicToAddrs := make(map[common.Hash][]common.Address)
+	for signature, addresses := range sigToAddrs {
+		al := make([]common.Address, len(addresses))
+		for i, address := range addresses {
+			al[i] = common.HexToAddress(string(address))
+		}
+		sh := crypto.Keccak256Hash([]byte(signature))
+		topicToAddrs[sh] = al
+	}
+	return topicToAddrs
+}
+
+func newFilterQuery(topicToAddrs map[common.Hash][]common.Address) *ethereum.FilterQuery {
+	//reverse sigToAddrs => addr to topics
+	addrToTopics := make(map[common.Address][]common.Hash)
+	for s, addrs := range topicToAddrs {
+		if len(addrs) == 0 {
+			addrs = append(addrs, emptyAddr)
+		}
+		for _, addr := range addrs {
+			topics, ok := addrToTopics[addr]
+			if !ok {
+				topics = make([]common.Hash, 0)
+				addrToTopics[addr] = topics
+			}
+			topics = append(topics, s)
+		}
+	}
 	fq := &ethereum.FilterQuery{
-		Topics: [][]common.Hash{
-			{crypto.Keccak256Hash([]byte(signature))},
-		},
-		Addresses: []common.Address{common.HexToAddress(string(address))},
-		FromBlock: big.NewInt(height),
+		Topics:    make([][]common.Hash, 0),
+		Addresses: make([]common.Address, 0),
+	}
+	for addr, topics := range addrToTopics {
+		fq.Addresses = append(fq.Addresses, addr)
+		fq.Topics = append(fq.Topics, topics)
+	}
+	return fq
+}
+
+func (a *Adaptor) MonitorEvent(
+	cb contract.EventCallback,
+	fs []contract.EventFilter,
+	height int64) error {
+	fq := newFilterQuery(newTopicToAddressesMap(contract.NewSignatureToAddressesMap(fs)))
+	fq.FromBlock = big.NewInt(height)
+	onBaseEvent := func(be contract.BaseEvent) {
+		for _, f := range fs {
+			if e, _ := f.Filter(be); e != nil {
+				cb(e)
+			}
+		}
 	}
 	filterLogsByHeader := func(bh *types.Header) error {
 		blkHash := bh.Hash()
@@ -159,8 +201,8 @@ func (a *Adaptor) MonitorEvent(
 		}
 		if len(logs) > 0 {
 			for _, el := range logs {
-				if e := matchAndToBaseEvent(fq, el); e != nil {
-					cb(e)
+				if be := matchAndToBaseEvent(fq, el); be != nil {
+					onBaseEvent(be)
 				}
 			}
 		}
@@ -184,7 +226,7 @@ func (a *Adaptor) MonitorEvent(
 		}
 		return filterLogsByHeader(bh)
 	}
-	if err := a.MonitorBySubscribeFilterLogs(cb, fq); err != nil {
+	if err := a.MonitorBySubscribeFilterLogs(onBaseEvent, fq); err != nil {
 		if err == rpc.ErrNotificationsUnsupported {
 			a.l.Debugf("fail to MonitorBySubscribeFilterLogs, try MonitorByPollHead")
 			return monitorByPollHead(a.Client, a.l, context.Background(), onBlockHeader)
@@ -192,6 +234,61 @@ func (a *Adaptor) MonitorEvent(
 		return err
 	}
 	return nil
+}
+
+func (a *Adaptor) monitorByPollBlock(
+	cb contract.BaseEventCallback,
+	topicToAddrs map[common.Hash][]common.Address,
+	height int64) error {
+	var current *big.Int
+	if height == 0 {
+		n, err := a.Client.BlockNumber(context.Background())
+		if err != nil {
+			return err
+		}
+		current = new(big.Int).SetUint64(n)
+	} else {
+		current = new(big.Int).SetUint64(uint64(height))
+	}
+	for {
+		blk, err := a.Client.BlockByNumber(context.Background(), current)
+		if err != nil {
+			if ethereum.NotFound == err {
+				a.l.Trace("Block not ready, will retry ", current)
+			} else {
+				a.l.Error("Unable to get block ", current, err)
+			}
+			<-time.After(DefaultGetResultInterval)
+			continue
+		}
+		has := false
+		for topic := range topicToAddrs {
+			if blk.Bloom().Test(topic.Bytes()) {
+				has = true
+				break
+			}
+		}
+		if has {
+			for _, tx := range blk.Transactions() {
+				var txr *types.Receipt
+				txr, err = a.Client.TransactionReceipt(context.Background(), tx.Hash())
+				for indexInTx, el := range txr.Logs {
+					for topic, addrs := range topicToAddrs {
+						if matchEventLog(topic, addrs, el) {
+							e := &BaseEvent{
+								indexInTx:  indexInTx,
+								Log:        el,
+								sigMatcher: SignatureMatcher(el.Topics[0].String()),
+								indexed:    len(el.Topics) - 1,
+							}
+							cb(e)
+						}
+					}
+				}
+			}
+		}
+		current.Add(current, big.NewInt(1))
+	}
 }
 
 func monitorByPollHead(c *ethclient.Client, l log.Logger, ctx context.Context, cb func(bh *types.Header) error) error {
@@ -226,75 +323,24 @@ func monitorByPollHead(c *ethclient.Client, l log.Logger, ctx context.Context, c
 	}
 }
 
-func (a *Adaptor) MonitorEvents(
-	cb contract.BaseEventsCallback,
-	filter map[string][]contract.Address,
+func (a *Adaptor) MonitorBaseEvent(
+	cb contract.BaseEventCallback,
+	sigToAddrs map[string][]contract.Address,
 	height int64) error {
-	fl := make(map[common.Hash][]common.Address)
-	for signature, addresses := range filter {
-		al := make([]common.Address, len(addresses))
-		for i, address := range addresses {
-			al[i] = common.HexToAddress(string(address))
+	topicToAddrs := newTopicToAddressesMap(sigToAddrs)
+	fq := newFilterQuery(topicToAddrs)
+	fq.FromBlock = big.NewInt(height)
+	if err := a.MonitorBySubscribeFilterLogs(cb, fq); err != nil {
+		if err == rpc.ErrNotificationsUnsupported {
+			a.l.Debugf("fail to MonitorBySubscribeFilterLogs, try MonitorByPollHead")
+			return a.monitorByPollBlock(cb, topicToAddrs, height)
 		}
-		sh := crypto.Keccak256Hash([]byte(signature))
-		fl[sh] = al
+		return err
 	}
-	var current *big.Int
-	if height == 0 {
-		n, err := a.Client.BlockNumber(context.Background())
-		if err != nil {
-			return err
-		}
-		current = new(big.Int).SetUint64(n)
-	} else {
-		current = new(big.Int).SetUint64(uint64(height))
-	}
-	for {
-		blk, err := a.Client.BlockByNumber(context.Background(), current)
-		if err != nil {
-			if ethereum.NotFound == err {
-				a.l.Trace("Block not ready, will retry ", current)
-			} else {
-				a.l.Error("Unable to get block ", current, err)
-			}
-			<-time.After(DefaultGetResultInterval)
-			continue
-		}
-		has := false
-		for k := range fl {
-			if blk.Bloom().Test(k.Bytes()) {
-				has = true
-				break
-			}
-		}
-		if has {
-			l := make([]contract.BaseEvent, 0)
-			for _, tx := range blk.Transactions() {
-				var txr *types.Receipt
-				txr, err = a.Client.TransactionReceipt(context.Background(), tx.Hash())
-				for indexInTx, el := range txr.Logs {
-					for k, v := range fl {
-						if matchEventLog(k, v, el) {
-							e := &BaseEvent{
-								indexInTx:  indexInTx,
-								Log:        el,
-								sigMatcher: SignatureMatcher(el.Topics[0].String()),
-								indexed:    len(el.Topics) - 1,
-							}
-							l = append(l, e)
-						}
-					}
-				}
-			}
-			if len(l) > 0 {
-				cb(l)
-			}
-		}
-		current.Add(current, big.NewInt(1))
-	}
+	return nil
 }
 
-func (a *Adaptor) MonitorBySubscribeFilterLogs(cb func(e contract.BaseEvent),
+func (a *Adaptor) MonitorBySubscribeFilterLogs(cb contract.BaseEventCallback,
 	fq *ethereum.FilterQuery) error {
 	ch := make(chan types.Log)
 	s, err := a.Client.SubscribeFilterLogs(context.Background(), *fq, ch)
@@ -334,7 +380,7 @@ func matchEventLog(signature common.Hash, addresses []common.Address, el *types.
 		ab := el.Address.Bytes()
 		addressMatched := false
 		for _, address := range addresses {
-			if bytes.Equal(ab, address.Bytes()) {
+			if address == emptyAddr || bytes.Equal(ab, address.Bytes()) {
 				addressMatched = true
 				break
 			}

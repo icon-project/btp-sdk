@@ -130,14 +130,12 @@ func Test_MonitorEvents(t *testing.T) {
 	args := abi.Arguments{arg}
 
 	go func() {
-		err := a.MonitorEvents(func(l []contract.BaseEvent) {
-			for _, el := range l {
-				t.Logf("%+v", el)
-				if vl, err := args.UnpackValues(el.(*BaseEvent).Data); err != nil {
-					assert.NoError(t, err, "fail to UnpackValues")
-				} else {
-					t.Logf("%+v", vl)
-				}
+		err := a.MonitorBaseEvent(func(be contract.BaseEvent) {
+			t.Logf("%+v", be)
+			if vl, err := args.UnpackValues(be.(*BaseEvent).Data); err != nil {
+				assert.NoError(t, err, "fail to UnpackValues")
+			} else {
+				t.Logf("paramValue:%+v", vl[0])
 			}
 		}, map[string][]contract.Address{
 			"HelloEvent(string)": {addr},

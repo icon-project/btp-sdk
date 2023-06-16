@@ -77,12 +77,11 @@ type Handler interface {
 	Call(method string, params Params, options Options) (ReturnValue, error)
 	EventFilter(name string, params Params) (EventFilter, error)
 	Spec() Spec
-	MonitorEvent(cb EventCallback, name string, height int64) error
 	Address() Address
+	MonitorEvent(cb EventCallback, nameToParams map[string][]Params, height int64) error
 }
 
 type BaseEventCallback func(e BaseEvent)
-type BaseEventsCallback func(l []BaseEvent)
 
 const (
 	BlockStatusFinalized BlockStatus = iota
@@ -120,8 +119,8 @@ type BlockMonitor interface {
 type Adaptor interface {
 	Handler(spec []byte, address Address) (Handler, error)
 	BlockMonitor() BlockMonitor
-	MonitorEvent(cb BaseEventCallback, signature string, address Address, height int64) error
-	MonitorEvents(cb BaseEventsCallback, filter map[string][]Address, height int64) error
+	MonitorEvent(cb EventCallback, fs []EventFilter, height int64) error
+	MonitorBaseEvent(cb BaseEventCallback, sigToAddrs map[string][]Address, height int64) error
 }
 
 type Options map[string]interface{}
@@ -195,4 +194,26 @@ func (l *LogLevel) UnmarshalJSON(input []byte) error {
 	}
 	*l = LogLevel(v)
 	return nil
+}
+
+func NewSignatureToAddressesMap(fs []EventFilter) map[string][]Address {
+	sigToAddrs := make(map[string][]Address)
+	for _, f := range fs {
+		addrs, ok := sigToAddrs[f.Signature()]
+		tAddr := f.Address()
+		if !ok {
+			sigToAddrs[f.Signature()] = []Address{tAddr}
+		} else {
+			exists := false
+			for _, addr := range addrs {
+				if addr == tAddr {
+					exists = true
+				}
+			}
+			if !exists {
+				addrs = append(addrs, tAddr)
+			}
+		}
+	}
+	return sigToAddrs
 }

@@ -152,11 +152,39 @@ func (a *Adaptor) GetBlockByHeight(p *client.BlockHeightParam) (*Block, error) {
 	return result, nil
 }
 
+func newEventFilters(sigToAddrs map[string][]contract.Address) []*client.EventFilter {
+	efs := make([]*client.EventFilter, 0)
+	for s, addrs := range sigToAddrs {
+		if len(addrs) == 0 {
+			ef := &client.EventFilter{
+				Signature: s,
+			}
+			efs = append(efs, ef)
+		} else {
+			for _, addr := range addrs {
+				ef := &client.EventFilter{
+					Addr:      client.Address(addr),
+					Signature: s,
+				}
+				efs = append(efs, ef)
+			}
+		}
+	}
+	return efs
+}
+
 func (a *Adaptor) MonitorEvent(
-	cb contract.BaseEventCallback,
-	signature string,
-	address contract.Address,
+	cb contract.EventCallback,
+	efs []contract.EventFilter,
 	height int64) error {
+	if len(efs) > 0 {
+		return errors.New("EventFilter required")
+	}
+	for i, f := range efs {
+		if _, ok := f.(*EventFilter); !ok {
+			return errors.Errorf("not support EventFilter idx:%d %T", i, f)
+		}
+	}
 	reqHeight, err := a.monitorHeight(height)
 	if err != nil {
 		return err
@@ -164,33 +192,29 @@ func (a *Adaptor) MonitorEvent(
 	req := &EventRequest{
 		EventRequest: client.EventRequest{
 			Height: reqHeight,
-			EventFilter: client.EventFilter{
-				Addr:      client.Address(address),
-				Signature: signature,
-			},
 		},
 		Logs:             NewHexBool(true),
 		ProgressInterval: DefaultProgressInterval,
-		//Filters:          nil,
+		Filters:          newEventFilters(contract.NewSignatureToAddressesMap(efs)),
 	}
 	resp := &ProgressOrEventNotification{}
-	events := make([]*BaseEvent, 0)
+	es := make([]*Event, 0)
 	bp := &client.BlockHeightParam{}
 	return a.Client.Monitor("/event", req, resp, func(conn *websocket.Conn, v interface{}) {
 		switch n := v.(type) {
 		case *ProgressOrEventNotification:
 			if n.ProgressNotification != nil {
 				a.l.Logf(a.opt.TransportLogLevel.Level(), "ProgressNotification:%+v", n.ProgressNotification)
-				if len(events) > 0 {
+				if len(es) > 0 {
 					h, _ := n.ProgressNotification.Progress.Value()
 					h = h - 1
 					bp.Height = client.NewHexInt(h)
 					blk, _ := a.GetBlockByHeight(bp)
-					for _, e := range events {
+					for _, e := range es {
 						e.txHash, _ = blk.NormalTransactions[e.txIndex].TxHash.Value()
 						cb(e)
 					}
-					events = events[:0]
+					es = es[:0]
 				}
 			} else if n.EventNotification != nil {
 				a.l.Logf(a.opt.TransportLogLevel.Level(), "EventNotification:%+v", n.EventNotification)
@@ -199,7 +223,7 @@ func (a *Adaptor) MonitorEvent(
 				index, _ := n.EventNotification.Index.Int()
 				for i, l := range n.EventNotification.Logs {
 					indexInTx, _ := n.EventNotification.Events[i].Int()
-					e := &BaseEvent{
+					be := &BaseEvent{
 						blockHeight: h,
 						blockHash:   bh,
 						txIndex:     index,
@@ -209,7 +233,12 @@ func (a *Adaptor) MonitorEvent(
 						indexed:     len(l.Indexed) - 1,
 						values:      append(l.Indexed[1:], l.Data...),
 					}
-					events = append(events, e)
+					for _, f := range efs {
+						if e, _ := f.Filter(be); e != nil {
+							es = append(es, e.(*Event))
+							continue
+						}
+					}
 				}
 			} else {
 				a.l.Warnf("empty notification %v", n)
@@ -224,36 +253,18 @@ func (a *Adaptor) MonitorEvent(
 	})
 }
 
-func (a *Adaptor) MonitorEvents(
-	cb contract.BaseEventsCallback,
-	filter map[string][]contract.Address,
+func (a *Adaptor) MonitorBaseEvent(
+	cb contract.BaseEventCallback,
+	sigToAddrs map[string][]contract.Address,
 	height int64) error {
 	reqHeight, err := a.monitorHeight(height)
 	if err != nil {
 		return err
 	}
-	//make list of filter
-	efl := make([]*client.EventFilter, 0)
-	for signature, addresses := range filter {
-		if len(addresses) == 0 {
-			ef := &client.EventFilter{
-				Signature: signature,
-			}
-			efl = append(efl, ef)
-		} else {
-			for _, address := range addresses {
-				ef := &client.EventFilter{
-					Addr:      client.Address(address),
-					Signature: signature,
-				}
-				efl = append(efl, ef)
-			}
-		}
-	}
 	req := &BlockRequest{
 		BlockRequest: client.BlockRequest{
 			Height:       reqHeight,
-			EventFilters: efl,
+			EventFilters: newEventFilters(sigToAddrs),
 		},
 		Logs: NewHexBool(true),
 	}
@@ -261,11 +272,10 @@ func (a *Adaptor) MonitorEvents(
 	return a.Client.Monitor("/block", req, resp, func(conn *websocket.Conn, v interface{}) {
 		switch n := v.(type) {
 		case *BlockNotification:
-			a.l.Tracef("BlockNotification:%+v", n)
+			a.l.Logf(a.opt.TransportLogLevel.Level(), "BlockNotification:%+v", n)
 			h, _ := n.Height.Value()
 			bh, _ := n.Hash.Value()
 			if len(n.Logs) > 0 {
-				l := make([]contract.BaseEvent, 0)
 				blk, _ := a.GetBlockByHeight(&client.BlockHeightParam{Height: client.NewHexInt(h - 1)})
 				for i, logsEachFilter := range n.Logs {
 					for j, logsOfReceipt := range logsEachFilter {
@@ -273,7 +283,7 @@ func (a *Adaptor) MonitorEvents(
 						txh, _ := blk.NormalTransactions[indexInBlock].TxHash.Value()
 						for k, el := range logsOfReceipt {
 							indexInTx, _ := n.Events[i][j][k].Int()
-							e := &BaseEvent{
+							be := &BaseEvent{
 								blockHeight: h,
 								blockHash:   bh,
 								txHash:      txh,
@@ -283,11 +293,10 @@ func (a *Adaptor) MonitorEvents(
 								indexed:     len(el.Indexed) - 1,
 								values:      append(el.Indexed[1:], el.Data...),
 							}
-							l = append(l, e)
+							cb(be)
 						}
 					}
 				}
-				cb(l)
 			}
 		case client.WSEvent:
 			a.l.Debugf("monitorBlock connected conn:%s", conn.LocalAddr().String())
@@ -329,7 +338,7 @@ type EventRequest struct {
 	Logs             HexBool       `json:"logs,omitempty"`
 	ProgressInterval client.HexInt `json:"progressInterval,omitempty"`
 
-	Filters []client.EventFilter `json:"eventFilters,omitempty"`
+	Filters []*client.EventFilter `json:"eventFilters,omitempty"`
 }
 
 type ProgressOrEventNotification struct {
