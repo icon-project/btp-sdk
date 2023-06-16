@@ -119,7 +119,7 @@ type BlockMonitor interface {
 type Adaptor interface {
 	Handler(spec []byte, address Address) (Handler, error)
 	BlockMonitor() BlockMonitor
-	MonitorEvent(cb EventCallback, fs []EventFilter, height int64) error
+	MonitorEvent(cb EventCallback, efs []EventFilter, height int64) error
 	MonitorBaseEvent(cb BaseEventCallback, sigToAddrs map[string][]Address, height int64) error
 }
 

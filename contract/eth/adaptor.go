@@ -181,12 +181,20 @@ func newFilterQuery(topicToAddrs map[common.Hash][]common.Address) *ethereum.Fil
 
 func (a *Adaptor) MonitorEvent(
 	cb contract.EventCallback,
-	fs []contract.EventFilter,
+	efs []contract.EventFilter,
 	height int64) error {
-	fq := newFilterQuery(newTopicToAddressesMap(contract.NewSignatureToAddressesMap(fs)))
+	if len(efs) == 0 {
+		return errors.New("EventFilter required")
+	}
+	for i, f := range efs {
+		if _, ok := f.(*EventFilter); !ok {
+			return errors.Errorf("not support EventFilter idx:%d %T", i, f)
+		}
+	}
+	fq := newFilterQuery(newTopicToAddressesMap(contract.NewSignatureToAddressesMap(efs)))
 	fq.FromBlock = big.NewInt(height)
 	onBaseEvent := func(be contract.BaseEvent) {
-		for _, f := range fs {
+		for _, f := range efs {
 			if e, _ := f.Filter(be); e != nil {
 				cb(e)
 			}

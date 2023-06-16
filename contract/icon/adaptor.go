@@ -177,7 +177,7 @@ func (a *Adaptor) MonitorEvent(
 	cb contract.EventCallback,
 	efs []contract.EventFilter,
 	height int64) error {
-	if len(efs) > 0 {
+	if len(efs) == 0 {
 		return errors.New("EventFilter required")
 	}
 	for i, f := range efs {
