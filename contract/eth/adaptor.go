@@ -306,6 +306,7 @@ func (a *Adaptor) MonitorBySubscribeFilterLogs(cb func(e contract.BaseEvent),
 		case err = <-s.Err():
 			return err
 		case el := <-ch:
+			a.l.Logf(a.opt.TransportLogLevel.Level(), "SubscribeFilterLogs:%+v", el)
 			if e := matchAndToBaseEvent(fq, el); e != nil {
 				cb(e)
 			}
@@ -316,11 +317,10 @@ func (a *Adaptor) MonitorBySubscribeFilterLogs(cb func(e contract.BaseEvent),
 func matchAndToBaseEvent(fq *ethereum.FilterQuery, el types.Log) *BaseEvent {
 	if matchEventLog(fq.Topics[0][0], fq.Addresses, &el) {
 		return &BaseEvent{
-			//indexInTx: indexInTx, //FIXME indexInTx
 			Log:        &el,
 			sigMatcher: SignatureMatcher(el.Topics[0].String()),
 			indexed:    len(el.Topics) - 1,
-			//finalized: //FIXME finalized
+			//indexInTx: indexInTx, //FIXME indexInTx
 		}
 	}
 	return nil

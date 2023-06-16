@@ -24,12 +24,6 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 )
 
-var (
-	ethBlockMonitorOpt = BlockMonitorOptions{
-		FinalizeBlockCount: 3,
-	}
-)
-
 func ethBlockMonitor(t *testing.T) *BlockMonitor {
 	a := adaptor(t, NetworkTypeEth)
 	return a.BlockMonitor().(*BlockMonitor)

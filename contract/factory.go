@@ -53,6 +53,7 @@ type Event interface {
 type EventFilter interface {
 	Filter(event BaseEvent) (Event, error)
 	Signature() string
+	Address() Address
 }
 
 type SignatureMatcher interface {
@@ -77,6 +78,7 @@ type Handler interface {
 	EventFilter(name string, params Params) (EventFilter, error)
 	Spec() Spec
 	MonitorEvent(cb EventCallback, name string, height int64) error
+	Address() Address
 }
 
 type BaseEventCallback func(e BaseEvent)
@@ -114,8 +116,6 @@ type BlockMonitor interface {
 	Stop() error
 	BlockInfo(height int64) BlockInfo
 }
-
-//type BlockInfoCallback func(bi BlockInfo)
 
 type Adaptor interface {
 	Handler(spec []byte, address Address) (Handler, error)

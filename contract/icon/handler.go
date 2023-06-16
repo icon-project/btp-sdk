@@ -226,3 +226,7 @@ func (h *Handler) MonitorEvent(cb contract.EventCallback, name string, height in
 func (h *Handler) Spec() contract.Spec {
 	return h.spec
 }
+
+func (h *Handler) Address() contract.Address {
+	return contract.Address(h.address)
+}

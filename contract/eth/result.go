@@ -62,6 +62,7 @@ func NewTxResult(txr *types.Receipt) (contract.TxResult, error) {
 			Log:        l,
 			sigMatcher: SignatureMatcher(l.Topics[0].String()),
 			indexed:    len(l.Topics) - 1,
+			indexInTx:  i,
 		}
 	}
 	return r, nil
@@ -385,4 +386,8 @@ func (f *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
 
 func (f *EventFilter) Signature() string {
 	return f.out.Sig
+}
+
+func (f *EventFilter) Address() contract.Address {
+	return f.address
 }

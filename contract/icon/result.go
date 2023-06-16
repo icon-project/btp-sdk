@@ -283,3 +283,7 @@ func (f *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
 func (f *EventFilter) Signature() string {
 	return f.spec.Signature
 }
+
+func (f *EventFilter) Address() contract.Address {
+	return f.address
+}
