@@ -202,17 +202,16 @@ func NewSignatureToAddressesMap(fs []EventFilter) map[string][]Address {
 		addrs, ok := sigToAddrs[f.Signature()]
 		tAddr := f.Address()
 		if !ok {
-			sigToAddrs[f.Signature()] = []Address{tAddr}
-		} else {
-			exists := false
-			for _, addr := range addrs {
-				if addr == tAddr {
-					exists = true
-				}
+			addrs = make([]Address, 0)
+		}
+		exists := false
+		for _, addr := range addrs {
+			if addr == tAddr {
+				exists = true
 			}
-			if !exists {
-				addrs = append(addrs, tAddr)
-			}
+		}
+		if !exists {
+			sigToAddrs[f.Signature()] = append(addrs, tAddr)
 		}
 	}
 	return sigToAddrs

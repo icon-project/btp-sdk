@@ -155,7 +155,7 @@ func newTopicToAddressesMap(sigToAddrs map[string][]contract.Address) map[common
 func newFilterQuery(topicToAddrs map[common.Hash][]common.Address) *ethereum.FilterQuery {
 	//reverse sigToAddrs => addr to topics
 	addrToTopics := make(map[common.Address][]common.Hash)
-	for s, addrs := range topicToAddrs {
+	for topic, addrs := range topicToAddrs {
 		if len(addrs) == 0 {
 			addrs = append(addrs, emptyAddr)
 		}
@@ -163,9 +163,8 @@ func newFilterQuery(topicToAddrs map[common.Hash][]common.Address) *ethereum.Fil
 			topics, ok := addrToTopics[addr]
 			if !ok {
 				topics = make([]common.Hash, 0)
-				addrToTopics[addr] = topics
 			}
-			topics = append(topics, s)
+			addrToTopics[addr] = append(topics, topic)
 		}
 	}
 	fq := &ethereum.FilterQuery{
