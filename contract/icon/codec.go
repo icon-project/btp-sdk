@@ -51,33 +51,37 @@ func encodePrimitive(s contract.TypeTag, value interface{}) (interface{}, error)
 	}
 	switch s {
 	case contract.TInteger:
-		v, ok := value.(contract.Integer)
-		if !ok {
-			return nil, errors.Errorf("fail encodePrimitive integer, invalid type %T", value)
+		v, err := contract.IntegerOf(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive integer, err:%s", err.Error())
 		}
 		return client.HexInt(v), nil
 	case contract.TString:
-		v, ok := value.(contract.String)
-		if !ok {
-			return nil, errors.Errorf("fail encodePrimitive string, invalid type %T", value)
+		v, err := contract.StringOf(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive string, err:%s", err.Error())
 		}
 		return string(v), nil
 	case contract.TAddress:
-		v, ok := value.(contract.Address)
-		if !ok {
-			return nil, errors.Errorf("fail encodePrimitive address, invalid type %T", value)
+		v, err := contract.AddressOf(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive address, err:%s", err.Error())
 		}
-		return client.Address(v), nil
+		a := client.Address(v)
+		if _, err = a.Value(); err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive address, err:%s", err.Error())
+		}
+		return a, nil
 	case contract.TBytes:
-		v, ok := value.(contract.Bytes)
-		if !ok {
-			return nil, errors.Errorf("fail encodePrimitive []byte, invalid type %T", value)
+		v, err := contract.BytesOf(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive bytes, err:%s", err.Error())
 		}
 		return client.NewHexBytes(v), nil
 	case contract.TBoolean:
-		v, ok := value.(contract.Boolean)
-		if !ok {
-			return nil, errors.Errorf("fail encodePrimitive bool, invalid type %T", value)
+		v, err := contract.BooleanOf(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive boolean, err:%s", err.Error())
 		}
 		return NewHexBool(bool(v)), nil
 	default:
@@ -86,21 +90,20 @@ func encodePrimitive(s contract.TypeTag, value interface{}) (interface{}, error)
 }
 
 func encodeStruct(s *contract.StructSpec, value interface{}) (interface{}, error) {
-	var m map[string]interface{}
-	st, ok := value.(contract.Struct)
-	if ok {
-		m = st.Params()
-	} else {
-		if m, ok = value.(contract.Params); !ok {
-			if m, ok = value.(map[string]interface{}); !ok {
-				return nil, errors.Errorf("fail encodeStruct, invalid type %T", value)
-			}
+	var params contract.Params
+	st, err := contract.StructOf(value)
+	if err != nil {
+		var pErr error
+		if params, pErr = contract.ParamsOf(value); err != nil {
+			return nil, errors.Wrapf(err, "fail encodeStruct, err:%s pErr:%s", err.Error(), pErr.Error())
 		}
+	} else {
+		params = st.Params()
 	}
+
 	ret := make(map[string]interface{})
-	var err error
 	for k, v := range s.FieldMap {
-		if ret[k], err = encode(v.Type, m[k]); err != nil {
+		if ret[k], err = encode(v.Type, params[k]); err != nil {
 			return nil, err
 		}
 	}

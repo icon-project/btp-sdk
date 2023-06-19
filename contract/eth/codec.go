@@ -52,9 +52,9 @@ func encodePrimitive(s abi.Type, value interface{}) (interface{}, error) {
 	}
 	switch s.T {
 	case abi.IntTy, abi.UintTy:
-		v, ok := value.(contract.Integer)
-		if !ok {
-			return nil, errors.Errorf("fail encodePrimitive integer, invalid type %T", value)
+		v, err := contract.IntegerOf(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive integer, err:%s", err.Error())
 		}
 		bi, err := v.AsBigInt()
 		if err != nil {
@@ -101,50 +101,51 @@ func encodePrimitive(s abi.Type, value interface{}) (interface{}, error) {
 			return bi, nil
 		}
 	case abi.StringTy:
-		if v, ok := value.(contract.String); !ok {
-			return nil, errors.Errorf("fail encodePrimitive string, invalid type %T", value)
-		} else {
-			return string(v), nil
+		v, err := contract.StringOf(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive string, err:%s", err.Error())
 		}
+		return string(v), nil
 	case abi.AddressTy:
-		if v, ok := value.(contract.Address); !ok {
-			return nil, errors.Errorf("fail encodePrimitive address, invalid type %T", value)
-		} else {
-			return common.HexToAddress(string(v)), nil
+		v, err := contract.AddressOf(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive address, err:%s", err.Error())
 		}
+		if !common.IsHexAddress(string(v)) {
+			return nil, errors.Errorf("fail encodePrimitive address, required hex")
+		}
+		return common.HexToAddress(string(v)), nil
 	case abi.BytesTy:
-		if v, ok := value.(contract.Bytes); !ok {
-			return nil, errors.Errorf("fail encodePrimitive bytes, invalid type %T", value)
-		} else {
-			return []byte(v), nil
+		v, err := contract.BytesOf(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive bytes, err:%s", err.Error())
 		}
+		return []byte(v), nil
 	case abi.BoolTy:
-		if v, ok := value.(contract.Boolean); !ok {
-			return nil, errors.Errorf("fail encodePrimitive boolean, invalid type %T", value)
-		} else {
-			return bool(v), nil
+		v, err := contract.BooleanOf(value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fail encodePrimitive boolean, err:%s", err.Error())
 		}
+		return bool(v), nil
 	default: //abi.FixedBytesTy
 		return nil, errors.Errorf("fail encodePrimitive, not supported %v", s)
 	}
 }
 
 func encodeStruct(s abi.Type, value interface{}) (interface{}, error) {
-	var m map[string]interface{}
-	st, ok := value.(contract.Struct)
-	if ok {
-		m = st.Params()
-	} else {
-		if m, ok = value.(contract.Params); !ok {
-			if m, ok = value.(map[string]interface{}); !ok {
-				return nil, errors.Errorf("fail encodeStruct, invalid type %T", value)
-			}
+	var params contract.Params
+	st, err := contract.StructOf(value)
+	if err != nil {
+		var pErr error
+		if params, pErr = contract.ParamsOf(value); err != nil {
+			return nil, errors.Wrapf(err, "fail encodeStruct, err:%s pErr:%s", err.Error(), pErr.Error())
 		}
+	} else {
+		params = st.Params()
 	}
-
 	ret := reflect.New(s.TupleType).Elem()
 	for i, n := range s.TupleRawNames {
-		field, err := encode(*s.TupleElems[i], m[n])
+		field, err := encode(*s.TupleElems[i], params[n])
 		if err != nil {
 			return nil, err
 		}
