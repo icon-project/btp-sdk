@@ -18,6 +18,8 @@ package contract
 
 import (
 	"bytes"
+	"encoding/base64"
+	"encoding/hex"
 	"math/big"
 	"reflect"
 	"strings"
@@ -177,6 +179,13 @@ func BytesOf(value interface{}) (Bytes, error) {
 		return v, nil
 	case []byte:
 		return v, nil
+	case string:
+		parseFunc := base64.StdEncoding.DecodeString
+		if strings.HasPrefix(v, "0x") {
+			parseFunc = hex.DecodeString
+			v = v[2:]
+		}
+		return parseFunc(v)
 	default:
 		return nil, errors.Errorf("invalid type %T", v)
 	}
