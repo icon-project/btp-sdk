@@ -35,7 +35,7 @@ type TxResult interface {
 }
 type BaseEvent interface {
 	Address() Address
-	MatchSignature(v string) bool
+	SignatureMatcher() SignatureMatcher
 	Indexed() int
 	IndexedValue(i int) EventIndexedValue
 	BlockID() BlockID

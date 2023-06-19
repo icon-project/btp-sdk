@@ -79,8 +79,8 @@ func (e *BaseEvent) Address() contract.Address {
 	return contract.Address(e.Log.Address.String())
 }
 
-func (e *BaseEvent) MatchSignature(v string) bool {
-	return e.sigMatcher.Match(v)
+func (e *BaseEvent) SignatureMatcher() contract.SignatureMatcher {
+	return e.sigMatcher
 }
 
 func (e *BaseEvent) Indexed() int {
@@ -325,7 +325,7 @@ func (f *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
 		}
 		return nil, nil
 	}
-	if !event.MatchSignature(f.out.Sig) {
+	if !event.SignatureMatcher().Match(f.out.Sig) {
 		if failIfNotMatchedInEventFilter {
 			return nil, errors.Errorf("signature expect:%v actual:%v",
 				f.out.Sig, event.(*BaseEvent).sigMatcher)
