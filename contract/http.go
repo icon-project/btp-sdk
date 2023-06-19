@@ -19,7 +19,6 @@ package contract
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"net/http"
 
 	"github.com/icon-project/btp2/common/errors"
@@ -41,12 +40,12 @@ func (t *HttpTransport) log(rc io.ReadCloser) (io.ReadCloser, error) {
 	if rc == nil {
 		return nil, nil
 	}
-	b, err := ioutil.ReadAll(rc)
+	b, err := io.ReadAll(rc)
 	if err != nil {
-		return nil, errors.Wrapf(err, "fail to ioutil.ReadAll err:%s", err.Error())
+		return nil, errors.Wrapf(err, "fail to io.ReadAll err:%s", err.Error())
 	}
 	t.l.Logln(t.lv, string(b))
-	return ioutil.NopCloser(bytes.NewBuffer(b)), nil
+	return io.NopCloser(bytes.NewBuffer(b)), nil
 }
 
 func (t *HttpTransport) RoundTrip(req *http.Request) (resp *http.Response, err error) {

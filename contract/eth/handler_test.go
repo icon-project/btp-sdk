@@ -18,9 +18,8 @@ package eth
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -34,7 +33,7 @@ import (
 )
 
 const (
-	specFile = "../../example/solidity/artifacts/contracts/HelloWorld.sol/HelloWorld.json"
+	specFile = "../../example/solidity/artifacts/contracts/HelloWorld.sol/HelloWorld.abi.json"
 )
 
 var (
@@ -73,21 +72,14 @@ func assertStruct(t *testing.T, expected, actual interface{}) {
 }
 
 func handler(t *testing.T, networkType string) (*Handler, *Adaptor) {
-	b, err := ioutil.ReadFile(specFile)
+	b, err := os.ReadFile(specFile)
 	if err != nil {
 		assert.FailNow(t, "fail to read file", err)
-	}
-	st := struct {
-		ABI json.RawMessage `json:"abi"`
-	}{}
-	err = json.Unmarshal(b, &st)
-	if err != nil {
-		assert.FailNow(t, "fail to Unmarshal", err)
 	}
 	a := adaptor(t, networkType)
 	h, err := a.Handler(b, addr)
 	if err != nil {
-		assert.FailNow(t, "fail to NewHandler", err)
+		assert.FailNow(t, "fail to Handler", err)
 	}
 	return h.(*Handler), a
 }

@@ -17,7 +17,7 @@
 package icon
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
@@ -34,7 +34,7 @@ const (
 	nid      = "0x3"
 	//cd ../../example/javascore; ./gradlew deployToTest
 	addr           = "cxbdb2fac53eaf445f9f0d0c33306d6b2a1a25353d"
-	keystoreName   = "../../example/javascore/src/test/resources/keystore.json"
+	keystoreFile   = "../../example/javascore/src/test/resources/keystore.json"
 	keystoreSecret = "../../example/javascore/src/test/resources/keysecret"
 )
 
@@ -43,25 +43,25 @@ var (
 		NetworkID: client.HexInt(nid),
 	}
 
-	w = loadWallet(keystoreName, keystoreSecret)
+	w = MustLoadWallet(keystoreFile, keystoreSecret)
 )
 
-func loadWallet(keyStoreFile, keyStoreSecret string) wallet.Wallet {
-	ks, err := ioutil.ReadFile(keyStoreFile)
+func MustLoadWallet(keyStoreFile, keyStoreSecret string) wallet.Wallet {
+	w, err := wallet.DecryptKeyStore(MustReadFile(keyStoreFile), MustReadFile(keyStoreSecret))
 	if err != nil {
-		panic(err)
-	}
-	ksp, err := ioutil.ReadFile(keyStoreSecret)
-	if err != nil {
-		panic(err)
-	}
-	w, err := wallet.DecryptKeyStore(ks, ksp)
-	if err != nil {
-		panic(err)
+		log.Panicf("keyStoreFile:%s, keyStoreSecret:%s, %+v",
+			keyStoreFile, keyStoreSecret, err)
 	}
 	return w
 }
 
+func MustReadFile(f string) []byte {
+	b, err := os.ReadFile(f)
+	if err != nil {
+		log.Panicf("fail to ReadFile err:%+v", err)
+	}
+	return b
+}
 func adaptor(t *testing.T, networkType string) *Adaptor {
 	l := log.GlobalLogger()
 	opt, err := contract.EncodeOptions(adaptorOpt)

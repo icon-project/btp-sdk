@@ -20,7 +20,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
@@ -41,8 +41,8 @@ const (
 	endpoint = "http://localhost:8545"
 	//cd ../../example/solidity; npx hardhat --network ether2_test run ./scripts/deploy.ts
 	addr                              = "0x09635F643e140090A9A8Dcd712eD6285858ceBef"
-	keystoreName                      = "../../example/solidity/test/keystore.json"
-	keystorePass                      = "hardhat"
+	keystoreFile                      = "../../example/solidity/test/keystore.json"
+	keystoreSecret                    = "../../example/solidity/test/keysecret"
 	ethBlockMonitorFinalizeBlockCount = 3
 	eth2BlockMonitorEndpoint          = "http://localhost:9596"
 )
@@ -60,7 +60,7 @@ var (
 			}),
 		},
 	}
-	w = loadWallet(keystoreName, keystorePass)
+	w = MustLoadWallet(keystoreFile, keystoreSecret)
 )
 
 func MustEncodeOptions(v interface{}) contract.Options {
@@ -92,19 +92,24 @@ func (w *Wallet) ECDH(pubKey []byte) ([]byte, error) {
 	return nil, errors.New("not implemented")
 }
 
-func loadWallet(keyStoreFile, keyPassword string) wallet.Wallet {
-	ks, err := ioutil.ReadFile(keyStoreFile)
+func MustLoadWallet(keyStoreFile, keyStoreSecret string) wallet.Wallet {
+	key, err := keystore.DecryptKey(MustReadFile(keyStoreFile), string(MustReadFile(keyStoreSecret)))
 	if err != nil {
-		panic(err)
-	}
-	key, err := keystore.DecryptKey(ks, keyPassword)
-	if err != nil {
-		panic(err)
+		log.Panicf("keyStoreFile:%s, keyStoreSecret:%s, %+v",
+			keyStoreFile, keyStoreSecret, err)
 	}
 	return &Wallet{
 		Key:    key,
 		PubKey: &key.PrivateKey.PublicKey,
 	}
+}
+
+func MustReadFile(f string) []byte {
+	b, err := os.ReadFile(f)
+	if err != nil {
+		log.Panicf("fail to ReadFile err:%+v", err)
+	}
+	return b
 }
 
 func adaptor(t *testing.T, networkType string) *Adaptor {

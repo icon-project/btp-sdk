@@ -29,9 +29,10 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "compile" : "npx hardhat compile",
+    "compile": "npx hardhat compile",
     "size": "npx hardhat size-contracts",
-    "test" : "npx hardhat test",
-    "deploy" : "npx hardhat run --network localhost scripts/deploy.ts"
+    "test": "npx hardhat test",
+    "deploy": "npx hardhat run --network localhost scripts/deploy.ts",
+    "abi": "jq .abi artifacts/contracts/HelloWorld.sol/HelloWorld.json > artifacts/contracts/HelloWorld.sol/HelloWorld.abi.json",
   }
 }
