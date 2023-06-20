@@ -1,0 +1,263 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/icon-project/btp2/common/log"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+
+	"github.com/icon-project/btp-sdk/contract"
+	"github.com/icon-project/btp-sdk/service"
+)
+
+const (
+	ParamNetwork          = "network"
+	ParamTxID             = "txID"
+	ParamServiceOrAddress = "serviceOrAddress"
+	ContextAdaptor        = "adaptor"
+	ContextHandler        = "handler"
+	ContextService        = "service"
+	ContextRequest        = "request"
+)
+
+type AdaptorAndHandlers struct {
+	a    contract.Adaptor
+	hMap map[contract.Address]contract.Handler
+	mtx  sync.RWMutex
+}
+
+func NewAdaptorAndHandlers(a contract.Adaptor) *AdaptorAndHandlers {
+	return &AdaptorAndHandlers{
+		a:    a,
+		hMap: make(map[contract.Address]contract.Handler),
+	}
+}
+
+func (a *AdaptorAndHandlers) Adaptor() contract.Adaptor {
+	return a.a
+}
+
+func (a *AdaptorAndHandlers) AddHandler(addr contract.Address, h contract.Handler) {
+	a.mtx.Lock()
+	defer a.mtx.Unlock()
+	a.hMap[addr] = h
+}
+
+func (a *AdaptorAndHandlers) GetHandler(addr contract.Address) contract.Handler {
+	a.mtx.RLock()
+	defer a.mtx.RUnlock()
+	return a.hMap[addr]
+}
+
+type Server struct {
+	e    *echo.Echo
+	addr string
+	aMap map[string]*AdaptorAndHandlers
+	sMap map[string]service.Service
+	mtx  sync.RWMutex
+	l    log.Logger
+}
+
+func NewServer(addr string, l log.Logger) *Server {
+	e := echo.New()
+	e.HideBanner = true
+	e.HidePort = true
+	e.Validator = NewValidator()
+	return &Server{
+		e:    e,
+		addr: addr,
+		aMap: make(map[string]*AdaptorAndHandlers),
+		sMap: make(map[string]service.Service),
+		l:    l.WithFields(log.Fields{log.FieldKeyModule: "api"}),
+	}
+}
+
+func (s *Server) AddAdaptor(network string, a contract.Adaptor) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	s.aMap[network] = NewAdaptorAndHandlers(a)
+}
+
+func (s *Server) GetAdaptor(network string) *AdaptorAndHandlers {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	return s.aMap[network]
+}
+
+func (s *Server) AddService(svc service.Service) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	s.sMap[svc.Name()] = svc
+}
+
+func (s *Server) GetService(name string) service.Service {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	return s.sMap[name]
+}
+
+func (s *Server) Start() error {
+	s.l.Infoln("starting the server")
+	// CORS middleware
+	s.e.Use(
+		middleware.CORSWithConfig(middleware.CORSConfig{
+			MaxAge: 3600,
+		}),
+		middleware.Recover(),
+		middleware.BodyDump(func(c echo.Context, reqBody []byte, resBody []byte) {
+			s.l.Debugf("url=%s", c.Request().RequestURI)
+			s.l.Tracef("request=%s", reqBody)
+			s.l.Tracef("response=%s", resBody)
+		}))
+	s.RegisterAPIHandler(s.e.Group("/api"))
+	return s.e.Start(s.addr)
+}
+
+type Request struct {
+	Method  string           `json:"method" validate:"required"`
+	Params  contract.Params  `json:"params"`
+	Options contract.Options `json:"options"`
+}
+
+type ContractRequest struct {
+	Request
+	Spec json.RawMessage `json:"spec,omitempty"`
+}
+
+func (s *Server) RegisterAPIHandler(g *echo.Group) {
+	generalApi := g.Group("/:" + ParamNetwork)
+	generalApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			p := c.Param(ParamNetwork)
+			a := s.GetAdaptor(p)
+			if a == nil {
+				return c.String(http.StatusNotFound,
+					fmt.Sprintf("Network(%s) not found", p))
+			}
+			c.Set(ContextAdaptor, a)
+			return next(c)
+		}
+	})
+	generalApi.GET("/result/:"+ParamTxID, func(c echo.Context) error {
+		a := c.Get(ContextAdaptor).(*AdaptorAndHandlers)
+		p := c.Param(ParamTxID)
+		ret, err := a.Adaptor().GetResult(p)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+
+	serviceApi := generalApi.Group("/:" + ParamServiceOrAddress)
+	serviceApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			p := c.Param(ParamServiceOrAddress)
+			svc := s.GetService(p)
+			if svc != nil {
+				c.Set(ContextService, svc)
+			}
+			req := &ContractRequest{}
+			if err := BindOrUnmarshalBody(c, req); err != nil {
+				s.l.Debugf("fail to BindOrUnmarshalBody err:%+v", err)
+				return echo.ErrBadRequest
+			}
+			if err := c.Validate(req); err != nil {
+				s.l.Debugf("fail to Validate err:%+v", err)
+				return err
+			}
+			c.Set(ContextRequest, &req.Request)
+			if svc == nil {
+				a := c.Get(ContextAdaptor).(*AdaptorAndHandlers)
+				address := contract.Address(p)
+				var (
+					h   contract.Handler
+					err error
+				)
+				if len(req.Spec) > 0 {
+					h, err = a.Adaptor().Handler(req.Spec, address)
+					if err != nil {
+						s.l.Errorf("fail to NewHandler err:%+v", err)
+						return err
+					}
+					a.AddHandler(address, h)
+				} else {
+					h = a.GetHandler(address)
+					if h == nil {
+						return c.String(http.StatusNotFound,
+							fmt.Sprintf("Contract(%s) not found", address))
+					}
+				}
+				c.Set(ContextHandler, h)
+			}
+			return next(c)
+		}
+	})
+	serviceApi.POST("/invoke", func(c echo.Context) error {
+		var (
+			txID contract.TxID
+			err  error
+		)
+		req := c.Get(ContextRequest).(*Request)
+		if svc := c.Get(ContextService); svc != nil {
+			network := c.Param(ParamNetwork)
+			txID, err = svc.(service.Service).Invoke(network, req.Method, req.Params, req.Options)
+		} else {
+			h := c.Get(ContextHandler).(contract.Handler)
+			txID, err = h.Invoke(req.Method, req.Params, req.Options)
+		}
+		if err != nil {
+			//TODO convert err-response
+			s.l.Errorf("fail to Invoke err:%+v", err)
+			return err
+		}
+		return c.JSON(http.StatusOK, txID)
+	})
+	serviceApi.GET("/call", func(c echo.Context) error {
+		var (
+			ret contract.ReturnValue
+			err error
+		)
+		req := c.Get(ContextRequest).(*Request)
+		if svc := c.Get(ContextService); svc != nil {
+			network := c.Param(ParamNetwork)
+			ret, err = svc.(service.Service).Call(network, req.Method, req.Params, req.Options)
+		} else {
+			h := c.Get(ContextHandler).(contract.Handler)
+			ret, err = h.Call(req.Method, req.Params, req.Options)
+		}
+		if err != nil {
+			s.l.Errorf("fail to Call err:%+v", err)
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+}
+
+func (s *Server) Stop() error {
+	s.l.Infoln("shutting down the server")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	return s.e.Shutdown(ctx)
+}
+
+func BindOrUnmarshalBody(c echo.Context, v interface{}) error {
+	if err := c.Bind(v); err != nil {
+		if c.Request().ContentLength > 0 {
+			b := c.Request().Body
+			defer b.Close()
+			if err = json.NewDecoder(b).Decode(v); err != nil {
+				return err
+			}
+			return nil
+		}
+		return err
+	}
+	return nil
+}
