@@ -29,33 +29,60 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/icon-project/btp2/common/errors"
 
 	"github.com/icon-project/btp-sdk/contract"
 )
 
+type TxFailure struct {
+	Error string      `json:"error"`
+	Code  int         `json:"code"`
+	Data  interface{} `json:"data,omitempty"`
+}
+
+func NewTxFailure(err error) (*TxFailure, error) {
+	txf := &TxFailure{}
+	if e, ok := err.(rpc.Error); ok {
+		txf.Code = e.ErrorCode()
+	} else {
+		return nil, err
+	}
+	if de, ok := err.(rpc.DataError); ok {
+		txf.Data = de.ErrorData()
+	} else {
+		return nil, err
+	}
+	return txf, nil
+}
+
 type TxResult struct {
 	*types.Receipt
-	events []contract.BaseEvent
+	events  []contract.BaseEvent
+	failure *TxFailure
+}
+
+func IsSuccess(txr *types.Receipt) bool {
+	return txr.Status == types.ReceiptStatusSuccessful
 }
 
 func (r *TxResult) Success() bool {
-	return r.Status == types.ReceiptStatusSuccessful
+	return IsSuccess(r.Receipt)
 }
 
 func (r *TxResult) Events() []contract.BaseEvent {
 	return r.events
 }
 
-func (r *TxResult) Revert() interface{} {
-	//TODO implement me
-	panic("implement me")
+func (r *TxResult) Failure() interface{} {
+	return r.failure
 }
 
-func NewTxResult(txr *types.Receipt) (contract.TxResult, error) {
+func NewTxResult(txr *types.Receipt, failure *TxFailure) contract.TxResult {
 	r := &TxResult{
 		Receipt: txr,
 		events:  make([]contract.BaseEvent, len(txr.Logs)),
+		failure: failure,
 	}
 	for i, l := range txr.Logs {
 		r.events[i] = &BaseEvent{
@@ -65,7 +92,7 @@ func NewTxResult(txr *types.Receipt) (contract.TxResult, error) {
 			indexInTx:  i,
 		}
 	}
-	return r, nil
+	return r
 }
 
 type BaseEvent struct {

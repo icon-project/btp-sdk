@@ -31,7 +31,7 @@ type BlockID interface{}
 type TxResult interface {
 	Success() bool
 	Events() []BaseEvent
-	Revert() interface{}
+	Failure() interface{}
 }
 type BaseEvent interface {
 	Address() Address

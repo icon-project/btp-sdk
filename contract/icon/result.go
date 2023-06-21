@@ -40,9 +40,8 @@ func (r *TxResult) Events() []contract.BaseEvent {
 	return r.events
 }
 
-func (r *TxResult) Revert() interface{} {
-	//TODO implement me
-	panic("implement me")
+func (r *TxResult) Failure() interface{} {
+	return r.TransactionResult.Failure
 }
 
 func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []byte) (contract.TxResult, error) {
