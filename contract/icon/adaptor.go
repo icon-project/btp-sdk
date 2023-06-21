@@ -83,11 +83,11 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 }
 
 func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
-	txh, ok := id.(client.HexBytes)
-	if !ok {
-		return nil, errors.Errorf("fail GetResult, invalid type %T", id)
+	txh, err := contract.BytesOf(id)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fail to BytesOf, invalid id err:%s", err.Error())
 	}
-	p := &client.TransactionHashParam{Hash: txh}
+	p := &client.TransactionHashParam{Hash: client.NewHexBytes(txh)}
 	txr, err := a.GetTransactionResult(p)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to GetTransactionResult err:%s", err.Error())
