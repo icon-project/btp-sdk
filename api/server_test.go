@@ -35,6 +35,7 @@ import (
 
 const (
 	serviceGeneral  = "general"
+	serviceTest     = "test"
 	serverAddress   = "localhost:8080"
 	networkIconTest = "icon_test"
 	networkEth2Test = "eth2_test"
@@ -81,6 +82,9 @@ var (
 				bmc.ServiceName: MustEncodeOptions(service.MultiContractServiceOption{
 					service.MultiContractServiceOptionNameDefault: "cx2093dd8134f26df11aa928c86b6f5bac64a1cf83",
 				}),
+				serviceTest: MustEncodeOptions(service.DefaultServiceOptions{
+					ContractAddress: "cxbdb2fac53eaf445f9f0d0c33306d6b2a1a25353d",
+				}),
 			},
 		},
 		networkEth2Test: {
@@ -107,6 +111,9 @@ var (
 				bmc.ServiceName: MustEncodeOptions(service.MultiContractServiceOption{
 					service.MultiContractServiceOptionNameDefault: "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
 					bmc.MultiContractServiceOptionNameBMCM:        "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+				}),
+				serviceTest: MustEncodeOptions(service.DefaultServiceOptions{
+					ContractAddress: "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
 				}),
 			},
 		},
@@ -161,10 +168,11 @@ func MustEncodeOptions(v interface{}) contract.Options {
 	return opt
 }
 
-func Test_Server(t *testing.T) {
+func server(t *testing.T) *Server {
 	l := log.GlobalLogger()
 	s := NewServer(serverAddress, log.TraceLevel, l)
 	svcToNetworks := make(map[string]map[string]service.Network)
+	signers := make(map[string]service.Signer)
 	for network, config := range configs {
 		opt, err := contract.EncodeOptions(config.AdaptorOption)
 		if err != nil {
@@ -175,6 +183,10 @@ func Test_Server(t *testing.T) {
 			assert.FailNow(t, "fail to NewAdaptor", err)
 		}
 		s.AddAdaptor(network, a)
+		signers[network] = service.Signer{
+			Wallet:      config.Wallet,
+			NetworkType: config.NetworkType,
+		}
 		for name, so := range config.ServiceOptions {
 			networks, ok := svcToNetworks[name]
 			if !ok {
@@ -189,12 +201,33 @@ func Test_Server(t *testing.T) {
 		}
 	}
 	for name, networks := range svcToNetworks {
+		if name == serviceTest {
+			typeToSpec := make(map[string][]byte)
+			for network, n := range networks {
+				typeToSpec[n.NetworkType] = contracts[network].Spec
+			}
+			service.RegisterFactory(name, func(networks map[string]service.Network, l log.Logger) (service.Service, error) {
+				return service.NewDefaultService(name, networks, typeToSpec, l)
+			})
+		}
 		svc, err := service.NewService(name, networks, l)
 		if err != nil {
 			assert.FailNow(t, "fail to NewService", err)
 		}
+		if svc, err = service.NewSignerService(svc, signers, l); err != nil {
+			assert.FailNow(t, "fail to NewSignerService", err)
+		}
 		s.AddService(svc)
 	}
+	return s
+}
+
+func client() *Client {
+	return NewClient(fmt.Sprintf("http://%s/api", serverAddress), log.DebugLevel, log.GlobalLogger())
+}
+
+func Test_ServerCall(t *testing.T) {
+	s := server(t)
 	go func() {
 		err := s.Start()
 		defer s.Stop()
@@ -257,6 +290,24 @@ func Test_Server(t *testing.T) {
 		},
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
+			Service:  serviceTest,
+			Request: Request{
+				Method: "callInteger",
+				Params: contract.Params{
+					"arg1": byteVal,
+					"arg2": shortVal,
+					"arg3": intVal,
+					"arg4": longVal,
+					"arg5": int24Val,
+					"arg6": int40Val,
+					"arg7": int72Val,
+					"arg8": bigIntegerVal,
+				},
+			},
+			Response: contract.Struct{},
+		},
+		{
+			Networks: []string{networkIconTest, networkEth2Test},
 			Service:  bmc.ServiceName,
 			Request: Request{
 				Method: "getLinks",
@@ -264,7 +315,7 @@ func Test_Server(t *testing.T) {
 			Response: []string{},
 		},
 	}
-	c := NewClient(fmt.Sprintf("http://%s/api", serverAddress), log.DebugLevel, log.GlobalLogger())
+	c := client()
 	for _, arg := range args {
 		for _, n := range arg.Networks {
 			var err error
@@ -280,6 +331,91 @@ func Test_Server(t *testing.T) {
 			}
 			assert.NoError(t, err)
 			t.Logf("response:%v", arg.Response)
+		}
+	}
+}
+
+func Test_ServerInvoke(t *testing.T) {
+	s := server(t)
+	go func() {
+		err := s.Start()
+		defer s.Stop()
+		assert.FailNow(t, "fail to Server.Start", err)
+	}()
+
+	args := []struct {
+		Networks []string
+		Service  string
+		Request  Request
+	}{
+		{
+			Networks: []string{networkIconTest, networkEth2Test},
+			Service:  serviceTest,
+			Request: Request{
+				Method: "invokeInteger",
+				Params: contract.Params{
+					"arg1": byteVal,
+					"arg2": shortVal,
+					"arg3": intVal,
+					"arg4": longVal,
+					"arg5": int24Val,
+					"arg6": int40Val,
+					"arg7": int72Val,
+					"arg8": bigIntegerVal,
+				},
+			},
+		},
+		{
+			Networks: []string{networkIconTest},
+			Service:  serviceTest,
+			Request: Request{
+				Method: "invokePrimitive",
+				Params: contract.Params{
+					"arg1": bigIntegerVal,
+					"arg2": booleanVal,
+					"arg3": stringVal,
+					"arg4": bytesVal,
+					"arg5": addressVal[icon.NetworkTypeIcon],
+				},
+			},
+		},
+		{
+			Networks: []string{networkEth2Test},
+			Service:  serviceTest,
+			Request: Request{
+				Method: "invokePrimitive",
+				Params: contract.Params{
+					"arg1": bigIntegerVal,
+					"arg2": booleanVal,
+					"arg3": stringVal,
+					"arg4": bytesVal,
+					"arg5": addressVal[eth.NetworkTypeEth2],
+				},
+			},
+		},
+	}
+	c := client()
+	for _, arg := range args {
+		for _, n := range arg.Networks {
+			var (
+				txId contract.TxID
+				err  error
+			)
+			if arg.Service != serviceGeneral {
+				txId, err = c.ServiceInvoke(n, arg.Service, &arg.Request)
+			} else {
+				ctr := contracts[n]
+				req := &ContractRequest{
+					Request: arg.Request,
+					Spec:    ctr.Spec,
+				}
+				txId, err = c.Invoke(n, ctr.Address, req)
+			}
+			assert.NoError(t, err)
+			t.Logf("txId:%v", txId)
+			txr, err := c.GetResult(n, txId)
+			assert.NoError(t, err)
+			t.Logf("txr:%v", txr)
 		}
 	}
 }

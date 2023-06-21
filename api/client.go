@@ -77,8 +77,22 @@ func (c *Client) do(method, endpoint string, reqPtr, respPtr interface{}) (resp 
 	return
 }
 
-func (c *Client) GetResult(network string, id contract.TxID, req *Request) (*http.Response, error) {
-	return c.do(http.MethodGet, fmt.Sprintf("/%s/result/%s", network, id), req, nil)
+func (c *Client) GetResult(network string, id contract.TxID) (interface{}, error) {
+	var txr interface{}
+	_, err := c.do(http.MethodGet, fmt.Sprintf("/%s/result/%s", network, id), nil, &txr)
+	return txr, err
+}
+
+func (c *Client) Invoke(network string, addr contract.Address, req *ContractRequest) (contract.TxID, error) {
+	var txId contract.TxID
+	_, err := c.do(http.MethodPost, fmt.Sprintf("/%s/%s/invoke", network, addr), req, &txId)
+	return txId, err
+}
+
+func (c *Client) ServiceInvoke(network, svc string, req *Request) (contract.TxID, error) {
+	var txId contract.TxID
+	_, err := c.do(http.MethodPost, fmt.Sprintf("/%s/%s/invoke", network, svc), req, &txId)
+	return txId, err
 }
 
 func (c *Client) Call(network string, addr contract.Address, req *ContractRequest, resp interface{}) (*http.Response, error) {
