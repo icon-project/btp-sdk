@@ -19,6 +19,7 @@ package eth
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"reflect"
@@ -93,6 +94,29 @@ func NewTxResult(txr *types.Receipt, failure *TxFailure) contract.TxResult {
 		}
 	}
 	return r
+}
+
+type TxResultJson struct {
+	Raw     *types.Receipt
+	Failure *TxFailure
+}
+
+func (r *TxResult) UnmarshalJSON(bytes []byte) error {
+	v := &TxResultJson{}
+	if err := json.Unmarshal(bytes, v); err != nil {
+		return err
+	}
+	txr := NewTxResult(v.Raw, v.Failure)
+	*r = *txr.(*TxResult)
+	return nil
+}
+
+func (r *TxResult) MarshalJSON() ([]byte, error) {
+	v := TxResultJson{
+		Raw:     r.Receipt,
+		Failure: r.failure,
+	}
+	return json.Marshal(v)
 }
 
 type BaseEvent struct {

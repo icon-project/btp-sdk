@@ -18,6 +18,7 @@ package icon
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -29,7 +30,9 @@ import (
 
 type TxResult struct {
 	*client.TransactionResult
-	events []contract.BaseEvent
+	events      []contract.BaseEvent
+	blockHeight int64
+	blockHash   []byte
 }
 
 func (r *TxResult) Success() bool {
@@ -48,6 +51,8 @@ func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []b
 	r := &TxResult{
 		TransactionResult: txr,
 		events:            make([]contract.BaseEvent, len(txr.EventLogs)),
+		blockHeight:       blockHeight,
+		blockHash:         blockHash,
 	}
 	txh, err := txr.TxHash.Value()
 	if err != nil {
@@ -66,6 +71,34 @@ func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []b
 		}
 	}
 	return r, nil
+}
+
+type TxResultJson struct {
+	Raw         *client.TransactionResult
+	BlockHeight int64
+	BlockHash   []byte
+}
+
+func (r *TxResult) UnmarshalJSON(bytes []byte) error {
+	v := &TxResultJson{}
+	if err := json.Unmarshal(bytes, v); err != nil {
+		return err
+	}
+	txr, err := NewTxResult(v.Raw, v.BlockHeight, v.BlockHash)
+	if err != nil {
+		return err
+	}
+	*r = *txr.(*TxResult)
+	return nil
+}
+
+func (r *TxResult) MarshalJSON() ([]byte, error) {
+	v := TxResultJson{
+		Raw:         r.TransactionResult,
+		BlockHeight: r.blockHeight,
+		BlockHash:   r.blockHash,
+	}
+	return json.Marshal(v)
 }
 
 type BaseEvent struct {
