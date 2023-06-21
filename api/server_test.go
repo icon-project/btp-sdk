@@ -163,7 +163,7 @@ func MustEncodeOptions(v interface{}) contract.Options {
 
 func Test_Server(t *testing.T) {
 	l := log.GlobalLogger()
-	s := NewServer(serverAddress, l)
+	s := NewServer(serverAddress, log.TraceLevel, l)
 	svcToNetworks := make(map[string]map[string]service.Network)
 	for network, config := range configs {
 		opt, err := contract.EncodeOptions(config.AdaptorOption)
@@ -264,7 +264,7 @@ func Test_Server(t *testing.T) {
 			Response: []string{},
 		},
 	}
-	c := NewClient(fmt.Sprintf("http://%s/api", serverAddress), l)
+	c := NewClient(fmt.Sprintf("http://%s/api", serverAddress), log.DebugLevel, log.GlobalLogger())
 	for _, arg := range args {
 		for _, n := range arg.Networks {
 			var err error

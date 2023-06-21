@@ -50,6 +50,7 @@ func RegisterFactory(serviceName string, sf Factory) {
 
 func NewService(name string, networks map[string]Network, l log.Logger) (Service, error) {
 	if f, ok := fMap[name]; ok {
+		l = l.WithFields(log.Fields{log.FieldKeyChain: name, log.FieldKeyModule: "service"})
 		return f(networks, l)
 	}
 	return nil, errors.Errorf("not found service name:%s", name)

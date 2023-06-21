@@ -200,7 +200,7 @@ func Test_AdaptorMonitorEvents(t *testing.T) {
 			assert.FailNow(t, "fail to get EventFilter err:%s", err.Error())
 		}
 		go func(nt string, height int64) {
-			logger := log.GlobalLogger().WithFields(log.Fields{log.FieldKeyModule: nt})
+			logger := log.GlobalLogger().WithFields(log.Fields{log.FieldKeyChain: nt})
 			err = a.MonitorEvent(func(e contract.Event) {
 				logger.Infof("%s: %+v, src:%v", nt, e, TryActualParam(e, "_src"))
 			}, efs, height)
@@ -237,7 +237,7 @@ func Test_HandlerMonitorEvent(t *testing.T) {
 		a := adaptor(t, arg.networkType)
 		h := handler(t, a, config)
 		go func(nt string, height int64) {
-			logger := log.GlobalLogger().WithFields(log.Fields{log.FieldKeyModule: nt})
+			logger := log.GlobalLogger().WithFields(log.Fields{log.FieldKeyChain: nt})
 			err := h.MonitorEvent(func(e contract.Event) {
 				logger.Infof("%s: %+v", nt, e)
 			}, nameAndParams, height)

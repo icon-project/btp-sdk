@@ -55,16 +55,21 @@ func (a *AdaptorAndHandlers) GetHandler(addr contract.Address) contract.Handler 
 	return a.hMap[addr]
 }
 
+func Logger(l log.Logger) log.Logger {
+	return l.WithFields(log.Fields{log.FieldKeyModule: "api"})
+}
+
 type Server struct {
 	e    *echo.Echo
 	addr string
 	aMap map[string]*AdaptorAndHandlers
 	sMap map[string]service.Service
 	mtx  sync.RWMutex
+	lv   log.Level
 	l    log.Logger
 }
 
-func NewServer(addr string, l log.Logger) *Server {
+func NewServer(addr string, transportLogLevel log.Level, l log.Logger) *Server {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
@@ -74,7 +79,8 @@ func NewServer(addr string, l log.Logger) *Server {
 		addr: addr,
 		aMap: make(map[string]*AdaptorAndHandlers),
 		sMap: make(map[string]service.Service),
-		l:    l.WithFields(log.Fields{log.FieldKeyModule: "api"}),
+		lv:   contract.EnsureTransportLogLevel(transportLogLevel),
+		l:    Logger(l),
 	}
 }
 
@@ -112,8 +118,8 @@ func (s *Server) Start() error {
 		middleware.Recover(),
 		middleware.BodyDump(func(c echo.Context, reqBody []byte, resBody []byte) {
 			s.l.Debugf("url=%s", c.Request().RequestURI)
-			s.l.Tracef("request=%s", reqBody)
-			s.l.Tracef("response=%s", resBody)
+			s.l.Logf(s.lv, "request=%s", reqBody)
+			s.l.Logf(s.lv, "response=%s", resBody)
 		}))
 	s.RegisterAPIHandler(s.e.Group("/api"))
 	return s.e.Start(s.addr)
@@ -149,6 +155,7 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		p := c.Param(ParamTxID)
 		ret, err := a.Adaptor().GetResult(p)
 		if err != nil {
+			s.l.Debugf("fail to GetResult err:%+v", err)
 			return err
 		}
 		return c.JSON(http.StatusOK, ret)

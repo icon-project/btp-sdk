@@ -35,9 +35,10 @@ type Client struct {
 	l       log.Logger
 }
 
-func NewClient(url string, l log.Logger) *Client {
+func NewClient(url string, transportLogLevel log.Level, l log.Logger) *Client {
+	l = Logger(l)
 	return &Client{
-		Client:  contract.NewHttpClient(log.TraceLevel, l),
+		Client:  contract.NewHttpClient(transportLogLevel, l),
 		baseUrl: url,
 		l:       l,
 	}
@@ -56,6 +57,7 @@ func (c *Client) do(method, endpoint string, reqPtr, respPtr interface{}) (resp 
 	if err != nil {
 		return nil, err
 	}
+	c.l.Debugf("url=%s", req.URL)
 	if resp, err = c.Client.Do(req); err != nil {
 		return
 	}
