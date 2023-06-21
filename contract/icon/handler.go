@@ -51,10 +51,10 @@ type Handler struct {
 func (h *Handler) method(name string, readonly bool) (*contract.MethodSpec, error) {
 	m, has := h.spec.MethodMap[name]
 	if !has {
-		return nil, errors.New("not found method")
+		return nil, errors.Errorf("not found method:%s", name)
 	}
 	if m.ReadOnly != readonly {
-		return nil, errors.Errorf("mismatch readonly, expected:%v", readonly)
+		return nil, errors.Errorf("mismatch readonly, method:%s expected:%v", name, readonly)
 	}
 	return m, nil
 }
