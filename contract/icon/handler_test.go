@@ -18,7 +18,7 @@ package icon
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -26,7 +26,6 @@ import (
 	"github.com/icon-project/btp2/chain/icon/client"
 	"github.com/icon-project/btp2/common/codec"
 	"github.com/icon-project/btp2/common/errors"
-	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/wallet"
 	"github.com/stretchr/testify/assert"
 
@@ -73,15 +72,14 @@ func assertStruct(t *testing.T, expected, actual interface{}) {
 }
 
 func handler(t *testing.T, networkType string) (*Handler, *Adaptor) {
-	b, err := ioutil.ReadFile(specFile)
+	b, err := os.ReadFile(specFile)
 	if err != nil {
 		assert.FailNow(t, "fail to read file", err)
 	}
-	l := log.GlobalLogger()
 	a := adaptor(t, networkType)
-	h, err := NewHandler(b, addr, a, l)
+	h, err := a.Handler(b, addr)
 	if err != nil {
-		assert.FailNow(t, "fail to NewHandler", err)
+		assert.FailNow(t, "fail to Handler", err)
 	}
 	return h.(*Handler), a
 }
@@ -238,7 +236,7 @@ func autoSign(w wallet.Wallet, h *Handler, method string, params contract.Params
 
 func assertBaseEvent(t *testing.T, el contract.BaseEvent, address contract.Address, signature string, indexed int, params contract.Params) {
 	assert.Equal(t, address, el.Address())
-	assert.True(t, el.MatchSignature(signature))
+	assert.True(t, el.SignatureMatcher().Match(signature))
 	assert.Equal(t, indexed, el.Indexed())
 	for i := 0; i < el.Indexed(); i++ {
 		v := params[fmt.Sprintf("arg%d", i+1)]

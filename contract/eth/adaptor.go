@@ -116,15 +116,21 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 }
 
 func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
-	txh, ok := id.(string)
-	if !ok {
-		return nil, errors.Errorf("fail GetResult, invalid type %T", id)
+	txh, err := contract.BytesOf(id)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fail to BytesOf, invalid id err:%s", err.Error())
 	}
-	txr, err := a.TransactionReceipt(context.Background(), common.HexToHash(txh))
+	txr, err := a.TransactionReceipt(context.Background(), common.BytesToHash(txh))
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to TransactionReceipt err:%s", err.Error())
 	}
-	return NewTxResult(txr)
+	var failure *TxFailure
+	if !IsSuccess(txr) {
+		if failure, err = a.TransactionFailure(context.Background(), txr.TxHash, txr.BlockNumber); err != nil {
+			failure.Error = err.Error()
+		}
+	}
+	return NewTxResult(txr, failure), nil
 }
 
 func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handler, error) {
@@ -149,6 +155,30 @@ func (a *Adaptor) TransactionReceipt(ctx context.Context, txHash common.Hash) (*
 		}
 		return a.Client.TransactionReceipt(ctx, txHash)
 	}
+}
+
+func (a *Adaptor) TransactionFailure(ctx context.Context, txHash common.Hash, blockNumber *big.Int) (*TxFailure, error) {
+	tx, pending, err := a.Client.TransactionByHash(ctx, txHash)
+	if err != nil {
+		return nil, err
+	}
+	if pending {
+		return nil, errors.New("transaction is pending")
+	}
+	from, err := types.Sender(types.LatestSignerForChainID(tx.ChainId()), tx)
+	if err != nil {
+		return nil, err
+	}
+	p := ethereum.CallMsg{
+		From:     from,
+		To:       tx.To(),
+		Gas:      tx.Gas(),
+		GasPrice: tx.GasPrice(),
+		Value:    tx.Value(),
+		Data:     tx.Data(),
+	}
+	_, err = a.Client.CallContract(ctx, p, blockNumber)
+	return NewTxFailure(err)
 }
 
 func newTopicToAddressesMap(sigToAddrs map[string][]contract.Address) map[common.Hash][]common.Address {

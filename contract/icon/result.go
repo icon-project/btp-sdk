@@ -18,6 +18,7 @@ package icon
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -29,7 +30,9 @@ import (
 
 type TxResult struct {
 	*client.TransactionResult
-	events []contract.BaseEvent
+	events      []contract.BaseEvent
+	blockHeight int64
+	blockHash   []byte
 }
 
 func (r *TxResult) Success() bool {
@@ -40,15 +43,16 @@ func (r *TxResult) Events() []contract.BaseEvent {
 	return r.events
 }
 
-func (r *TxResult) Revert() interface{} {
-	//TODO implement me
-	panic("implement me")
+func (r *TxResult) Failure() interface{} {
+	return r.TransactionResult.Failure
 }
 
 func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []byte) (contract.TxResult, error) {
 	r := &TxResult{
 		TransactionResult: txr,
 		events:            make([]contract.BaseEvent, len(txr.EventLogs)),
+		blockHeight:       blockHeight,
+		blockHash:         blockHash,
 	}
 	txh, err := txr.TxHash.Value()
 	if err != nil {
@@ -69,6 +73,34 @@ func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []b
 	return r, nil
 }
 
+type TxResultJson struct {
+	Raw         *client.TransactionResult
+	BlockHeight int64
+	BlockHash   []byte
+}
+
+func (r *TxResult) UnmarshalJSON(bytes []byte) error {
+	v := &TxResultJson{}
+	if err := json.Unmarshal(bytes, v); err != nil {
+		return err
+	}
+	txr, err := NewTxResult(v.Raw, v.BlockHeight, v.BlockHash)
+	if err != nil {
+		return err
+	}
+	*r = *txr.(*TxResult)
+	return nil
+}
+
+func (r *TxResult) MarshalJSON() ([]byte, error) {
+	v := TxResultJson{
+		Raw:         r.TransactionResult,
+		BlockHeight: r.blockHeight,
+		BlockHash:   r.blockHash,
+	}
+	return json.Marshal(v)
+}
+
 type BaseEvent struct {
 	blockHeight int64
 	blockHash   []byte
@@ -85,8 +117,8 @@ func (e *BaseEvent) Address() contract.Address {
 	return e.addr
 }
 
-func (e *BaseEvent) MatchSignature(v string) bool {
-	return e.sigMatcher.Match(v)
+func (e *BaseEvent) SignatureMatcher() contract.SignatureMatcher {
+	return e.sigMatcher
 }
 
 func (e *BaseEvent) Indexed() int {
@@ -229,7 +261,7 @@ func (f *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
 		}
 		return nil, nil
 	}
-	if !event.MatchSignature(f.spec.Signature) {
+	if !event.SignatureMatcher().Match(f.spec.Signature) {
 		if failIfNotMatchedInEventFilter {
 			return nil, errors.Errorf("signature expect:%v actual:%v",
 				f.spec.Signature, event.(*BaseEvent).sigMatcher)

@@ -31,11 +31,11 @@ type BlockID interface{}
 type TxResult interface {
 	Success() bool
 	Events() []BaseEvent
-	Revert() interface{}
+	Failure() interface{}
 }
 type BaseEvent interface {
 	Address() Address
-	MatchSignature(v string) bool
+	SignatureMatcher() SignatureMatcher
 	Indexed() int
 	IndexedValue(i int) EventIndexedValue
 	BlockID() BlockID
@@ -141,6 +141,7 @@ func RegisterAdaptorFactory(cf AdaptorFactory, networkTypes ...string) {
 
 func NewAdaptor(networkType string, endpoint string, opt Options, l log.Logger) (Adaptor, error) {
 	if cf, ok := afMap[networkType]; ok {
+		l = l.WithFields(log.Fields{log.FieldKeyChain: networkType, log.FieldKeyModule: "contract"})
 		return cf(networkType, endpoint, opt, l)
 	}
 	return nil, errors.New("not supported networkType:" + networkType)
