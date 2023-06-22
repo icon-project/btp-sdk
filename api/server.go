@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 	"time"
@@ -44,6 +45,7 @@ func NewServer(addr string, transportLogLevel log.Level, l log.Logger) *Server {
 	e.HideBanner = true
 	e.HidePort = true
 	e.Validator = NewValidator()
+	e.HTTPErrorHandler = HttpErrorHandler
 	return &Server{
 		e:    e,
 		addr: addr,
@@ -113,7 +115,7 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 			p := c.Param(ParamNetwork)
 			a := s.GetAdaptor(p)
 			if a == nil {
-				return c.String(http.StatusNotFound,
+				return echo.NewHTTPError(http.StatusNotFound,
 					fmt.Sprintf("Network(%s) not found", p))
 			}
 			c.Set(ContextAdaptor, a)
@@ -218,13 +220,16 @@ func (s *Server) Stop() error {
 func BindOrUnmarshalBody(c echo.Context, v interface{}) error {
 	if err := c.Bind(v); err != nil {
 		if c.Request().ContentLength > 0 {
-			b := c.Request().Body
-			defer b.Close()
-			if err = json.NewDecoder(b).Decode(v); err != nil {
-				return err
-			}
-			return nil
+			return UnmarshalBody(c.Request().Body, v)
 		}
+		return err
+	}
+	return nil
+}
+
+func UnmarshalBody(b io.ReadCloser, v interface{}) error {
+	defer b.Close()
+	if err := json.NewDecoder(b).Decode(v); err != nil {
 		return err
 	}
 	return nil

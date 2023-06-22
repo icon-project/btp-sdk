@@ -27,6 +27,7 @@ import (
 	"github.com/icon-project/btp2/common/log"
 
 	"github.com/icon-project/btp-sdk/contract"
+	"github.com/icon-project/btp-sdk/service"
 )
 
 type Client struct {
@@ -49,12 +50,14 @@ func (c *Client) do(method, endpoint string, reqPtr, respPtr interface{}) (resp 
 	if reqPtr != nil {
 		var b []byte
 		if b, err = json.Marshal(reqPtr); err != nil {
+			c.l.Debugf("fail to encode Request err:%+v", err)
 			return nil, err
 		}
 		reqBody = bytes.NewReader(b)
 	}
 	req, err := http.NewRequest(method, c.baseUrl+endpoint, reqBody)
 	if err != nil {
+		c.l.Debugf("fail to NewRequest err:%+v", err)
 		return nil, err
 	}
 	c.l.Debugf("url=%s", req.URL)
@@ -62,15 +65,19 @@ func (c *Client) do(method, endpoint string, reqPtr, respPtr interface{}) (resp 
 		return
 	}
 	if resp.StatusCode/100 != 2 {
-		err = errors.Errorf("server response not success, StatusCode:%d",
-			resp.StatusCode)
+		er := &ErrorResponse{}
+		if err = UnmarshalBody(resp.Body, er); err != nil {
+			c.l.Debugf("fail to decode ErrorResponse err:%+v", err)
+			err = errors.Errorf("server response not success, StatusCode:%d",
+				resp.StatusCode)
+			return
+		}
+		err = er
 		return
 	}
 	if respPtr != nil {
-		respBody := resp.Body
-		defer respBody.Close()
-		if err = json.NewDecoder(respBody).Decode(respPtr); err != nil {
-			c.l.Errorf("fail to decode resp err:%+v", err)
+		if err = UnmarshalBody(resp.Body, respPtr); err != nil {
+			c.l.Debugf("fail to decode resp err:%+v", err)
 			return
 		}
 	}
@@ -83,16 +90,48 @@ func (c *Client) GetResult(network string, id contract.TxID) (interface{}, error
 	return txr, err
 }
 
-func (c *Client) Invoke(network string, addr contract.Address, req *ContractRequest) (contract.TxID, error) {
+func (c *Client) invoke(url string, req interface{}, s service.Signer) (contract.TxID, error) {
+	var (
+		p   *contract.Options
+		opt contract.Options
+		err error
+	)
+	if s != nil {
+		switch t := req.(type) {
+		case *Request:
+			p = &t.Options
+		case *ContractRequest:
+			p = &t.Options
+		}
+		if opt, err = service.PrepareToSign(*p, s, true); err != nil {
+			return nil, err
+		}
+		*p = opt
+	}
 	var txId contract.TxID
-	_, err := c.do(http.MethodPost, fmt.Sprintf("/%s/%s/invoke", network, addr), req, &txId)
+	_, err = c.do(http.MethodPost, url, req, &txId)
+	if s != nil && err != nil && contract.RequireSignatureErrorCode.Equals(err) {
+		er := err.(*ErrorResponse)
+		rse := &RequireSignatureError{}
+		if err = er.UnmarshalData(rse); err != nil {
+			return nil, err
+		}
+		if opt, err = service.Sign(rse.Data, rse.Options, s); err != nil {
+			return nil, err
+		}
+		*p = opt
+		_, err = c.do(http.MethodPost, url, req, &txId)
+		return txId, err
+	}
 	return txId, err
 }
 
-func (c *Client) ServiceInvoke(network, svc string, req *Request) (contract.TxID, error) {
-	var txId contract.TxID
-	_, err := c.do(http.MethodPost, fmt.Sprintf("/%s/%s/invoke", network, svc), req, &txId)
-	return txId, err
+func (c *Client) Invoke(network string, addr contract.Address, req *ContractRequest, s service.Signer) (contract.TxID, error) {
+	return c.invoke(fmt.Sprintf("/%s/%s/invoke", network, addr), req, s)
+}
+
+func (c *Client) ServiceInvoke(network, svc string, req *Request, s service.Signer) (contract.TxID, error) {
+	return c.invoke(fmt.Sprintf("/%s/%s/invoke", network, svc), req, s)
 }
 
 func (c *Client) Call(network string, addr contract.Address, req *ContractRequest, resp interface{}) (*http.Response, error) {

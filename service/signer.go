@@ -17,8 +17,6 @@
 package service
 
 import (
-	"encoding/hex"
-
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/wallet"
@@ -28,35 +26,33 @@ import (
 	"github.com/icon-project/btp-sdk/contract/icon"
 )
 
-type Signer struct {
+type Signer interface {
 	wallet.Wallet
-	NetworkType string
+	NetworkType() string
 }
 
 type SignerService struct {
-	s    Service
-	wMap map[string]Signer
-	l    log.Logger
+	s Service
+	m map[string]Signer
+	l log.Logger
 }
 
 func (s *SignerService) Name() string {
 	return s.s.Name()
 }
 
-func (s *SignerService) prepare(network string, options contract.Options) (contract.Options, error) {
-	w, ok := s.wMap[network]
-	if !ok {
-		return nil, errors.Errorf("not found wallet network:%s", network)
-	}
-	s.l.Debugf("prepare network:%s, address:%s", network, w.Address())
-	switch w.NetworkType {
+func PrepareToSign(options contract.Options, s Signer, force bool) (contract.Options, error) {
+	switch s.NetworkType() {
 	case icon.NetworkTypeIcon:
 		opt := &icon.InvokeOptions{}
 		if err := contract.DecodeOptions(options, opt); err != nil {
 			return nil, err
 		}
-		if len(opt.From) == 0 {
-			opt.From = contract.Address(w.Address())
+		if force || len(opt.From) == 0 {
+			opt.From = contract.Address(s.Address())
+		}
+		if force && len(opt.Signature) > 0 {
+			opt.Signature = opt.Signature[:0]
 		}
 		return contract.EncodeOptions(opt)
 	case eth.NetworkTypeEth, eth.NetworkTypeEth2:
@@ -64,60 +60,74 @@ func (s *SignerService) prepare(network string, options contract.Options) (contr
 		if err := contract.DecodeOptions(options, opt); err != nil {
 			return nil, err
 		}
-		if len(opt.From) == 0 {
-			opt.From = contract.Address(w.Address())
+		if force || len(opt.From) == 0 {
+			opt.From = contract.Address(s.Address())
+		}
+		if force && len(opt.Signature) > 0 {
+			opt.Signature = opt.Signature[:0]
 		}
 		return contract.EncodeOptions(opt)
 	default:
-		return nil, errors.Errorf("not support network type:%s", w.NetworkType)
+		return nil, errors.Errorf("not support network type:%s", s.NetworkType)
 	}
 }
 
-func (s *SignerService) sign(network string, rse contract.RequireSignatureError) (contract.Options, error) {
-	w, ok := s.wMap[network]
-	if !ok {
-		return nil, errors.Errorf("not found wallet network:%s", network)
-	}
-	sig, err := w.Sign(rse.Data())
+func Sign(data []byte, options contract.Options, s Signer) (contract.Options, error) {
+	sig, err := s.Sign(data)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to Sign err:%s", err.Error())
 	}
-	s.l.Debugf("sign network:%s, data:%s, sig:%s", network, hex.EncodeToString(rse.Data()), hex.EncodeToString(sig))
-	switch w.NetworkType {
+	switch s.NetworkType() {
 	case icon.NetworkTypeIcon:
 		opt := &icon.InvokeOptions{}
-		if err = contract.DecodeOptions(rse.Options(), opt); err != nil {
+		if err = contract.DecodeOptions(options, opt); err != nil {
 			return nil, err
 		}
-		if opt.From != contract.Address(w.Address()) {
-			//ignore
-			return nil, rse
+		if opt.From != contract.Address(s.Address()) {
+			return nil, MismatchSignerErrorCode.Errorf("mismatch from expected:%s, actual:%s", s.Address(), opt.From)
 		}
 		opt.Signature = sig
 		return contract.EncodeOptions(opt)
 	case eth.NetworkTypeEth, eth.NetworkTypeEth2:
 		opt := &eth.InvokeOptions{}
-		if err = contract.DecodeOptions(rse.Options(), opt); err != nil {
+		if err = contract.DecodeOptions(options, opt); err != nil {
 			return nil, err
 		}
-		if opt.From != contract.Address(w.Address()) {
-			//ignore
-			return nil, rse
+		if opt.From != contract.Address(s.Address()) {
+			return nil, MismatchSignerErrorCode.Errorf("mismatch from expected:%s, actual:%s", s.Address(), opt.From)
 		}
 		opt.Signature = sig
 		return contract.EncodeOptions(opt)
 	default:
-		return nil, errors.Errorf("not support network type:%s", w.NetworkType)
+		return nil, errors.Errorf("not support network type:%s", s.NetworkType)
 	}
 
 }
 
+func (s *SignerService) Signer(network string) (Signer, error) {
+	signer, ok := s.m[network]
+	if !ok {
+		return nil, errors.Errorf("not found signer network:%s", network)
+	}
+	return signer, nil
+}
+
 func (s *SignerService) Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error) {
-	opt, err := s.prepare(network, options)
+	signer, err := s.Signer(network)
+	if err != nil {
+		return nil, err
+	}
+	opt, err := PrepareToSign(options, signer, false)
+	if err != nil {
+		return nil, err
+	}
 	txId, err := s.s.Invoke(network, method, params, opt)
 	if err != nil {
 		if rse, ok := err.(contract.RequireSignatureError); ok {
-			if opt, err = s.sign(network, rse); err != nil {
+			if opt, err = Sign(rse.Data(), rse.Options(), signer); err != nil {
+				if MismatchSignerErrorCode.Equals(err) {
+					return nil, rse
+				}
 				return nil, err
 			}
 			return s.s.Invoke(network, method, params, opt)
@@ -133,8 +143,24 @@ func (s *SignerService) Call(network, method string, params contract.Params, opt
 
 func NewSignerService(s Service, signers map[string]Signer, l log.Logger) (*SignerService, error) {
 	return &SignerService{
-		s:    s,
-		wMap: signers,
-		l:    l,
+		s: s,
+		m: signers,
+		l: l,
 	}, nil
+}
+
+type DefaultSigner struct {
+	wallet.Wallet
+	networkType string
+}
+
+func (s *DefaultSigner) NetworkType() string {
+	return s.networkType
+}
+
+func NewDefaultSigner(w wallet.Wallet, networkType string) Signer {
+	return &DefaultSigner{
+		Wallet:      w,
+		networkType: networkType,
+	}
 }

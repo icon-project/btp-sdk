@@ -34,7 +34,6 @@ import (
 )
 
 const (
-	serviceGeneral  = "general"
 	serviceTest     = "test"
 	serverAddress   = "localhost:8080"
 	networkIconTest = "icon_test"
@@ -68,9 +67,6 @@ var (
 	configs = map[string]TestConfig{
 		networkIconTest: {
 			Endpoint: "http://localhost:9080/api/v3/icon_dex",
-			Wallet: MustLoadWallet(
-				"../example/javascore/src/test/resources/keystore.json",
-				"../example/javascore/src/test/resources/keysecret"),
 			NetworkType: icon.NetworkTypeIcon,
 			AdaptorOption: icon.AdaptorOption{
 				NetworkID: "0x3",
@@ -89,9 +85,6 @@ var (
 		},
 		networkEth2Test: {
 			Endpoint: "http://localhost:8545",
-			Wallet: MustLoadWallet(
-				"../example/solidity/test/keystore.json",
-				"../example/solidity/test/keysecret"),
 			//NetworkType: eth.NetworkTypeEth,
 			//AdaptorOption: eth.AdaptorOption{
 			//	BlockMonitor: MustEncodeOptions(eth.BlockMonitorOptions{
@@ -118,6 +111,14 @@ var (
 			},
 		},
 	}
+	signers = map[string]service.Signer{
+		networkIconTest: service.NewDefaultSigner(
+			MustLoadWallet("../example/javascore/src/test/resources/keystore.json", "../example/javascore/src/test/resources/keysecret"),
+			icon.NetworkTypeIcon),
+		networkEth2Test: service.NewDefaultSigner(
+			MustLoadWallet("../example/solidity/test/keystore.json", "../example/solidity/test/keysecret"),
+			eth.NetworkTypeEth2),
+	}
 	contracts = map[string]Contract{
 		networkIconTest: {
 			Spec:    MustReadFile("../example/javascore/build/generated/contractSpec.json"),
@@ -133,7 +134,6 @@ var (
 type TestConfig struct {
 	NetworkType    string
 	Endpoint       string
-	Wallet         wallet.Wallet
 	AdaptorOption  interface{}
 	ServiceOptions map[string]contract.Options
 }
@@ -168,11 +168,10 @@ func MustEncodeOptions(v interface{}) contract.Options {
 	return opt
 }
 
-func server(t *testing.T) *Server {
+func server(t *testing.T, withSignerService bool) *Server {
 	l := log.GlobalLogger()
 	s := NewServer(serverAddress, log.TraceLevel, l)
 	svcToNetworks := make(map[string]map[string]service.Network)
-	signers := make(map[string]service.Signer)
 	for network, config := range configs {
 		opt, err := contract.EncodeOptions(config.AdaptorOption)
 		if err != nil {
@@ -183,10 +182,6 @@ func server(t *testing.T) *Server {
 			assert.FailNow(t, "fail to NewAdaptor", err)
 		}
 		s.AddAdaptor(network, a)
-		signers[network] = service.Signer{
-			Wallet:      config.Wallet,
-			NetworkType: config.NetworkType,
-		}
 		for name, so := range config.ServiceOptions {
 			networks, ok := svcToNetworks[name]
 			if !ok {
@@ -214,8 +209,10 @@ func server(t *testing.T) *Server {
 		if err != nil {
 			assert.FailNow(t, "fail to NewService", err)
 		}
-		if svc, err = service.NewSignerService(svc, signers, l); err != nil {
-			assert.FailNow(t, "fail to NewSignerService", err)
+		if withSignerService {
+			if svc, err = service.NewSignerService(svc, signers, l); err != nil {
+				assert.FailNow(t, "fail to NewSignerService", err)
+			}
 		}
 		s.AddService(svc)
 	}
@@ -227,7 +224,7 @@ func client() *Client {
 }
 
 func Test_ServerCall(t *testing.T) {
-	s := server(t)
+	s := server(t, false)
 	go func() {
 		err := s.Start()
 		defer s.Stop()
@@ -242,7 +239,6 @@ func Test_ServerCall(t *testing.T) {
 	}{
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
-			Service:  serviceGeneral,
 			Request: Request{
 				Method: "callInteger",
 				Params: contract.Params{
@@ -260,7 +256,6 @@ func Test_ServerCall(t *testing.T) {
 		},
 		{
 			Networks: []string{networkIconTest},
-			Service:  serviceGeneral,
 			Request: Request{
 				Method: "callPrimitive",
 				Params: contract.Params{
@@ -275,7 +270,6 @@ func Test_ServerCall(t *testing.T) {
 		},
 		{
 			Networks: []string{networkEth2Test},
-			Service:  serviceGeneral,
 			Request: Request{
 				Method: "callPrimitive",
 				Params: contract.Params{
@@ -319,7 +313,7 @@ func Test_ServerCall(t *testing.T) {
 	for _, arg := range args {
 		for _, n := range arg.Networks {
 			var err error
-			if arg.Service != serviceGeneral {
+			if len(arg.Service) > 0 {
 				_, err = c.ServiceCall(n, arg.Service, &arg.Request, &arg.Response)
 			} else {
 				ctr := contracts[n]
@@ -335,8 +329,8 @@ func Test_ServerCall(t *testing.T) {
 	}
 }
 
-func Test_ServerInvoke(t *testing.T) {
-	s := server(t)
+func Test_ServerInvokeWithoutSignerService(t *testing.T) {
+	s := server(t, false)
 	go func() {
 		err := s.Start()
 		defer s.Stop()
@@ -393,6 +387,22 @@ func Test_ServerInvoke(t *testing.T) {
 				},
 			},
 		},
+		{
+			Networks: []string{networkIconTest, networkEth2Test},
+			Request: Request{
+				Method: "invokeInteger",
+				Params: contract.Params{
+					"arg1": byteVal,
+					"arg2": shortVal,
+					"arg3": intVal,
+					"arg4": longVal,
+					"arg5": int24Val,
+					"arg6": int40Val,
+					"arg7": int72Val,
+					"arg8": bigIntegerVal,
+				},
+			},
+		},
 	}
 	c := client()
 	for _, arg := range args {
@@ -401,15 +411,116 @@ func Test_ServerInvoke(t *testing.T) {
 				txId contract.TxID
 				err  error
 			)
-			if arg.Service != serviceGeneral {
-				txId, err = c.ServiceInvoke(n, arg.Service, &arg.Request)
+			if len(arg.Service) > 0 {
+				txId, err = c.ServiceInvoke(n, arg.Service, &arg.Request, signers[n])
 			} else {
 				ctr := contracts[n]
 				req := &ContractRequest{
 					Request: arg.Request,
 					Spec:    ctr.Spec,
 				}
-				txId, err = c.Invoke(n, ctr.Address, req)
+				txId, err = c.Invoke(n, ctr.Address, req, signers[n])
+			}
+			assert.NoError(t, err)
+			t.Logf("txId:%v", txId)
+			txr, err := c.GetResult(n, txId)
+			assert.NoError(t, err)
+			t.Logf("txr:%v", txr)
+		}
+	}
+}
+
+func Test_ServerInvokeWithSignerService(t *testing.T) {
+	s := server(t, true)
+	go func() {
+		err := s.Start()
+		defer s.Stop()
+		assert.FailNow(t, "fail to Server.Start", err)
+	}()
+
+	args := []struct {
+		Networks []string
+		Service  string
+		Request  Request
+	}{
+		{
+			Networks: []string{networkIconTest, networkEth2Test},
+			Service:  serviceTest,
+			Request: Request{
+				Method: "invokeInteger",
+				Params: contract.Params{
+					"arg1": byteVal,
+					"arg2": shortVal,
+					"arg3": intVal,
+					"arg4": longVal,
+					"arg5": int24Val,
+					"arg6": int40Val,
+					"arg7": int72Val,
+					"arg8": bigIntegerVal,
+				},
+			},
+		},
+		{
+			Networks: []string{networkIconTest},
+			Service:  serviceTest,
+			Request: Request{
+				Method: "invokePrimitive",
+				Params: contract.Params{
+					"arg1": bigIntegerVal,
+					"arg2": booleanVal,
+					"arg3": stringVal,
+					"arg4": bytesVal,
+					"arg5": addressVal[icon.NetworkTypeIcon],
+				},
+			},
+		},
+		{
+			Networks: []string{networkEth2Test},
+			Service:  serviceTest,
+			Request: Request{
+				Method: "invokePrimitive",
+				Params: contract.Params{
+					"arg1": bigIntegerVal,
+					"arg2": booleanVal,
+					"arg3": stringVal,
+					"arg4": bytesVal,
+					"arg5": addressVal[eth.NetworkTypeEth2],
+				},
+			},
+		},
+		{
+			Networks: []string{networkIconTest, networkEth2Test},
+			Request: Request{
+				Method: "invokeInteger",
+				Params: contract.Params{
+					"arg1": byteVal,
+					"arg2": shortVal,
+					"arg3": intVal,
+					"arg4": longVal,
+					"arg5": int24Val,
+					"arg6": int40Val,
+					"arg7": int72Val,
+					"arg8": bigIntegerVal,
+				},
+			},
+		},
+	}
+	c := client()
+	for _, arg := range args {
+		for _, n := range arg.Networks {
+			var (
+				txId contract.TxID
+				err  error
+			)
+			if len(arg.Service) > 0 {
+				txId, err = c.ServiceInvoke(n, arg.Service, &arg.Request, nil)
+			} else {
+				ctr := contracts[n]
+				req := &ContractRequest{
+					Request: arg.Request,
+					Spec:    ctr.Spec,
+				}
+				txId, err = c.Invoke(n, ctr.Address, req, signers[n])
 			}
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
