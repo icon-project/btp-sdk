@@ -21,39 +21,9 @@ const (
 	ParamTxID             = "txID"
 	ParamServiceOrAddress = "serviceOrAddress"
 	ContextAdaptor        = "adaptor"
-	ContextHandler        = "handler"
 	ContextService        = "service"
 	ContextRequest        = "request"
 )
-
-type AdaptorAndHandlers struct {
-	a    contract.Adaptor
-	hMap map[contract.Address]contract.Handler
-	mtx  sync.RWMutex
-}
-
-func NewAdaptorAndHandlers(a contract.Adaptor) *AdaptorAndHandlers {
-	return &AdaptorAndHandlers{
-		a:    a,
-		hMap: make(map[contract.Address]contract.Handler),
-	}
-}
-
-func (a *AdaptorAndHandlers) Adaptor() contract.Adaptor {
-	return a.a
-}
-
-func (a *AdaptorAndHandlers) AddHandler(addr contract.Address, h contract.Handler) {
-	a.mtx.Lock()
-	defer a.mtx.Unlock()
-	a.hMap[addr] = h
-}
-
-func (a *AdaptorAndHandlers) GetHandler(addr contract.Address) contract.Handler {
-	a.mtx.RLock()
-	defer a.mtx.RUnlock()
-	return a.hMap[addr]
-}
 
 func Logger(l log.Logger) log.Logger {
 	return l.WithFields(log.Fields{log.FieldKeyModule: "api"})
@@ -62,7 +32,7 @@ func Logger(l log.Logger) log.Logger {
 type Server struct {
 	e    *echo.Echo
 	addr string
-	aMap map[string]*AdaptorAndHandlers
+	aMap map[string]contract.Adaptor
 	sMap map[string]service.Service
 	mtx  sync.RWMutex
 	lv   log.Level
@@ -77,7 +47,7 @@ func NewServer(addr string, transportLogLevel log.Level, l log.Logger) *Server {
 	return &Server{
 		e:    e,
 		addr: addr,
-		aMap: make(map[string]*AdaptorAndHandlers),
+		aMap: make(map[string]contract.Adaptor),
 		sMap: make(map[string]service.Service),
 		lv:   contract.EnsureTransportLogLevel(transportLogLevel),
 		l:    Logger(l),
@@ -87,10 +57,10 @@ func NewServer(addr string, transportLogLevel log.Level, l log.Logger) *Server {
 func (s *Server) AddAdaptor(network string, a contract.Adaptor) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
-	s.aMap[network] = NewAdaptorAndHandlers(a)
+	s.aMap[network] = a
 }
 
-func (s *Server) GetAdaptor(network string) *AdaptorAndHandlers {
+func (s *Server) GetAdaptor(network string) contract.Adaptor {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 	return s.aMap[network]
@@ -151,9 +121,9 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		}
 	})
 	generalApi.GET("/result/:"+ParamTxID, func(c echo.Context) error {
-		a := c.Get(ContextAdaptor).(*AdaptorAndHandlers)
+		a := c.Get(ContextAdaptor).(contract.Adaptor)
 		p := c.Param(ParamTxID)
-		ret, err := a.Adaptor().GetResult(p)
+		ret, err := a.GetResult(p)
 		if err != nil {
 			s.l.Debugf("fail to GetResult err:%+v", err)
 			return err
@@ -180,27 +150,24 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 			}
 			c.Set(ContextRequest, &req.Request)
 			if svc == nil {
-				a := c.Get(ContextAdaptor).(*AdaptorAndHandlers)
-				address := contract.Address(p)
-				var (
-					h   contract.Handler
-					err error
-				)
+				network, address := c.Param(ParamNetwork), contract.Address(p)
 				if len(req.Spec) > 0 {
-					h, err = a.Adaptor().Handler(req.Spec, address)
-					if err != nil {
-						s.l.Errorf("fail to NewHandler err:%+v", err)
+					a := c.Get(ContextAdaptor).(contract.Adaptor)
+					var err error
+					if svc, err = NewContractService(a, req.Spec, address, network, s.l); err != nil {
+						s.l.Debugf("fail to NewContractService err:%+v", err)
 						return err
 					}
-					a.AddHandler(address, h)
+					s.AddService(svc)
 				} else {
-					h = a.GetHandler(address)
-					if h == nil {
-						return c.String(http.StatusNotFound,
-							fmt.Sprintf("Contract(%s) not found", address))
-					}
+					svc = s.GetService(ContractServiceName(network, address))
 				}
-				c.Set(ContextHandler, h)
+
+				if svc == nil {
+					return echo.NewHTTPError(http.StatusNotFound,
+						fmt.Sprintf("Service(%s) not found", p))
+				}
+				c.Set(ContextService, svc)
 			}
 			return next(c)
 		}
@@ -214,9 +181,6 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		if svc := c.Get(ContextService); svc != nil {
 			network := c.Param(ParamNetwork)
 			txID, err = svc.(service.Service).Invoke(network, req.Method, req.Params, req.Options)
-		} else {
-			h := c.Get(ContextHandler).(contract.Handler)
-			txID, err = h.Invoke(req.Method, req.Params, req.Options)
 		}
 		if err != nil {
 			//TODO convert err-response
@@ -234,9 +198,6 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		if svc := c.Get(ContextService); svc != nil {
 			network := c.Param(ParamNetwork)
 			ret, err = svc.(service.Service).Call(network, req.Method, req.Params, req.Options)
-		} else {
-			h := c.Get(ContextHandler).(contract.Handler)
-			ret, err = h.Call(req.Method, req.Params, req.Options)
 		}
 		if err != nil {
 			s.l.Errorf("fail to Call err:%+v", err)
