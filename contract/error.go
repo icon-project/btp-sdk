@@ -18,13 +18,21 @@ package contract
 
 import "github.com/icon-project/btp2/common/errors"
 
+const (
+	RequireSignatureErrorCode errors.Code = errors.CodeGeneral + iota
+)
+
+var (
+	errRequireSignature = errors.NewBase(RequireSignatureErrorCode, "RequireSignatureError")
+)
+
 type RequireSignatureError interface {
-	error
+	errors.ErrorCoder
 	Data() []byte
 	Options() Options
 }
 type requireSignatureError struct {
-	error
+	errors.ErrorCoder
 	data    []byte
 	options Options
 }
@@ -39,8 +47,8 @@ func (e *requireSignatureError) Options() Options {
 
 func NewRequireSignatureError(data []byte, options Options) RequireSignatureError {
 	return &requireSignatureError{
-		error:   errors.New("RequireSignatureError"),
-		data:    data,
-		options: options,
+		ErrorCoder: errRequireSignature,
+		data:       data,
+		options:    options,
 	}
 }
