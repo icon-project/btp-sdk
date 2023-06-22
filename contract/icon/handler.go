@@ -111,6 +111,9 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 		return nil, errors.New("required 'from'")
 	}
 	p.FromAddress = client.Address(opt.From)
+	if _, err = p.FromAddress.Value(); err != nil {
+		return nil, errors.Wrapf(err, "invalid 'from' err:%s", err.Error())
+	}
 	//optional fields
 	if len(opt.Value) > 0 {
 		p.Value = client.HexInt(opt.Value)

@@ -209,7 +209,9 @@ func (h *Handler) prepareSign(opt *InvokeOptions, p *baseTx) (optUpdated bool, e
 		if len(opt.From) == 0 {
 			return false, errors.New("required 'from'")
 		}
-		//common.IsHexAddress(string(opt.From))
+		if !common.IsHexAddress(string(opt.From)) {
+			return false, errors.New("invalid 'from'")
+		}
 		from := common.HexToAddress(string(opt.From))
 		if p.Nonce, err = h.a.PendingNonceAt(context.Background(), from); err != nil {
 			return false, errors.Wrapf(err, "fail to PendingNonceAt err:%s", err.Error())
