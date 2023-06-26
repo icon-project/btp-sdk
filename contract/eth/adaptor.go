@@ -233,7 +233,9 @@ func (a *Adaptor) MonitorEvent(
 		}
 	}
 	fq := newFilterQuery(newTopicToAddressesMap(contract.NewSignatureToAddressesMap(efs)))
-	fq.FromBlock = big.NewInt(height)
+	if height > 0 {
+		fq.FromBlock = big.NewInt(height)
+	}
 	onBaseEvent := func(be contract.BaseEvent) {
 		for _, f := range efs {
 			if e, _ := f.Filter(be); e != nil {
@@ -261,7 +263,7 @@ func (a *Adaptor) MonitorEvent(
 		h *big.Int
 	)
 	onBlockHeader := func(bh *types.Header) error {
-		if h == nil {
+		if h == nil && height > 0 {
 			fq.FromBlock = nil
 			h = big.NewInt(height)
 			for ; h.Cmp(bh.Number) < 0; h = h.Add(h, common.Big1) {
