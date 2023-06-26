@@ -209,6 +209,9 @@ func (h *Handler) MonitorEvent(
 	height int64) error {
 	efs := make([]contract.EventFilter, 0)
 	for name, l := range nameToParams {
+		if len(l) == 0 {
+			l = []contract.Params{nil}
+		}
 		for _, params := range l {
 			ef, err := h.EventFilter(name, params)
 			if err != nil {

@@ -233,13 +233,18 @@ func (a *Adaptor) MonitorEvent(
 		}
 	}
 	fq := newFilterQuery(newTopicToAddressesMap(contract.NewSignatureToAddressesMap(efs)))
-	fq.FromBlock = big.NewInt(height)
-	onBaseEvent := func(be contract.BaseEvent) {
+	if height > 0 {
+		fq.FromBlock = big.NewInt(height)
+	}
+	onBaseEvent := func(be contract.BaseEvent) error {
 		for _, f := range efs {
 			if e, _ := f.Filter(be); e != nil {
-				cb(e)
+				if err := cb(e); err != nil {
+					return err
+				}
 			}
 		}
+		return nil
 	}
 	filterLogsByHeader := func(bh *types.Header) error {
 		blkHash := bh.Hash()
@@ -251,7 +256,9 @@ func (a *Adaptor) MonitorEvent(
 		if len(logs) > 0 {
 			for _, el := range logs {
 				if be := matchAndToBaseEvent(fq, el); be != nil {
-					onBaseEvent(be)
+					if err = onBaseEvent(be); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -261,7 +268,7 @@ func (a *Adaptor) MonitorEvent(
 		h *big.Int
 	)
 	onBlockHeader := func(bh *types.Header) error {
-		if h == nil {
+		if h == nil && height > 0 {
 			fq.FromBlock = nil
 			h = big.NewInt(height)
 			for ; h.Cmp(bh.Number) < 0; h = h.Add(h, common.Big1) {
@@ -321,16 +328,18 @@ func (a *Adaptor) monitorByPollBlock(
 			for _, tx := range blk.Transactions() {
 				var txr *types.Receipt
 				txr, err = a.Client.TransactionReceipt(context.Background(), tx.Hash())
-				for indexInTx, el := range txr.Logs {
+				if err != nil {
+					return err
+				}
+				for _, l := range txr.Logs {
+				topicLoop:
 					for topic, addrs := range topicToAddrs {
-						if matchEventLog(topic, addrs, el) {
-							e := &BaseEvent{
-								indexInTx:  indexInTx,
-								Log:        el,
-								sigMatcher: SignatureMatcher(el.Topics[0].String()),
-								indexed:    len(el.Topics) - 1,
+						if matchLog(topic, addrs, l) {
+							be := NewBaseEvent(l)
+							if err = cb(be); err != nil {
+								return err
 							}
-							cb(e)
+							break topicLoop
 						}
 					}
 				}
@@ -403,30 +412,31 @@ func (a *Adaptor) MonitorBySubscribeFilterLogs(cb contract.BaseEventCallback,
 		case el := <-ch:
 			a.l.Logf(a.opt.TransportLogLevel.Level(), "SubscribeFilterLogs:%+v", el)
 			if e := matchAndToBaseEvent(fq, el); e != nil {
-				cb(e)
+				if err = cb(e); err != nil {
+					return err
+				}
 			}
 		}
 	}
 }
 
 func matchAndToBaseEvent(fq *ethereum.FilterQuery, el types.Log) *BaseEvent {
-	if matchEventLog(fq.Topics[0][0], fq.Addresses, &el) {
+	if matchLog(fq.Topics[0][0], fq.Addresses, &el) {
 		return &BaseEvent{
 			Log:        &el,
 			sigMatcher: SignatureMatcher(el.Topics[0].String()),
 			indexed:    len(el.Topics) - 1,
-			//indexInTx: indexInTx, //FIXME indexInTx
 		}
 	}
 	return nil
 }
 
-func matchEventLog(signature common.Hash, addresses []common.Address, el *types.Log) bool {
-	if !bytes.Equal(el.Topics[0].Bytes(), signature.Bytes()) {
+func matchLog(signature common.Hash, addresses []common.Address, l *types.Log) bool {
+	if !bytes.Equal(l.Topics[0].Bytes(), signature.Bytes()) {
 		return false
 	}
 	if len(addresses) > 0 {
-		ab := el.Address.Bytes()
+		ab := l.Address.Bytes()
 		addressMatched := false
 		for _, address := range addresses {
 			if address == emptyAddr || bytes.Equal(ab, address.Bytes()) {

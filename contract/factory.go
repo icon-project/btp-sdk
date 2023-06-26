@@ -41,7 +41,7 @@ type BaseEvent interface {
 	BlockID() BlockID
 	BlockHeight() int64
 	TxID() TxID
-	IndexInTx() int
+	Identifier() int
 }
 
 type Event interface {
@@ -70,7 +70,7 @@ type EventIndexedValueWithParam interface {
 	Param() interface{}
 }
 
-type EventCallback func(e Event)
+type EventCallback func(e Event) error
 type Handler interface {
 	Invoke(method string, params Params, options Options) (TxID, error)
 	Call(method string, params Params, options Options) (ReturnValue, error)
@@ -80,7 +80,7 @@ type Handler interface {
 	MonitorEvent(cb EventCallback, nameToParams map[string][]Params, height int64) error
 }
 
-type BaseEventCallback func(e BaseEvent)
+type BaseEventCallback func(e BaseEvent) error
 
 const (
 	BlockStatusFinalized BlockStatus = iota

@@ -8,7 +8,7 @@ require (
 	github.com/go-playground/validator/v10 v10.11.1
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
-	github.com/icon-project/btp2 v1.0.3-0.20230621033018-be6ef8be43b5
+	github.com/icon-project/btp2 v1.0.3-0.20230623081344-84364c962860
 	github.com/icon-project/btp2-eth2 v0.2.2-0.20230609060553-ded7f4c5094b
 	github.com/labstack/echo/v4 v4.9.0
 	github.com/stretchr/testify v1.8.1
