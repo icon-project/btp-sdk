@@ -81,28 +81,52 @@ func (s *DefaultService) Call(network, method string, params contract.Params, op
 	return h.Call(method, params, options)
 }
 
-type Handlers map[string]contract.Handler
 
-func NewHandlers(a contract.Adaptor, addrToSpec map[contract.Address][]byte) (Handlers, error) {
-	hs := make(Handlers)
+type Handlers struct {
+	a    contract.Adaptor
+	hMap map[string]contract.Handler
+}
+
+func NewHandlers(a contract.Adaptor, addrToSpec map[contract.Address][]byte) (*Handlers, error) {
+	hMap := make(map[string]contract.Handler)
 	for addr, spec := range addrToSpec {
 		h, err := a.Handler(spec, addr)
 		if err != nil {
 			return nil, err
 		}
 		for _, method := range h.Spec().Methods {
-			if _, ok := hs[method.Name]; ok {
+			if _, ok := hMap[method.Name]; ok {
 				return nil, errors.Errorf("duplicated method %s", method.Name)
 			}
-			hs[method.Name] = h
+			hMap[method.Name] = h
+		}
+		for _, event := range h.Spec().Events {
+			if _, ok := hMap[event.Name]; ok {
+				return nil, errors.Errorf("duplicated event %s", event.Name)
+			}
+			hMap[event.Name] = h
 		}
 	}
-	return hs, nil
+	return &Handlers{
+		a:    a,
+		hMap: hMap,
+	}, nil
+}
+
+func (hs *Handlers) Adaptor() contract.Adaptor {
+	return hs.a
+}
+func (hs *Handlers) Handler(methodOrEvent string) (contract.Handler, error) {
+	h, ok := hs.hMap[methodOrEvent]
+	if !ok {
+		return nil, errors.Errorf("not found methodOrEvent:%s", methodOrEvent)
+	}
+	return h, nil
 }
 
 type MultiContractService struct {
 	name string
-	m    map[string]Handlers
+	m    map[string]*Handlers
 	l    log.Logger
 }
 
@@ -125,7 +149,7 @@ func getSpec(optToTypeToSpec map[string]map[string][]byte, optionName, networkTy
 }
 
 func NewMultiContractService(name string, networks map[string]Network, optToTypeToSpec map[string]map[string][]byte, l log.Logger) (*MultiContractService, error) {
-	m := make(map[string]Handlers)
+	m := make(map[string]*Handlers)
 	for network, n := range networks {
 		opt := make(MultiContractServiceOption)
 		if err := contract.DecodeOptions(n.Options, &opt); err != nil {
@@ -156,16 +180,20 @@ func (s *MultiContractService) Name() string {
 	return s.name
 }
 
-func (s *MultiContractService) handler(network, method string) (contract.Handler, error) {
+func (s *MultiContractService) handlers(network string) (*Handlers, error) {
 	hs, ok := s.m[network]
 	if !ok {
 		return nil, errors.Errorf("not found handler network:%s", network)
 	}
-	h, ok := hs[method]
-	if !ok {
-		return nil, errors.Errorf("not found method:%s", method)
+	return hs, nil
+}
+
+func (s *MultiContractService) handler(network, methodOrEvent string) (contract.Handler, error) {
+	hs, err := s.handlers(network)
+	if err != nil {
+		return nil, err
 	}
-	return h, nil
+	return hs.Handler(methodOrEvent)
 }
 
 func (s *MultiContractService) Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error) {
