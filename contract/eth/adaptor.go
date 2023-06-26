@@ -236,12 +236,15 @@ func (a *Adaptor) MonitorEvent(
 	if height > 0 {
 		fq.FromBlock = big.NewInt(height)
 	}
-	onBaseEvent := func(be contract.BaseEvent) {
+	onBaseEvent := func(be contract.BaseEvent) error {
 		for _, f := range efs {
 			if e, _ := f.Filter(be); e != nil {
-				cb(e)
+				if err := cb(e); err != nil {
+					return err
+				}
 			}
 		}
+		return nil
 	}
 	filterLogsByHeader := func(bh *types.Header) error {
 		blkHash := bh.Hash()
@@ -253,7 +256,9 @@ func (a *Adaptor) MonitorEvent(
 		if len(logs) > 0 {
 			for _, el := range logs {
 				if be := matchAndToBaseEvent(fq, el); be != nil {
-					onBaseEvent(be)
+					if err = onBaseEvent(be); err != nil {
+						return err
+					}
 				}
 			}
 		}
@@ -323,7 +328,11 @@ func (a *Adaptor) monitorByPollBlock(
 			for _, tx := range blk.Transactions() {
 				var txr *types.Receipt
 				txr, err = a.Client.TransactionReceipt(context.Background(), tx.Hash())
-				for indexInTx, l := range txr.Logs {
+				if err != nil {
+					return err
+				}
+				for _, l := range txr.Logs {
+				topicLoop:
 					for topic, addrs := range topicToAddrs {
 						if matchLog(topic, addrs, l) {
 							e := &BaseEvent{
@@ -331,8 +340,10 @@ func (a *Adaptor) monitorByPollBlock(
 								Log:        l,
 								sigMatcher: SignatureMatcher(l.Topics[0].String()),
 								indexed:    len(l.Topics) - 1,
+							if err = cb(e); err != nil {
+								return err
 							}
-							cb(e)
+							break topicLoop
 						}
 					}
 				}
@@ -405,7 +416,9 @@ func (a *Adaptor) MonitorBySubscribeFilterLogs(cb contract.BaseEventCallback,
 		case el := <-ch:
 			a.l.Logf(a.opt.TransportLogLevel.Level(), "SubscribeFilterLogs:%+v", el)
 			if e := matchAndToBaseEvent(fq, el); e != nil {
-				cb(e)
+				if err = cb(e); err != nil {
+					return err
+				}
 			}
 		}
 	}

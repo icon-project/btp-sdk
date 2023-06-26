@@ -425,8 +425,9 @@ func Test_invokeArray(t *testing.T) {
 	}
 	ch := make(chan contract.Event, 1)
 	go func() {
-		err = h.MonitorEvent(func(e contract.Event) {
+		err = h.MonitorEvent(func(e contract.Event) error {
 			ch <- e
+			return nil
 		}, map[string][]contract.Params{event: nil}, height)
 	}()
 	select {

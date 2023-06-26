@@ -232,7 +232,9 @@ func (a *Adaptor) MonitorEvent(
 					blk, _ := a.GetBlockByHeight(bp)
 					for _, e := range es {
 						e.txHash, _ = blk.NormalTransactions[e.txIndex].TxHash.Value()
-						cb(e)
+						if cb(e) != nil {
+							conn.Close()
+						}
 					}
 					es = es[:0]
 				}
@@ -312,8 +314,9 @@ func (a *Adaptor) MonitorBaseEvent(
 								sigMatcher:  SignatureMatcher(el.Indexed[0]),
 								indexed:     len(el.Indexed) - 1,
 								values:      append(el.Indexed[1:], el.Data...),
+							if cb(be) != nil {
+								conn.Close()
 							}
-							cb(be)
 						}
 					}
 				}
