@@ -555,7 +555,7 @@ func Test_ServerMonitorEvent(t *testing.T) {
 		MonitorRequest MonitorRequest
 	}{
 		{
-			Networks: []string{networkEth2Test},
+			Networks: []string{networkIconTest, networkEth2Test},
 			Service:  serviceTest,
 			Request: Request{
 				Method: "setName",
@@ -579,23 +579,8 @@ func Test_ServerMonitorEvent(t *testing.T) {
 				err  error
 			)
 			if len(arg.Service) > 0 {
-				go func() {
-					err := c.ServiceMonitorEvent(n, arg.Service, &arg.MonitorRequest, func(e contract.Event) error {
-						t.Logf("%+v", e)
-						return nil
-					})
-					assert.NoError(t, err)
-				}()
 				txId, err = c.ServiceInvoke(n, arg.Service, &arg.Request, nil)
 			} else {
-				go func() {
-					ctr := contracts[n]
-					err := c.MonitorEvent(n, ctr.Address, &arg.MonitorRequest, func(e contract.Event) error {
-						t.Logf("%+v", e)
-						return nil
-					})
-					assert.NoError(t, err)
-				}()
 				ctr := contracts[n]
 				req := &ContractRequest{
 					Request: arg.Request,
@@ -607,8 +592,44 @@ func Test_ServerMonitorEvent(t *testing.T) {
 			t.Logf("txId:%v", txId)
 			txr, err := c.GetResult(n, txId)
 			assert.NoError(t, err)
-			t.Logf("txr:%v", txr)
+			t.Logf("txr:%+v", txr)
+			r, ok := txr.(contract.TxResult)
+			if !ok {
+				assert.FailNow(t, "fail to txr.(contract.TxResult)")
+			}
+			if len(r.Events()) == 0 {
+				assert.FailNow(t, "not found event in TxResult")
+			}
+			expected := r.Events()[0]
+			arg.MonitorRequest.Height = expected.BlockHeight()
+			ch := make(chan contract.Event, 0)
+			onEvent := func(e contract.Event) error {
+				t.Logf("%+v", e)
+				ch <- e
+				return nil
+			}
+			go func() {
+				if len(arg.Service) > 0 {
+					assert.NoError(t, c.ServiceMonitorEvent(n, arg.Service, &arg.MonitorRequest, onEvent))
+				} else {
+					assert.NoError(t, c.MonitorEvent(n, contracts[n].Address, &arg.MonitorRequest, onEvent))
+				}
+			}()
+			select {
+			case e := <-ch:
+				var actual contract.BaseEvent
+				switch evt := e.(type) {
+				case *icon.Event:
+					actual = evt.BaseEvent
+				case *eth.Event:
+					actual = evt.BaseEvent
+				default:
+					assert.FailNow(t, "invalid event type %T", e)
+				}
+				assert.Equal(t, expected, actual)
+			case <-time.After(10 * time.Second):
+				assert.FailNow(t, "timeout assert Event")
+			}
 		}
 	}
-	<-time.After(10 * time.Second)
 }
