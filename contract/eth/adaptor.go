@@ -323,14 +323,14 @@ func (a *Adaptor) monitorByPollBlock(
 			for _, tx := range blk.Transactions() {
 				var txr *types.Receipt
 				txr, err = a.Client.TransactionReceipt(context.Background(), tx.Hash())
-				for indexInTx, el := range txr.Logs {
+				for indexInTx, l := range txr.Logs {
 					for topic, addrs := range topicToAddrs {
-						if matchEventLog(topic, addrs, el) {
+						if matchLog(topic, addrs, l) {
 							e := &BaseEvent{
 								indexInTx:  indexInTx,
-								Log:        el,
-								sigMatcher: SignatureMatcher(el.Topics[0].String()),
-								indexed:    len(el.Topics) - 1,
+								Log:        l,
+								sigMatcher: SignatureMatcher(l.Topics[0].String()),
+								indexed:    len(l.Topics) - 1,
 							}
 							cb(e)
 						}
@@ -412,7 +412,7 @@ func (a *Adaptor) MonitorBySubscribeFilterLogs(cb contract.BaseEventCallback,
 }
 
 func matchAndToBaseEvent(fq *ethereum.FilterQuery, el types.Log) *BaseEvent {
-	if matchEventLog(fq.Topics[0][0], fq.Addresses, &el) {
+	if matchLog(fq.Topics[0][0], fq.Addresses, &el) {
 		return &BaseEvent{
 			Log:        &el,
 			sigMatcher: SignatureMatcher(el.Topics[0].String()),
@@ -423,12 +423,12 @@ func matchAndToBaseEvent(fq *ethereum.FilterQuery, el types.Log) *BaseEvent {
 	return nil
 }
 
-func matchEventLog(signature common.Hash, addresses []common.Address, el *types.Log) bool {
-	if !bytes.Equal(el.Topics[0].Bytes(), signature.Bytes()) {
+func matchLog(signature common.Hash, addresses []common.Address, l *types.Log) bool {
+	if !bytes.Equal(l.Topics[0].Bytes(), signature.Bytes()) {
 		return false
 	}
 	if len(addresses) > 0 {
-		ab := el.Address.Bytes()
+		ab := l.Address.Bytes()
 		addressMatched := false
 		for _, address := range addresses {
 			if address == emptyAddr || bytes.Equal(ab, address.Bytes()) {
