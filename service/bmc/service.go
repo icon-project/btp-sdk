@@ -57,14 +57,6 @@ type Service struct {
 	l log.Logger
 }
 
-func (s *Service) Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error) {
-	return s.MultiContractService.Invoke(network, method, params, options)
-}
-
-func (s *Service) Call(network, method string, params contract.Params, options contract.Options) (contract.ReturnValue, error) {
-	return s.MultiContractService.Call(network, method, params, options)
-}
-
 func NewService(networks map[string]service.Network, l log.Logger) (service.Service, error) {
 	s, err := service.NewMultiContractService(ServiceName, networks, optToTypeToSpec, l)
 	if err != nil {

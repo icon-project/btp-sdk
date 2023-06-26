@@ -201,8 +201,9 @@ func Test_AdaptorMonitorEvents(t *testing.T) {
 		}
 		go func(nt string, height int64) {
 			logger := log.GlobalLogger().WithFields(log.Fields{log.FieldKeyChain: nt})
-			err = a.MonitorEvent(func(e contract.Event) {
+			err = a.MonitorEvent(func(e contract.Event) error {
 				logger.Infof("%s: %+v, src:%v", nt, e, TryActualParam(e, "_src"))
+				return nil
 			}, efs, height)
 			assert.NoError(t, err)
 		}(arg.networkType, arg.height)
@@ -238,8 +239,9 @@ func Test_HandlerMonitorEvent(t *testing.T) {
 		h := handler(t, a, config)
 		go func(nt string, height int64) {
 			logger := log.GlobalLogger().WithFields(log.Fields{log.FieldKeyChain: nt})
-			err := h.MonitorEvent(func(e contract.Event) {
+			err := h.MonitorEvent(func(e contract.Event) error {
 				logger.Infof("%s: %+v", nt, e)
+				return nil
 			}, nameAndParams, height)
 			assert.NoError(t, err)
 		}(arg.networkType, arg.height)

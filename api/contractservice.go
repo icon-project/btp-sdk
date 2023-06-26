@@ -57,3 +57,7 @@ func (s *ContractService) Invoke(network, method string, params contract.Params,
 func (s *ContractService) Call(network, method string, params contract.Params, options contract.Options) (contract.ReturnValue, error) {
 	return s.h.Call(method, params, options)
 }
+
+func (s *ContractService) MonitorEvent(network string, cb contract.EventCallback, nameToParams map[string][]contract.Params, height int64) error {
+	return s.h.MonitorEvent(cb, nameToParams, height)
+}

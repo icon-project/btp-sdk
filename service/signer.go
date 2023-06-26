@@ -141,6 +141,10 @@ func (s *SignerService) Call(network, method string, params contract.Params, opt
 	return s.s.Call(network, method, params, options)
 }
 
+func (s *SignerService) MonitorEvent(network string, cb contract.EventCallback, nameToParams map[string][]contract.Params, height int64) error {
+	return s.s.MonitorEvent(network, cb, nameToParams, height)
+}
+
 func NewSignerService(s Service, signers map[string]Signer, l log.Logger) (*SignerService, error) {
 	return &SignerService{
 		s: s,

@@ -81,6 +81,13 @@ func (s *DefaultService) Call(network, method string, params contract.Params, op
 	return h.Call(method, params, options)
 }
 
+func (s *DefaultService) MonitorEvent(network string, cb contract.EventCallback, nameToParams map[string][]contract.Params, height int64) error {
+	h, err := s.handler(network)
+	if err != nil {
+		return err
+	}
+	return h.MonitorEvent(cb, nameToParams, height)
+}
 
 type Handlers struct {
 	a    contract.Adaptor
@@ -210,6 +217,33 @@ func (s *MultiContractService) Call(network, method string, params contract.Para
 		return nil, err
 	}
 	return h.Call(method, params, options)
+}
+
+func (s *MultiContractService) MonitorEvent(network string, cb contract.EventCallback, nameToParams map[string][]contract.Params, height int64) error {
+	hs, err := s.handlers(network)
+	if err != nil {
+		return err
+	}
+	var (
+		efs = make([]contract.EventFilter, 0)
+		h   contract.Handler
+		ef  contract.EventFilter
+	)
+	for name, l := range nameToParams {
+		if h, err = hs.Handler(name); err != nil {
+			return err
+		}
+		if len(l) == 0 {
+			l = []contract.Params{nil}
+		}
+		for _, params := range l {
+			if ef, err = h.EventFilter(name, params); err != nil {
+				return err
+			}
+			efs = append(efs, ef)
+		}
+	}
+	return hs.Adaptor().MonitorEvent(cb, efs, height)
 }
 
 func FilterNetworksByTypes(networks map[string]Network, types [][]string) (ret []map[string]Network, rest map[string]Network) {

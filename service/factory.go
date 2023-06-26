@@ -27,6 +27,7 @@ type Service interface {
 	Name() string
 	Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error)
 	Call(network, method string, params contract.Params, options contract.Options) (contract.ReturnValue, error)
+	MonitorEvent(network string, cb contract.EventCallback, nameToParams map[string][]contract.Params, height int64) error
 }
 
 type Network struct {
