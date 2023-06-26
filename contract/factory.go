@@ -32,6 +32,9 @@ type TxResult interface {
 	Success() bool
 	Events() []BaseEvent
 	Failure() interface{}
+	BlockID() BlockID
+	BlockHeight() int64
+	TxID() TxID
 }
 type BaseEvent interface {
 	Address() Address

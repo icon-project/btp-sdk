@@ -36,6 +36,14 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 )
 
+func NewTxID(txh common.Hash) contract.TxID {
+	return txh.Bytes()
+}
+
+func NewBlockID(bh common.Hash) contract.BlockID {
+	return bh.Bytes()
+}
+
 type TxFailure struct {
 	Error string      `json:"error"`
 	Code  int         `json:"code"`
@@ -77,6 +85,40 @@ func (r *TxResult) Events() []contract.BaseEvent {
 
 func (r *TxResult) Failure() interface{} {
 	return r.failure
+}
+
+func (r *TxResult) BlockID() contract.BlockID {
+	return NewBlockID(r.Receipt.BlockHash)
+}
+
+func (r *TxResult) BlockHeight() int64 {
+	return r.Receipt.BlockNumber.Int64()
+}
+
+func (r *TxResult) TxID() contract.TxID {
+	return NewTxID(r.Receipt.TxHash)
+}
+
+func (r *TxResult) Format(f fmt.State, c rune) {
+	switch c {
+	case 'v', 's':
+		if f.Flag('+') {
+			events := make([]string, len(r.events))
+			for i, e := range r.events {
+				events[i] = fmt.Sprintf("%+v", e)
+			}
+			fmt.Fprintf(f, "TxResult{Receipt{%+v},numOfEvents:%d,events:{%s},failure:%+v}",
+				r.Receipt, len(r.events), strings.Join(events, ","), r.failure)
+		} else {
+			events := make([]string, len(r.events))
+			for i, e := range r.events {
+				events[i] = fmt.Sprintf("%v", e)
+			}
+			fmt.Fprintf(f, "TxResult{success:%v,numOfEvents:%d,events:{%s},failure:%v,blockID:%s,blockheight:%d,txID:%s}",
+				r.Success(), len(r.events), strings.Join(events, ","), r.Failure(),
+				r.BlockHash.Hex(), r.BlockNumber, r.TxHash.Hex())
+		}
+	}
 }
 
 func NewTxResult(txr *types.Receipt, failure *TxFailure) contract.TxResult {
@@ -140,7 +182,7 @@ func (e *BaseEvent) IndexedValue(i int) contract.EventIndexedValue {
 }
 
 func (e *BaseEvent) BlockID() contract.BlockID {
-	return e.Log.BlockHash.Bytes()
+	return NewBlockID(e.Log.BlockHash)
 }
 
 func (e *BaseEvent) BlockHeight() int64 {
@@ -148,7 +190,7 @@ func (e *BaseEvent) BlockHeight() int64 {
 }
 
 func (e *BaseEvent) TxID() contract.TxID {
-	return e.Log.TxHash.Bytes()
+	return NewTxID(e.Log.TxHash)
 }
 
 func (e *BaseEvent) Identifier() int {

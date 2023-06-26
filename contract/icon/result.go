@@ -47,6 +47,41 @@ func (r *TxResult) Failure() interface{} {
 	return r.TransactionResult.Failure
 }
 
+func (r *TxResult) BlockID() contract.BlockID {
+	return r.blockHash
+}
+
+func (r *TxResult) BlockHeight() int64 {
+	return r.blockHeight
+}
+
+func (r *TxResult) TxID() contract.TxID {
+	txh, _ := r.TransactionResult.TxHash.Value()
+	return txh
+}
+
+func (r *TxResult) Format(f fmt.State, c rune) {
+	switch c {
+	case 'v', 's':
+		if f.Flag('+') {
+			events := make([]string, len(r.events))
+			for i, e := range r.events {
+				events[i] = fmt.Sprintf("%+v", e)
+			}
+			fmt.Fprintf(f, "TxResult{TransactionResult{%+v},numOfEvents:%d,events:{%s},blockHash:%s,blockHeight:%d}",
+				r.TransactionResult, len(r.events), strings.Join(events, ","), hex.EncodeToString(r.blockHash), r.blockHeight)
+		} else {
+			events := make([]string, len(r.events))
+			for i, e := range r.events {
+				events[i] = fmt.Sprintf("%v", e)
+			}
+			fmt.Fprintf(f, "TxResult{success:%v,numOfEvents:%d,events:{%s},failure:%v,blockID:%s,blockheight:%d,txID:%s}",
+				r.Success(), len(r.events), strings.Join(events, ","), r.Failure(),
+				hex.EncodeToString(r.blockHash), r.blockHeight, r.TxHash)
+		}
+	}
+}
+
 func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []byte) (contract.TxResult, error) {
 	r := &TxResult{
 		TransactionResult: txr,

@@ -322,7 +322,7 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 	if err = h.a.SendTransaction(context.Background(), tx); err != nil {
 		return nil, errors.Wrapf(err, "fail to SendTransactions err:%s", err.Error())
 	}
-	return tx.Hash().Hex(), nil
+	return NewTxID(tx.Hash()), nil
 }
 
 type CallOption struct {
