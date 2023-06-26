@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/wallet"
@@ -72,7 +73,7 @@ var (
 			Endpoint: "http://localhost:9080/api/v3/icon_dex",
 			NetworkType: icon.NetworkTypeIcon,
 			AdaptorOption: icon.AdaptorOption{
-				NetworkID: "0x3",
+				NetworkID:         "0x3",
 				TransportLogLevel: contract.LogLevel(transportLogLevel),
 			},
 			ServiceOptions: map[string]contract.Options{
@@ -538,4 +539,76 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 			t.Logf("txr:%v", txr)
 		}
 	}
+}
+
+func Test_ServerMonitorEvent(t *testing.T) {
+	s := server(t, true)
+	go func() {
+		err := s.Start()
+		defer s.Stop()
+		assert.FailNow(t, "fail to Server.Start", err)
+	}()
+	args := []struct {
+		Networks       []string
+		Service        string
+		Request        Request
+		MonitorRequest MonitorRequest
+	}{
+		{
+			Networks: []string{networkEth2Test},
+			Service:  serviceTest,
+			Request: Request{
+				Method: "setName",
+				Params: contract.Params{
+					"name": "testName",
+				},
+			},
+			MonitorRequest: MonitorRequest{
+				NameToParams: map[string][]contract.Params{
+					"HelloEvent": nil,
+				},
+				Height: 0,
+			},
+		},
+	}
+	c := client()
+	for _, arg := range args {
+		for _, n := range arg.Networks {
+			var (
+				txId contract.TxID
+				err  error
+			)
+			if len(arg.Service) > 0 {
+				go func() {
+					err := c.ServiceMonitorEvent(n, arg.Service, &arg.MonitorRequest, func(e contract.Event) error {
+						t.Logf("%+v", e)
+						return nil
+					})
+					assert.NoError(t, err)
+				}()
+				txId, err = c.ServiceInvoke(n, arg.Service, &arg.Request, nil)
+			} else {
+				go func() {
+					ctr := contracts[n]
+					err := c.MonitorEvent(n, ctr.Address, &arg.MonitorRequest, func(e contract.Event) error {
+						t.Logf("%+v", e)
+						return nil
+					})
+					assert.NoError(t, err)
+				}()
+				ctr := contracts[n]
+				req := &ContractRequest{
+					Request: arg.Request,
+					Spec:    ctr.Spec,
+				}
+				txId, err = c.Invoke(n, ctr.Address, req, signers[n])
+			}
+			assert.NoError(t, err)
+			t.Logf("txId:%v", txId)
+			txr, err := c.GetResult(n, txId)
+			assert.NoError(t, err)
+			t.Logf("txr:%v", txr)
+		}
+	}
+	<-time.After(10 * time.Second)
 }

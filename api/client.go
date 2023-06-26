@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gorilla/websocket"
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
 
@@ -37,6 +38,7 @@ type Client struct {
 	*http.Client
 	baseUrl        string
 	baseApiUrl     string
+	baseMonitorUrl string
 	networkToType  map[string]string
 	l              log.Logger
 }
@@ -47,6 +49,7 @@ func NewClient(url string, networkToType map[string]string, transportLogLevel lo
 		Client:         contract.NewHttpClient(transportLogLevel, l),
 		baseUrl:        url,
 		baseApiUrl:     url + GroupUrlApi,
+		baseMonitorUrl: url + GroupUrlMonitor,
 		networkToType:  networkToType,
 		l:              l,
 	}
@@ -168,4 +171,66 @@ func (c *Client) Call(network string, addr contract.Address, req *ContractReques
 
 func (c *Client) ServiceCall(network, svc string, req *Request, resp interface{}) (*http.Response, error) {
 	return c.do(http.MethodGet, c.apiUrl("/%s/%s/call", network, svc), req, resp)
+}
+
+func (c *Client) monitorUrl(format string, args ...interface{}) string {
+	return c.baseMonitorUrl + fmt.Sprintf(format, args...)
+}
+
+func (c *Client) monitorEvent(network, url string, req *MonitorRequest, cb contract.EventCallback) error {
+	url = strings.Replace(url, "http", "ws", 1)
+	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+	if err != nil {
+		return err
+	}
+	if err = conn.WriteJSON(req); err != nil {
+		return err
+	}
+	er := &ErrorResponse{}
+	if err = conn.ReadJSON(&er); err != nil {
+		return err
+	}
+	if !errors.Success.Equals(er) {
+		return er
+	}
+	type eventSupplier func() contract.Event
+	var supplier eventSupplier
+	nt, ok := c.networkToType[network]
+	if ok {
+		switch nt {
+		case icon.NetworkTypeIcon:
+			supplier = func() contract.Event { return &icon.Event{} }
+		case eth.NetworkTypeEth, eth.NetworkTypeEth2:
+			supplier = func() contract.Event { return &eth.Event{} }
+		default:
+			return errors.Errorf("not supported network %s", network)
+		}
+	}
+	for {
+		v := supplier()
+		var (
+			messageType int
+			r           io.Reader
+		)
+		if messageType, r, err = conn.NextReader(); err != nil {
+			return err
+		}
+		if messageType == websocket.CloseMessage {
+			return io.EOF
+		}
+		if err = json.NewDecoder(r).Decode(v); err != nil {
+			return err
+		}
+		if err = cb(v); err != nil {
+			return err
+		}
+	}
+}
+
+func (c *Client) MonitorEvent(network string, addr contract.Address, req *MonitorRequest, cb contract.EventCallback) error {
+	return c.monitorEvent(network, c.monitorUrl("/%s/%s/event", network, addr), req, cb)
+}
+
+func (c *Client) ServiceMonitorEvent(network string, svc string, req *MonitorRequest, cb contract.EventCallback) error {
+	return c.monitorEvent(network, c.monitorUrl("/%s/%s/event", network, svc), req, cb)
 }

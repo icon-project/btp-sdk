@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
+	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -25,6 +27,7 @@ const (
 	ContextService        = "service"
 	ContextRequest        = "request"
 	GroupUrlApi           = "/api"
+	GroupUrlMonitor       = "/monitor"
 )
 
 func Logger(l log.Logger) log.Logger {
@@ -90,6 +93,7 @@ func (s *Server) Start() error {
 		}),
 		middleware.Recover())
 	s.RegisterAPIHandler(s.e.Group(GroupUrlApi))
+	s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
 	return s.e.Start(s.addr)
 }
 
@@ -197,6 +201,82 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 			return err
 		}
 		return c.JSON(http.StatusOK, ret)
+	})
+}
+
+type MonitorRequest struct {
+	NameToParams map[string][]contract.Params `json:"nameToParams"`
+	Height       int64                        `json:"height"`
+}
+
+func (s *Server) RegisterMonitorHandler(g *echo.Group) {
+	monitorApi := g.Group("/:"+ParamNetwork+"/:"+ParamServiceOrAddress,
+		func(next echo.HandlerFunc) echo.HandlerFunc {
+			return func(c echo.Context) error {
+				p := c.Param(ParamServiceOrAddress)
+				svc := s.GetService(p)
+				if svc == nil {
+					network, address := c.Param(ParamNetwork), contract.Address(p)
+					if svc = s.GetService(ContractServiceName(network, address)); svc == nil {
+						return echo.NewHTTPError(http.StatusNotFound,
+							fmt.Sprintf("Service(%s) not found", p))
+					}
+				}
+				c.Set(ContextService, svc)
+				return next(c)
+			}
+		})
+	u := &websocket.Upgrader{}
+	monitorApi.GET("/event", func(c echo.Context) error {
+		conn, err := u.Upgrade(c.Response(), c.Request(), nil)
+		if err != nil {
+			s.l.Debugf("fail to Upgrade err:%+v", err)
+			return err
+		}
+		defer conn.Close()
+		ci := fmt.Sprintf("%s", conn.RemoteAddr())
+		s.l.Debugf("[%s]websocket connected", ci)
+
+		respFunc := func(err error) error {
+			er := &ErrorResponse{
+				Code: errors.Success,
+			}
+			if err != nil {
+				er.Code = errors.UnknownError
+				er.Message = err.Error()
+				if ec, ok := errors.CoderOf(err); ok {
+					er.Code = ec.ErrorCode()
+				}
+			}
+			if err = conn.WriteJSON(er); err != nil {
+				s.l.Debugf("fail to WriteJSON(resp) err:%+v", err)
+			}
+			return err
+		}
+		req := &MonitorRequest{}
+		if err = conn.ReadJSON(req); err != nil {
+			s.l.Debugf("fail to ReadJSON(req) err:%+v", err)
+			_ = respFunc(err)
+			return nil
+		}
+		if err = c.Validate(req); err != nil {
+			s.l.Debugf("fail to Validate(req) err:%+v", err)
+			_ = respFunc(err)
+			return nil
+		}
+		if err = respFunc(nil); err != nil {
+			return nil
+		}
+		svc := c.Get(ContextService).(service.Service)
+		network := c.Param(ParamNetwork)
+		if err = svc.MonitorEvent(network, func(e contract.Event) error {
+			s.l.Logf(s.lv, "[%s]%v", ci, e)
+			return conn.WriteJSON(e)
+		}, req.NameToParams, req.Height); err != nil {
+			s.l.Debugf("fail to MonitorEvent req:%+v err:%+v", req, err)
+			return nil
+		}
+		return nil
 	})
 }
 
