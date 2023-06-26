@@ -181,6 +181,27 @@ func NewBaseEvent(l *types.Log) *BaseEvent {
 	}
 }
 
+type BaseEventJson struct {
+	Raw *types.Log
+}
+
+func (e *BaseEvent) MarshalJSON() ([]byte, error) {
+	v := BaseEventJson{
+		Raw: e.Log,
+	}
+	return json.Marshal(v)
+}
+
+func (e *BaseEvent) UnmarshalJSON(bytes []byte) error {
+	v := &BaseEventJson{}
+	if err := json.Unmarshal(bytes, v); err != nil {
+		return err
+	}
+	be := NewBaseEvent(v.Raw)
+	*e = *be
+	return nil
+}
+
 type SignatureMatcher string
 
 func (s SignatureMatcher) Match(v string) bool {
@@ -320,6 +341,34 @@ func (e *Event) Format(f fmt.State, c rune) {
 				e.Address(), e.signature, e.indexed, e.params)
 		}
 	}
+}
+
+type EventJson struct {
+	BaseEvent *BaseEvent
+	Signature string
+	Params    contract.Params
+}
+
+func (e *Event) MarshalJSON() ([]byte, error) {
+	v := EventJson{
+		BaseEvent: e.BaseEvent,
+		Signature: e.Signature(),
+		Params:    e.Params(),
+	}
+	return json.Marshal(v)
+}
+
+func (e *Event) UnmarshalJSON(bytes []byte) error {
+	v := &EventJson{}
+	if err := json.Unmarshal(bytes, v); err != nil {
+		return err
+	}
+	*e = Event{
+		BaseEvent: v.BaseEvent,
+		signature: v.Signature,
+		params:    v.Params,
+	}
+	return nil
 }
 
 func NewEvent(in contract.EventSpec, out abi.Event, outIndexed abi.Arguments, be *BaseEvent) (*Event, error) {

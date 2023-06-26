@@ -168,6 +168,37 @@ func NewBaseEvent(el client.EventLog, blockHeight int64, blockHash, txHash []byt
 	}
 }
 
+type BaseEventJson struct {
+	Raw         client.EventLog
+	BlockHeight int64
+	BlockHash   []byte
+	TxHash      []byte
+	TxIndex     int
+	IndexInTx   int
+}
+
+func (e *BaseEvent) MarshalJSON() ([]byte, error) {
+	v := BaseEventJson{
+		Raw:         e.EventLog,
+		BlockHeight: e.blockHeight,
+		BlockHash:   e.blockHash,
+		TxHash:      e.txHash,
+		TxIndex:     e.txIndex,
+		IndexInTx:   e.indexInTx,
+	}
+	return json.Marshal(v)
+}
+
+func (e *BaseEvent) UnmarshalJSON(bytes []byte) error {
+	v := &BaseEventJson{}
+	if err := json.Unmarshal(bytes, v); err != nil {
+		return err
+	}
+	be := NewBaseEvent(v.Raw, v.BlockHeight, v.BlockHash, v.TxHash, v.TxIndex, v.IndexInTx)
+	*e = *be
+	return nil
+}
+
 type SignatureMatcher string
 
 func (s SignatureMatcher) Match(v string) bool {
@@ -232,6 +263,34 @@ func (e *Event) Format(f fmt.State, c rune) {
 				e.Address(), e.signature, e.indexed, e.params)
 		}
 	}
+}
+
+type EventJson struct {
+	BaseEvent *BaseEvent
+	Signature string
+	Params    contract.Params
+}
+
+func (e *Event) MarshalJSON() ([]byte, error) {
+	v := EventJson{
+		BaseEvent: e.BaseEvent,
+		Signature: e.Signature(),
+		Params:    e.Params(),
+	}
+	return json.Marshal(v)
+}
+
+func (e *Event) UnmarshalJSON(bytes []byte) error {
+	v := &EventJson{}
+	if err := json.Unmarshal(bytes, v); err != nil {
+		return err
+	}
+	*e = Event{
+		BaseEvent: v.BaseEvent,
+		signature: v.Signature,
+		params:    v.Params,
+	}
+	return nil
 }
 
 func NewEvent(spec contract.EventSpec, be *BaseEvent) (*Event, error) {
