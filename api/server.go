@@ -24,6 +24,7 @@ const (
 	ContextAdaptor        = "adaptor"
 	ContextService        = "service"
 	ContextRequest        = "request"
+	GroupUrlApi           = "/api"
 )
 
 func Logger(l log.Logger) log.Logger {
@@ -87,13 +88,8 @@ func (s *Server) Start() error {
 		middleware.CORSWithConfig(middleware.CORSConfig{
 			MaxAge: 3600,
 		}),
-		middleware.Recover(),
-		middleware.BodyDump(func(c echo.Context, reqBody []byte, resBody []byte) {
-			s.l.Debugf("url=%s", c.Request().RequestURI)
-			s.l.Logf(s.lv, "request=%s", reqBody)
-			s.l.Logf(s.lv, "response=%s", resBody)
-		}))
-	s.RegisterAPIHandler(s.e.Group("/api"))
+		middleware.Recover())
+	s.RegisterAPIHandler(s.e.Group(GroupUrlApi))
 	return s.e.Start(s.addr)
 }
 
@@ -110,7 +106,11 @@ type ContractRequest struct {
 
 func (s *Server) RegisterAPIHandler(g *echo.Group) {
 	generalApi := g.Group("/:" + ParamNetwork)
-	generalApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+	generalApi.Use(middleware.BodyDump(func(c echo.Context, reqBody []byte, resBody []byte) {
+		s.l.Debugf("url=%s", c.Request().RequestURI)
+		s.l.Logf(s.lv, "request=%s", reqBody)
+		s.l.Logf(s.lv, "response=%s", resBody)
+	}), func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			p := c.Param(ParamNetwork)
 			a := s.GetAdaptor(p)
@@ -136,11 +136,6 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 	serviceApi := generalApi.Group("/:" + ParamServiceOrAddress)
 	serviceApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			p := c.Param(ParamServiceOrAddress)
-			svc := s.GetService(p)
-			if svc != nil {
-				c.Set(ContextService, svc)
-			}
 			req := &ContractRequest{}
 			if err := BindOrUnmarshalBody(c, req); err != nil {
 				s.l.Debugf("fail to BindOrUnmarshalBody err:%+v", err)
@@ -151,6 +146,9 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 				return err
 			}
 			c.Set(ContextRequest, &req.Request)
+
+			p := c.Param(ParamServiceOrAddress)
+			svc := s.GetService(p)
 			if svc == nil {
 				network, address := c.Param(ParamNetwork), contract.Address(p)
 				if len(req.Spec) > 0 {
@@ -161,16 +159,12 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 						return err
 					}
 					s.AddService(svc)
-				} else {
-					svc = s.GetService(ContractServiceName(network, address))
-				}
-
-				if svc == nil {
+				} else if svc = s.GetService(ContractServiceName(network, address)); svc == nil {
 					return echo.NewHTTPError(http.StatusNotFound,
 						fmt.Sprintf("Service(%s) not found", p))
 				}
-				c.Set(ContextService, svc)
 			}
+			c.Set(ContextService, svc)
 			return next(c)
 		}
 	})
@@ -180,12 +174,10 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 			err  error
 		)
 		req := c.Get(ContextRequest).(*Request)
-		if svc := c.Get(ContextService); svc != nil {
-			network := c.Param(ParamNetwork)
-			txID, err = svc.(service.Service).Invoke(network, req.Method, req.Params, req.Options)
-		}
+		svc := c.Get(ContextService).(service.Service)
+		network := c.Param(ParamNetwork)
+		txID, err = svc.Invoke(network, req.Method, req.Params, req.Options)
 		if err != nil {
-			//TODO convert err-response
 			s.l.Errorf("fail to Invoke err:%+v", err)
 			return err
 		}
@@ -197,10 +189,9 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 			err error
 		)
 		req := c.Get(ContextRequest).(*Request)
-		if svc := c.Get(ContextService); svc != nil {
-			network := c.Param(ParamNetwork)
-			ret, err = svc.(service.Service).Call(network, req.Method, req.Params, req.Options)
-		}
+		svc := c.Get(ContextService).(service.Service)
+		network := c.Param(ParamNetwork)
+		ret, err = svc.Call(network, req.Method, req.Params, req.Options)
 		if err != nil {
 			s.l.Errorf("fail to Call err:%+v", err)
 			return err

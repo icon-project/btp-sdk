@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
@@ -32,20 +33,26 @@ import (
 
 type Client struct {
 	*http.Client
-	baseUrl string
-	l       log.Logger
+	baseUrl        string
+	baseApiUrl     string
+	l              log.Logger
 }
 
 func NewClient(url string, transportLogLevel log.Level, l log.Logger) *Client {
 	l = Logger(l)
 	return &Client{
-		Client:  contract.NewHttpClient(transportLogLevel, l),
-		baseUrl: url,
-		l:       l,
+		Client:         contract.NewHttpClient(transportLogLevel, l),
+		baseUrl:        url,
+		baseApiUrl:     url + GroupUrlApi,
+		l:              l,
 	}
 }
 
-func (c *Client) do(method, endpoint string, reqPtr, respPtr interface{}) (resp *http.Response, err error) {
+func (c *Client) apiUrl(format string, args ...interface{}) string {
+	return c.baseApiUrl + fmt.Sprintf(format, args...)
+}
+
+func (c *Client) do(method, url string, reqPtr, respPtr interface{}) (resp *http.Response, err error) {
 	var reqBody io.Reader
 	if reqPtr != nil {
 		var b []byte
@@ -55,7 +62,10 @@ func (c *Client) do(method, endpoint string, reqPtr, respPtr interface{}) (resp 
 		}
 		reqBody = bytes.NewReader(b)
 	}
-	req, err := http.NewRequest(method, c.baseUrl+endpoint, reqBody)
+	if !strings.HasPrefix(url, c.baseApiUrl) {
+		url = c.baseApiUrl + url
+	}
+	req, err := http.NewRequest(method, url, reqBody)
 	if err != nil {
 		c.l.Debugf("fail to NewRequest err:%+v", err)
 		return nil, err
@@ -127,17 +137,17 @@ func (c *Client) invoke(url string, req interface{}, s service.Signer) (contract
 }
 
 func (c *Client) Invoke(network string, addr contract.Address, req *ContractRequest, s service.Signer) (contract.TxID, error) {
-	return c.invoke(fmt.Sprintf("/%s/%s/invoke", network, addr), req, s)
+	return c.invoke(c.apiUrl("/%s/%s/invoke", network, addr), req, s)
 }
 
 func (c *Client) ServiceInvoke(network, svc string, req *Request, s service.Signer) (contract.TxID, error) {
-	return c.invoke(fmt.Sprintf("/%s/%s/invoke", network, svc), req, s)
+	return c.invoke(c.apiUrl("/%s/%s/invoke", network, svc), req, s)
 }
 
 func (c *Client) Call(network string, addr contract.Address, req *ContractRequest, resp interface{}) (*http.Response, error) {
-	return c.do(http.MethodGet, fmt.Sprintf("/%s/%s/call", network, addr), req, resp)
+	return c.do(http.MethodGet, c.apiUrl("/%s/%s/call", network, addr), req, resp)
 }
 
 func (c *Client) ServiceCall(network, svc string, req *Request, resp interface{}) (*http.Response, error) {
-	return c.do(http.MethodGet, fmt.Sprintf("/%s/%s/call", network, svc), req, resp)
+	return c.do(http.MethodGet, c.apiUrl("/%s/%s/call", network, svc), req, resp)
 }

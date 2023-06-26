@@ -34,10 +34,13 @@ import (
 )
 
 const (
-	serviceTest     = "test"
-	serverAddress   = "localhost:8080"
-	networkIconTest = "icon_test"
-	networkEth2Test = "eth2_test"
+	serviceTest       = "test"
+	serverAddress     = "localhost:8080"
+	networkIconTest   = "icon_test"
+	networkEth2Test   = "eth2_test"
+	transportLogLevel = log.DebugLevel
+	serverLogLevel    = log.DebugLevel
+	clientLogLevel    = log.DebugLevel
 )
 
 var (
@@ -70,6 +73,7 @@ var (
 			NetworkType: icon.NetworkTypeIcon,
 			AdaptorOption: icon.AdaptorOption{
 				NetworkID: "0x3",
+				TransportLogLevel: contract.LogLevel(transportLogLevel),
 			},
 			ServiceOptions: map[string]contract.Options{
 				xcall.ServiceName: MustEncodeOptions(service.DefaultServiceOptions{
@@ -96,6 +100,7 @@ var (
 				BlockMonitor: MustEncodeOptions(eth.Eth2BlockMonitorOptions{
 					Endpoint: "http://localhost:9596",
 				}),
+				TransportLogLevel: contract.LogLevel(transportLogLevel),
 			},
 			ServiceOptions: map[string]contract.Options{
 				xcall.ServiceName: MustEncodeOptions(service.DefaultServiceOptions{
@@ -170,7 +175,7 @@ func MustEncodeOptions(v interface{}) contract.Options {
 
 func server(t *testing.T, withSignerService bool) *Server {
 	l := log.GlobalLogger()
-	s := NewServer(serverAddress, log.TraceLevel, l)
+	s := NewServer(serverAddress, serverLogLevel, l)
 	svcToNetworks := make(map[string]map[string]service.Network)
 	for network, config := range configs {
 		opt, err := contract.EncodeOptions(config.AdaptorOption)
@@ -220,7 +225,7 @@ func server(t *testing.T, withSignerService bool) *Server {
 }
 
 func client() *Client {
-	return NewClient(fmt.Sprintf("http://%s/api", serverAddress), log.DebugLevel, log.GlobalLogger())
+	return NewClient(fmt.Sprintf("http://%s", serverAddress), clientLogLevel, log.GlobalLogger())
 }
 
 func Test_ServerCall(t *testing.T) {
