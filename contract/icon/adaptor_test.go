@@ -80,7 +80,7 @@ func Test_MonitorEvents(t *testing.T) {
 	go func() {
 		err := a.MonitorBaseEvent(func(be contract.BaseEvent) error {
 			t.Logf("%+v", be)
-			if paramValue, err := decodePrimitive(contract.TString, be.(*BaseEvent).values[0]); err != nil {
+			if paramValue, err := decodePrimitive(contract.TString, be.(*BaseEvent).Data[0]); err != nil {
 				assert.NoError(t, err, "fail to decodePrimitive")
 				return err
 			} else {

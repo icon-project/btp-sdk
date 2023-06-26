@@ -335,12 +335,8 @@ func (a *Adaptor) monitorByPollBlock(
 				topicLoop:
 					for topic, addrs := range topicToAddrs {
 						if matchLog(topic, addrs, l) {
-							e := &BaseEvent{
-								indexInTx:  indexInTx,
-								Log:        l,
-								sigMatcher: SignatureMatcher(l.Topics[0].String()),
-								indexed:    len(l.Topics) - 1,
-							if err = cb(e); err != nil {
+							be := NewBaseEvent(l)
+							if err = cb(be); err != nil {
 								return err
 							}
 							break topicLoop
@@ -430,7 +426,6 @@ func matchAndToBaseEvent(fq *ethereum.FilterQuery, el types.Log) *BaseEvent {
 			Log:        &el,
 			sigMatcher: SignatureMatcher(el.Topics[0].String()),
 			indexed:    len(el.Topics) - 1,
-			//indexInTx: indexInTx, //FIXME indexInTx
 		}
 	}
 	return nil

@@ -7,7 +7,7 @@ require (
 	github.com/ethereum/go-ethereum v1.11.3
 	github.com/gorilla/websocket v1.5.0
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d
-	github.com/icon-project/btp2 v1.0.2
+	github.com/icon-project/btp2 v1.0.3-0.20230623081344-84364c962860
 	github.com/icon-project/btp2-eth2 v0.2.2-0.20230609060553-ded7f4c5094b
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/crypto v0.7.0

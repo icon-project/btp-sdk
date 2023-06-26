@@ -41,7 +41,7 @@ type BaseEvent interface {
 	BlockID() BlockID
 	BlockHeight() int64
 	TxID() TxID
-	IndexInTx() int
+	Identifier() int
 }
 
 type Event interface {

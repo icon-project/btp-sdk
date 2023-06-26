@@ -243,18 +243,9 @@ func (a *Adaptor) MonitorEvent(
 				h, _ := n.EventNotification.Height.Value()
 				bh, _ := n.EventNotification.Hash.Value()
 				index, _ := n.EventNotification.Index.Int()
-				for i, l := range n.EventNotification.Logs {
+				for i, el := range n.EventNotification.Logs {
 					indexInTx, _ := n.EventNotification.Events[i].Int()
-					be := &BaseEvent{
-						blockHeight: h,
-						blockHash:   bh,
-						txIndex:     index,
-						indexInTx:   indexInTx,
-						addr:        contract.Address(l.Addr),
-						sigMatcher:  SignatureMatcher(l.Indexed[0]),
-						indexed:     len(l.Indexed) - 1,
-						values:      append(l.Indexed[1:], l.Data...),
-					}
+					be := NewBaseEvent(el, h, bh, nil, index, indexInTx)
 					for _, f := range efs {
 						if e, _ := f.Filter(be); e != nil {
 							es = append(es, e.(*Event))
@@ -305,15 +296,7 @@ func (a *Adaptor) MonitorBaseEvent(
 						txh, _ := blk.NormalTransactions[indexInBlock].TxHash.Value()
 						for k, el := range logsOfReceipt {
 							indexInTx, _ := n.Events[i][j][k].Int()
-							be := &BaseEvent{
-								blockHeight: h,
-								blockHash:   bh,
-								txHash:      txh,
-								indexInTx:   indexInTx,
-								addr:        contract.Address(el.Addr),
-								sigMatcher:  SignatureMatcher(el.Indexed[0]),
-								indexed:     len(el.Indexed) - 1,
-								values:      append(el.Indexed[1:], el.Data...),
+							be := NewBaseEvent(el, h, bh, txh, indexInBlock, indexInTx)
 							if cb(be) != nil {
 								conn.Close()
 							}

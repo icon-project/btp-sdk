@@ -58,17 +58,12 @@ func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []b
 	if err != nil {
 		return nil, err
 	}
-	for i, l := range txr.EventLogs {
-		r.events[i] = &BaseEvent{
-			blockHeight: blockHeight,
-			blockHash:   blockHash,
-			txHash:      txh,
-			indexInTx:   i,
-			addr:        contract.Address(l.Addr),
-			sigMatcher:  SignatureMatcher(l.Indexed[0]),
-			indexed:     len(l.Indexed) - 1,
-			values:      append(l.Indexed[1:], l.Data...),
-		}
+	txi, err := txr.TxIndex.Int()
+	if err != nil {
+		return nil, err
+	}
+	for i, el := range txr.EventLogs {
+		r.events[i] = NewBaseEvent(el, blockHeight, blockHash, txh, txi, i)
 	}
 	return r, nil
 }
@@ -102,19 +97,18 @@ func (r *TxResult) MarshalJSON() ([]byte, error) {
 }
 
 type BaseEvent struct {
+	client.EventLog
 	blockHeight int64
 	blockHash   []byte
 	txHash      []byte
 	txIndex     int
 	indexInTx   int
-	addr        contract.Address
 	sigMatcher  SignatureMatcher
 	indexed     int
-	values      []string
 }
 
 func (e *BaseEvent) Address() contract.Address {
-	return e.addr
+	return contract.Address(e.EventLog.Addr)
 }
 
 func (e *BaseEvent) SignatureMatcher() contract.SignatureMatcher {
@@ -127,7 +121,7 @@ func (e *BaseEvent) Indexed() int {
 
 func (e *BaseEvent) IndexedValue(i int) contract.EventIndexedValue {
 	if i < e.indexed {
-		return EventIndexedValue(e.values[i])
+		return EventIndexedValue(e.EventLog.Indexed[i+1])
 	}
 	return nil
 }
@@ -144,20 +138,33 @@ func (e *BaseEvent) TxID() contract.TxID {
 	return e.txHash
 }
 
-func (e *BaseEvent) IndexInTx() int {
+func (e *BaseEvent) Identifier() int {
 	return e.indexInTx
 }
 func (e *BaseEvent) Format(f fmt.State, c rune) {
 	switch c {
 	case 'v', 's':
 		if f.Flag('+') {
-			fmt.Fprintf(f, "BaseEvent{blockHeight:%d,blockHash:%s,txHash:%s,txIndex:%d,indexInTx:%d,addr:%s,signature:%s,indexed:%d,values:{%s}}",
+			fmt.Fprintf(f, "BaseEvent{blockHeight:%d,blockHash:%s,txHash:%s,txIndex:%d,indexInTx:%d,addr:%s,signature:%s,indexed:%d,indexedValues:{%s},data:{%s}}",
 				e.blockHeight, hex.EncodeToString(e.blockHash), hex.EncodeToString(e.txHash), e.txIndex, e.indexInTx,
-				e.addr, e.sigMatcher, e.indexed, strings.Join(e.values, ","))
+				e.Address(), e.sigMatcher, e.indexed, strings.Join(e.EventLog.Indexed[1:], ","), strings.Join(e.EventLog.Data, ","))
 		} else {
-			fmt.Fprintf(f, "BaseEvent{addr:%s,signature:%s,indexed:%d,values:{%s}}",
-				e.addr, e.sigMatcher, e.indexed, strings.Join(e.values, ","))
+			fmt.Fprintf(f, "BaseEvent{addr:%s,signature:%s,indexed:%d,indexedValues:{%s},data:{%s}}",
+				e.Address(), e.sigMatcher, e.indexed, strings.Join(e.EventLog.Indexed[1:], ","), strings.Join(e.EventLog.Data, ","))
 		}
+	}
+}
+
+func NewBaseEvent(el client.EventLog, blockHeight int64, blockHash, txHash []byte, txIndex, indexInTx int) *BaseEvent {
+	return &BaseEvent{
+		EventLog:    el,
+		blockHeight: blockHeight,
+		blockHash:   blockHash,
+		txHash:      txHash,
+		txIndex:     txIndex,
+		indexInTx:   indexInTx,
+		sigMatcher:  SignatureMatcher(el.Indexed[0]),
+		indexed:     len(el.Indexed) - 1,
 	}
 }
 
@@ -219,10 +226,10 @@ func (e *Event) Format(f fmt.State, c rune) {
 		if f.Flag('+') {
 			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,txIndex:%d,indexInTx:%d,addr:%s,signature:%s,indexed:%d,params:%v}",
 				e.blockHeight, hex.EncodeToString(e.blockHash), hex.EncodeToString(e.txHash), e.txIndex, e.indexInTx,
-				e.addr, e.signature, e.indexed, e.params)
+				e.Address(), e.signature, e.indexed, e.params)
 		} else {
 			fmt.Fprintf(f, "Event{addr:%s,signature:%s,indexed:%d,params:%v}",
-				e.addr, e.signature, e.indexed, e.params)
+				e.Address(), e.signature, e.indexed, e.params)
 		}
 	}
 }
@@ -230,7 +237,13 @@ func (e *Event) Format(f fmt.State, c rune) {
 func NewEvent(spec contract.EventSpec, be *BaseEvent) (*Event, error) {
 	params := make(contract.Params)
 	for i, s := range spec.Inputs {
-		v, err := decode(s.Type, be.values[i])
+		var raw interface{}
+		if i < spec.Indexed {
+			raw = be.EventLog.Indexed[i+1]
+		} else {
+			raw = be.EventLog.Data[i-spec.Indexed]
+		}
+		v, err := decode(s.Type, raw)
 		if err != nil {
 			return nil, err
 		}
@@ -300,7 +313,7 @@ func (f *EventFilter) Filter(event contract.BaseEvent) (contract.Event, error) {
 			idx := f.spec.NameToIndex[k]
 			if idx < e.indexed {
 				e.params[k] = &EventIndexedValueWithParam{
-					EventIndexedValue: EventIndexedValue(e.values[idx]),
+					EventIndexedValue: e.IndexedValue(idx).(EventIndexedValue),
 					spec:              *s,
 					param:             v,
 				}
