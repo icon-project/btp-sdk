@@ -28,6 +28,8 @@ import (
 	"github.com/icon-project/btp2/common/log"
 
 	"github.com/icon-project/btp-sdk/contract"
+	"github.com/icon-project/btp-sdk/contract/eth"
+	"github.com/icon-project/btp-sdk/contract/icon"
 	"github.com/icon-project/btp-sdk/service"
 )
 
@@ -35,15 +37,17 @@ type Client struct {
 	*http.Client
 	baseUrl        string
 	baseApiUrl     string
+	networkToType  map[string]string
 	l              log.Logger
 }
 
-func NewClient(url string, transportLogLevel log.Level, l log.Logger) *Client {
+func NewClient(url string, networkToType map[string]string, transportLogLevel log.Level, l log.Logger) *Client {
 	l = Logger(l)
 	return &Client{
 		Client:         contract.NewHttpClient(transportLogLevel, l),
 		baseUrl:        url,
 		baseApiUrl:     url + GroupUrlApi,
+		networkToType:  networkToType,
 		l:              l,
 	}
 }
@@ -96,8 +100,22 @@ func (c *Client) do(method, url string, reqPtr, respPtr interface{}) (resp *http
 
 func (c *Client) GetResult(network string, id contract.TxID) (interface{}, error) {
 	var txr interface{}
-	_, err := c.do(http.MethodGet, fmt.Sprintf("/%s/result/%s", network, id), nil, &txr)
-	return txr, err
+	nt, ok := c.networkToType[network]
+	if ok {
+		switch nt {
+		case icon.NetworkTypeIcon:
+			txr = &icon.TxResult{}
+		case eth.NetworkTypeEth, eth.NetworkTypeEth2:
+			txr = &eth.TxResult{}
+		default:
+			txr = new(interface{})
+		}
+	}
+	_, err := c.do(http.MethodGet, c.apiUrl("/%s/result/%s", network, id), nil, txr)
+	if err != nil {
+		return nil, err
+	}
+	return txr, nil
 }
 
 func (c *Client) invoke(url string, req interface{}, s service.Signer) (contract.TxID, error) {

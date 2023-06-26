@@ -225,7 +225,11 @@ func server(t *testing.T, withSignerService bool) *Server {
 }
 
 func client() *Client {
-	return NewClient(fmt.Sprintf("http://%s", serverAddress), clientLogLevel, log.GlobalLogger())
+	networkToType := make(map[string]string)
+	for network, config := range configs {
+		networkToType[network] = config.NetworkType
+	}
+	return NewClient(fmt.Sprintf("http://%s", serverAddress), networkToType, clientLogLevel, log.GlobalLogger())
 }
 
 func Test_ServerCall(t *testing.T) {
