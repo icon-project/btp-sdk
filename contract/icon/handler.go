@@ -143,7 +143,7 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 	if txh, err = h.a.SendTransaction(p); err != nil {
 		return nil, errors.Wrapf(err, "fail to SendTransaction err:%s", err.Error())
 	}
-	return *txh, err
+	return txh.Value()
 }
 
 type CallOption struct {

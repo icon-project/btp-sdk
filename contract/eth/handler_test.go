@@ -452,13 +452,12 @@ func Test_invokeArray(t *testing.T) {
 
 	assertEvent(t, e, address, sig, indexed, params)
 
-	height := r.(*TxResult).BlockNumber.Int64()
 	ch := make(chan contract.Event, 1)
 	go func() {
 		err = h.MonitorEvent(func(e contract.Event) error {
 			ch <- e
 			return nil
-		}, map[string][]contract.Params{event: nil}, height)
+		}, map[string][]contract.Params{event: nil}, r.BlockHeight())
 	}()
 	select {
 	case actual := <-ch:
