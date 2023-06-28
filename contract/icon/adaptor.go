@@ -60,7 +60,7 @@ type Adaptor struct {
 
 type AdaptorOption struct {
 	NetworkID         client.HexInt     `json:"nid"`
-	TransportLogLevel contract.LogLevel `json:"transport-log-level,omitempty"`
+	TransportLogLevel contract.LogLevel `json:"transport_log_level,omitempty"`
 }
 
 func NewAdaptor(networkType string, endpoint string, options contract.Options, l log.Logger) (contract.Adaptor, error) {

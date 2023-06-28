@@ -83,7 +83,7 @@ type BlockMonitor struct {
 }
 
 type BlockMonitorOptions struct {
-	FinalizeBlockCount uint
+	FinalizeBlockCount uint `json:"finalize_block_count"`
 }
 
 func NewBlockMonitor(options contract.Options, c *ethclient.Client, l log.Logger) (*BlockMonitor, error) {
