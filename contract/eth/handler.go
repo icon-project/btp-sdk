@@ -371,14 +371,15 @@ func (h *Handler) EventFilter(name string, params contract.Params) (contract.Eve
 	if !has {
 		return nil, errors.New("not found event from out")
 	}
-	if err := contract.ParamsTypeCheck(in, params); err != nil {
+	validParams, err := contract.ParamsOfWithSpec(in.InputMap, params)
+	if err != nil {
 		return nil, err
 	}
 	outIndexed := getIndexedArguments(out)
 	hashedParams := make(map[string]Topic)
 	for _, arg := range outIndexed {
 		if arg.Indexed {
-			if p, ok := params[arg.Name]; ok {
+			if p, ok := validParams[arg.Name]; ok {
 				t, err := NewTopic(p)
 				if err != nil {
 					return nil, err
@@ -392,7 +393,7 @@ func (h *Handler) EventFilter(name string, params contract.Params) (contract.Eve
 		out:          out,
 		outIndexed:   outIndexed,
 		address:      contract.Address(h.address.String()),
-		params:       params,
+		params:       validParams,
 		hashedParams: hashedParams,
 	}, nil
 }

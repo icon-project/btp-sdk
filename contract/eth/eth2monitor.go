@@ -60,7 +60,7 @@ type Eth2BlockMonitor struct {
 }
 
 type Eth2BlockMonitorOptions struct {
-	Endpoint string
+	Endpoint string `json:"endpoint"`
 }
 
 func NewEth2BlockMonitor(options contract.Options, l log.Logger) (*Eth2BlockMonitor, error) {

@@ -185,13 +185,14 @@ func (h *Handler) EventFilter(name string, params contract.Params) (contract.Eve
 	if !has {
 		return nil, errors.New("not found event")
 	}
-	if err := contract.ParamsTypeCheck(spec, params); err != nil {
+	validParams, err := contract.ParamsOfWithSpec(spec.InputMap, params)
+	if err != nil {
 		return nil, err
 	}
 	return &EventFilter{
 		spec:    *spec,
 		address: contract.Address(h.address),
-		params:  params,
+		params:  validParams,
 	}, nil
 }
 

@@ -65,8 +65,8 @@ type Adaptor struct {
 }
 
 type AdaptorOption struct {
-	BlockMonitor      contract.Options  `json:"block-monitor"`
-	TransportLogLevel contract.LogLevel `json:"transport-log-level,omitempty"`
+	BlockMonitor      contract.Options  `json:"block_monitor"`
+	TransportLogLevel contract.LogLevel `json:"transport_log_level,omitempty"`
 }
 
 func NewAdaptor(networkType string, endpoint string, options contract.Options, l log.Logger) (contract.Adaptor, error) {
