@@ -32,13 +32,13 @@ type Signer interface {
 }
 
 type SignerService struct {
-	s Service
+	Service
 	m map[string]Signer
 	l log.Logger
 }
 
 func (s *SignerService) Name() string {
-	return s.s.Name()
+	return s.Service.Name()
 }
 
 func PrepareToSign(options contract.Options, s Signer, force bool) (contract.Options, error) {
@@ -121,7 +121,7 @@ func (s *SignerService) Invoke(network, method string, params contract.Params, o
 	if err != nil {
 		return nil, err
 	}
-	txId, err := s.s.Invoke(network, method, params, opt)
+	txId, err := s.Service.Invoke(network, method, params, opt)
 	if err != nil {
 		if rse, ok := err.(contract.RequireSignatureError); ok {
 			if opt, err = Sign(rse.Data(), rse.Options(), signer); err != nil {
@@ -130,7 +130,7 @@ func (s *SignerService) Invoke(network, method string, params contract.Params, o
 				}
 				return nil, err
 			}
-			return s.s.Invoke(network, method, params, opt)
+			return s.Service.Invoke(network, method, params, opt)
 		}
 		return nil, err
 	}
@@ -138,18 +138,14 @@ func (s *SignerService) Invoke(network, method string, params contract.Params, o
 }
 
 func (s *SignerService) Call(network, method string, params contract.Params, options contract.Options) (contract.ReturnValue, error) {
-	return s.s.Call(network, method, params, options)
-}
-
-func (s *SignerService) MonitorEvent(network string, cb contract.EventCallback, nameToParams map[string][]contract.Params, height int64) error {
-	return s.s.MonitorEvent(network, cb, nameToParams, height)
+	return s.Service.Call(network, method, params, options)
 }
 
 func NewSignerService(s Service, signers map[string]Signer, l log.Logger) (*SignerService, error) {
 	return &SignerService{
-		s: s,
-		m: signers,
-		l: l,
+		Service: s,
+		m:       signers,
+		l:       l,
 	}, nil
 }
 
