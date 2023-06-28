@@ -264,15 +264,22 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 			_ = respFunc(err)
 			return nil
 		}
+		svc := c.Get(ContextService).(service.Service)
+		network := c.Param(ParamNetwork)
+		var efs []contract.EventFilter
+		if efs, err = svc.EventFilters(network, req.NameToParams); err != nil {
+			s.l.Debugf("fail to EventFilters err:%+v", err)
+			_ = respFunc(err)
+			return nil
+		}
 		if err = respFunc(nil); err != nil {
 			return nil
 		}
-		svc := c.Get(ContextService).(service.Service)
-		network := c.Param(ParamNetwork)
-		if err = svc.MonitorEvent(network, func(e contract.Event) error {
+		onEvent := func(e contract.Event) error {
 			s.l.Logf(s.lv, "[%s]%v", ci, e)
 			return conn.WriteJSON(e)
-		}, req.NameToParams, req.Height); err != nil {
+		}
+		if err = svc.MonitorEvent(network, onEvent, efs, req.Height); err != nil {
 			s.l.Debugf("fail to MonitorEvent req:%+v err:%+v", req, err)
 			return nil
 		}
