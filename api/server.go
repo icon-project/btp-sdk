@@ -286,8 +286,8 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 			s.l.Logf(s.lv, "[%s]%v", ci, e)
 			return conn.WriteJSON(e)
 		}
-		if err = svc.MonitorEvent(network, onEvent, efs, req.Height); err != nil {
 			s.l.Debugf("fail to MonitorEvent req:%+v err:%+v", req, err)
+		if err = svc.MonitorEvent(context.Background(), network, onEvent, efs, req.Height); err != nil {
 			return nil
 		}
 		return nil

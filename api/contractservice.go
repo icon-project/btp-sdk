@@ -17,6 +17,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/icon-project/btp2/common/errors"
@@ -78,9 +79,9 @@ func (s *ContractService) EventFilters(network string, nameToParams map[string][
 	})
 }
 
-func (s *ContractService) MonitorEvent(network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error {
+func (s *ContractService) MonitorEvent(ctx context.Context, network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error {
 	if network != s.network {
 		return errors.Errorf("not supported network:%s", network)
 	}
-	return s.a.MonitorEvent(cb, efs, height)
+	return s.a.MonitorEvent(ctx, cb, efs, height)
 }

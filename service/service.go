@@ -17,6 +17,8 @@
 package service
 
 import (
+	"context"
+
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
 
@@ -102,12 +104,12 @@ func (s *DefaultService) EventFilters(network string, nameToParams map[string][]
 	})
 }
 
-func (s *DefaultService) MonitorEvent(network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error {
+func (s *DefaultService) MonitorEvent(ctx context.Context, network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error {
 	n, err := s.network(network)
 	if err != nil {
 		return err
 	}
-	return n.Adaptor.MonitorEvent(cb, efs, height)
+	return n.Adaptor.MonitorEvent(ctx, cb, efs, height)
 }
 
 type HandlerSupplier func(k string) (contract.Handler, error)
@@ -267,12 +269,12 @@ func (s *MultiContractService) EventFilters(network string, nameToParams map[str
 	return EventFilters(nameToParams, n.Handler)
 }
 
-func (s *MultiContractService) MonitorEvent(network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error {
+func (s *MultiContractService) MonitorEvent(ctx context.Context, network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error {
 	n, err := s.network(network)
 	if err != nil {
 		return err
 	}
-	return n.Adaptor.MonitorEvent(cb, efs, height)
+	return n.Adaptor.MonitorEvent(ctx, cb, efs, height)
 }
 
 func FilterNetworksByTypes(networks map[string]Network, types [][]string) (ret []map[string]Network, rest map[string]Network) {

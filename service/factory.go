@@ -17,6 +17,8 @@
 package service
 
 import (
+	"context"
+
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
 
@@ -28,7 +30,7 @@ type Service interface {
 	Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error)
 	Call(network, method string, params contract.Params, options contract.Options) (contract.ReturnValue, error)
 	EventFilters(network string, nameToParams map[string][]contract.Params) ([]contract.EventFilter, error)
-	MonitorEvent(network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error
+	MonitorEvent(ctx context.Context, network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error
 }
 
 type Network struct {
