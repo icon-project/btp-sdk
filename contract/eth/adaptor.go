@@ -221,6 +221,7 @@ func newFilterQuery(topicToAddrs map[common.Hash][]common.Address) *ethereum.Fil
 }
 
 func (a *Adaptor) MonitorEvent(
+	ctx context.Context,
 	cb contract.EventCallback,
 	efs []contract.EventFilter,
 	height int64) error {
@@ -249,7 +250,7 @@ func (a *Adaptor) MonitorEvent(
 	filterLogsByHeader := func(bh *types.Header) error {
 		blkHash := bh.Hash()
 		fq.BlockHash = &blkHash
-		logs, err := a.Client.FilterLogs(context.Background(), *fq)
+		logs, err := a.Client.FilterLogs(ctx, *fq)
 		if err != nil {
 			return err
 		}
@@ -282,10 +283,10 @@ func (a *Adaptor) MonitorEvent(
 		}
 		return filterLogsByHeader(bh)
 	}
-	if err := a.MonitorBySubscribeFilterLogs(onBaseEvent, fq); err != nil {
+	if err := a.MonitorBySubscribeFilterLogs(ctx, onBaseEvent, fq); err != nil {
 		if err == rpc.ErrNotificationsUnsupported {
 			a.l.Debugf("fail to MonitorBySubscribeFilterLogs, try MonitorByPollHead")
-			return monitorByPollHead(a.Client, a.l, context.Background(), onBlockHeader)
+			return monitorByPollHead(a.Client, a.l, ctx, onBlockHeader)
 		}
 		return err
 	}
@@ -293,12 +294,13 @@ func (a *Adaptor) MonitorEvent(
 }
 
 func (a *Adaptor) monitorByPollBlock(
+	ctx context.Context,
 	cb contract.BaseEventCallback,
 	topicToAddrs map[common.Hash][]common.Address,
 	height int64) error {
 	var current *big.Int
 	if height == 0 {
-		n, err := a.Client.BlockNumber(context.Background())
+		n, err := a.Client.BlockNumber(ctx)
 		if err != nil {
 			return err
 		}
@@ -307,10 +309,13 @@ func (a *Adaptor) monitorByPollBlock(
 		current = new(big.Int).SetUint64(uint64(height))
 	}
 	for {
-		blk, err := a.Client.BlockByNumber(context.Background(), current)
+		blk, err := a.Client.BlockByNumber(ctx, current)
 		if err != nil {
 			if ethereum.NotFound == err {
 				a.l.Trace("Block not ready, will retry ", current)
+			} else if ctx.Err() == err {
+				a.l.Debug("Context error ", current, err)
+				return err
 			} else {
 				a.l.Error("Unable to get block ", current, err)
 			}
@@ -327,7 +332,7 @@ func (a *Adaptor) monitorByPollBlock(
 		if has {
 			for _, tx := range blk.Transactions() {
 				var txr *types.Receipt
-				txr, err = a.Client.TransactionReceipt(context.Background(), tx.Hash())
+				txr, err = a.Client.TransactionReceipt(ctx, tx.Hash())
 				if err != nil {
 					return err
 				}
@@ -382,26 +387,27 @@ func monitorByPollHead(c *ethclient.Client, l log.Logger, ctx context.Context, c
 }
 
 func (a *Adaptor) MonitorBaseEvent(
+	ctx context.Context,
 	cb contract.BaseEventCallback,
 	sigToAddrs map[string][]contract.Address,
 	height int64) error {
 	topicToAddrs := newTopicToAddressesMap(sigToAddrs)
 	fq := newFilterQuery(topicToAddrs)
 	fq.FromBlock = big.NewInt(height)
-	if err := a.MonitorBySubscribeFilterLogs(cb, fq); err != nil {
+	if err := a.MonitorBySubscribeFilterLogs(ctx, cb, fq); err != nil {
 		if err == rpc.ErrNotificationsUnsupported {
 			a.l.Debugf("fail to MonitorBySubscribeFilterLogs, try MonitorByPollHead")
-			return a.monitorByPollBlock(cb, topicToAddrs, height)
+			return a.monitorByPollBlock(ctx, cb, topicToAddrs, height)
 		}
 		return err
 	}
 	return nil
 }
 
-func (a *Adaptor) MonitorBySubscribeFilterLogs(cb contract.BaseEventCallback,
+func (a *Adaptor) MonitorBySubscribeFilterLogs(ctx context.Context, cb contract.BaseEventCallback,
 	fq *ethereum.FilterQuery) error {
 	ch := make(chan types.Log)
-	s, err := a.Client.SubscribeFilterLogs(context.Background(), *fq, ch)
+	s, err := a.Client.SubscribeFilterLogs(ctx, *fq, ch)
 	if err != nil {
 		return err
 	}

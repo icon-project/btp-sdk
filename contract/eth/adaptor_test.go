@@ -135,7 +135,7 @@ func Test_MonitorEvents(t *testing.T) {
 	args := abi.Arguments{arg}
 
 	go func() {
-		err := a.MonitorBaseEvent(func(be contract.BaseEvent) error {
+		err := a.MonitorBaseEvent(context.Background(), func(be contract.BaseEvent) error {
 			t.Logf("%+v", be)
 			if vl, err := args.UnpackValues(be.(*BaseEvent).Data); err != nil {
 				assert.NoError(t, err, "fail to UnpackValues")

@@ -17,6 +17,7 @@
 package icon
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -421,7 +422,7 @@ func Test_invokeArray(t *testing.T) {
 
 	ch := make(chan contract.Event, 1)
 	go func() {
-		err = h.MonitorEvent(func(e contract.Event) error {
+		err = h.MonitorEvent(context.Background(), func(e contract.Event) error {
 			ch <- e
 			return nil
 		}, map[string][]contract.Params{event: nil}, r.BlockHeight())
