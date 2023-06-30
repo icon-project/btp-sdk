@@ -35,6 +35,7 @@ const (
 	ContextRequest        = "request"
 	GroupUrlApi           = "/api"
 	GroupUrlMonitor       = "/monitor"
+	WsHandshakeTimeout    = time.Second * 3
 )
 
 func Logger(l log.Logger) log.Logger {
@@ -47,6 +48,7 @@ type Server struct {
 	aMap map[string]contract.Adaptor
 	sMap map[string]service.Service
 	mtx  sync.RWMutex
+	u    websocket.Upgrader
 	lv   log.Level
 	l    log.Logger
 }
@@ -216,6 +218,124 @@ type MonitorRequest struct {
 	Height       int64                        `json:"height"`
 }
 
+func (s *Server) wsID(conn *websocket.Conn) string {
+	return conn.RemoteAddr().String()
+}
+
+func (s *Server) wsConnect(c echo.Context) (*websocket.Conn, error) {
+	conn, err := s.u.Upgrade(c.Response(), c.Request(), nil)
+	if err != nil {
+		s.l.Debugf("fail to Upgrade err:%+v", err)
+		return nil, err
+	}
+	s.l.Debugf("[%s]wsConnect", s.wsID(conn))
+	return conn, nil
+}
+
+func (s *Server) wsHandshake(conn *websocket.Conn, req interface{}, onSuccess func() error) error {
+	var err error
+	id := s.wsID(conn)
+	ctx, cancel := context.WithTimeout(context.Background(), WsHandshakeTimeout)
+	defer func() {
+		cancel()
+		er := &ErrorResponse{
+			Code: errors.Success,
+		}
+		if err != nil {
+			er.Code = errors.UnknownError
+			er.Message = err.Error()
+			if ec, ok := errors.CoderOf(err); ok {
+				er.Code = ec.ErrorCode()
+			}
+		}
+		if err = s.wsWrite(conn, er); err != nil {
+			s.l.Debugf("[%s]fail to wsWrite err:%+v", id, err)
+		}
+	}()
+	if err = s.wsRead(ctx, conn, req); err != nil {
+		s.l.Debugf("[%s]fail to wsRead err:%+v", id, err)
+		return err
+	}
+	err = onSuccess()
+	return err
+}
+
+func (s *Server) wsClose(conn *websocket.Conn) {
+	s.l.Debugf("[%s]wsClose", s.wsID(conn))
+	conn.Close()
+}
+
+func (s *Server) wsRead(ctx context.Context, conn *websocket.Conn, v interface{}) error {
+	id := s.wsID(conn)
+	ch := make(chan interface{}, 1)
+	go func() {
+		_, b, err := conn.ReadMessage()
+		if err != nil {
+			ch <- err
+		} else {
+			ch <- b
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case inf := <-ch:
+		switch t := inf.(type) {
+		case error:
+			return t
+		case []byte:
+			if err := json.Unmarshal(t, v); err != nil {
+				return err
+			}
+			s.l.Logf(s.lv, "[%s]wsRead=%s", id, t)
+			return nil
+		default:
+			s.l.Panicln("unreachable code")
+			return nil
+		}
+	}
+}
+
+func (s *Server) wsWrite(conn *websocket.Conn, v interface{}) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	s.l.Logf(s.lv, "[%s]wsWrite=%s", s.wsID(conn), b)
+	return conn.WriteMessage(websocket.TextMessage, b)
+}
+
+func (s *Server) wsReadLoop(ctx context.Context, conn *websocket.Conn, cb func(b []byte) error) error {
+	id := s.wsID(conn)
+	ech := make(chan error, 1)
+	go func() {
+		defer func() {
+			s.l.Debugf("[%s]wsReadLoop finish", id)
+		}()
+		for {
+			_, b, err := conn.ReadMessage()
+			if err != nil {
+				ech <- err
+				break
+			}
+			s.l.Logf(s.lv, "[%s]wsReadLoop=%s", id, b)
+			if err = cb(b); err != nil {
+				ech <- err
+				break
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		s.l.Debugf("[%s]wsReadLoop context Done", id)
+		return ctx.Err()
+	case err := <-ech:
+		s.l.Debugf("[%s]wsReadLoop err:%+v", id, err)
+		return err
+	}
+}
+
 func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 	monitorApi := g.Group("/:"+ParamNetwork+"/:"+ParamServiceOrAddress,
 		func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -233,61 +353,44 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 				return next(c)
 			}
 		})
-	u := &websocket.Upgrader{}
 	monitorApi.GET("/event", func(c echo.Context) error {
-		conn, err := u.Upgrade(c.Response(), c.Request(), nil)
+		conn, err := s.wsConnect(c)
 		if err != nil {
-			s.l.Debugf("fail to Upgrade err:%+v", err)
 			return err
 		}
-		defer conn.Close()
-		ci := fmt.Sprintf("%s", conn.RemoteAddr())
-		s.l.Debugf("[%s]websocket connected", ci)
-
-		respFunc := func(err error) error {
-			er := &ErrorResponse{
-				Code: errors.Success,
-			}
-			if err != nil {
-				er.Code = errors.UnknownError
-				er.Message = err.Error()
-				if ec, ok := errors.CoderOf(err); ok {
-					er.Code = ec.ErrorCode()
-				}
-			}
-			if err = conn.WriteJSON(er); err != nil {
-				s.l.Debugf("fail to WriteJSON(resp) err:%+v", err)
-			}
-			return err
-		}
-		req := &MonitorRequest{}
-		if err = conn.ReadJSON(req); err != nil {
-			s.l.Debugf("fail to ReadJSON(req) err:%+v", err)
-			_ = respFunc(err)
-			return nil
-		}
-		if err = c.Validate(req); err != nil {
-			s.l.Debugf("fail to Validate(req) err:%+v", err)
-			_ = respFunc(err)
-			return nil
-		}
+		defer s.wsClose(conn)
+		id := s.wsID(conn)
 		svc := c.Get(ContextService).(service.Service)
 		network := c.Param(ParamNetwork)
 		var efs []contract.EventFilter
-		if efs, err = svc.EventFilters(network, req.NameToParams); err != nil {
-			s.l.Debugf("fail to EventFilters err:%+v", err)
-			_ = respFunc(err)
+		req := &MonitorRequest{}
+		onSuccessHandshake := func() error {
+			if err = c.Validate(req); err != nil {
+				s.l.Debugf("[%s]fail to Validate err:%+v", id, err)
+				return err
+			}
+			if efs, err = svc.EventFilters(network, req.NameToParams); err != nil {
+				s.l.Debugf("[%s]fail to EventFilters err:%+v", id, err)
+				return err
+			}
 			return nil
 		}
-		if err = respFunc(nil); err != nil {
+		if err = s.wsHandshake(conn, req, onSuccessHandshake); err != nil {
+			s.l.Debugf("[%s]fail to wsHandshake err:%+v", id, err)
 			return nil
 		}
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			defer cancel()
+			_ = s.wsReadLoop(ctx, conn, func(b []byte) error {
+				return nil
+			})
+		}()
 		onEvent := func(e contract.Event) error {
-			s.l.Logf(s.lv, "[%s]%v", ci, e)
-			return conn.WriteJSON(e)
+			return s.wsWrite(conn, e)
 		}
-			s.l.Debugf("fail to MonitorEvent req:%+v err:%+v", req, err)
-		if err = svc.MonitorEvent(context.Background(), network, onEvent, efs, req.Height); err != nil {
+		if err = svc.MonitorEvent(ctx, network, onEvent, efs, req.Height); err != nil {
+			s.l.Debugf("[%s]fail to MonitorEvent req:%+v err:%+v", id, req, err)
 			return nil
 		}
 		return nil

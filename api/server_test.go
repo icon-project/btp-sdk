@@ -17,6 +17,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -608,11 +609,12 @@ func Test_ServerMonitorEvent(t *testing.T) {
 				ch <- e
 				return nil
 			}
+			ctx, cancel := context.WithCancel(context.Background())
 			go func() {
 				if len(arg.Service) > 0 {
-					assert.NoError(t, c.ServiceMonitorEvent(n, arg.Service, &arg.MonitorRequest, onEvent))
+					assert.NoError(t, c.ServiceMonitorEvent(ctx, n, arg.Service, &arg.MonitorRequest, onEvent))
 				} else {
-					assert.NoError(t, c.MonitorEvent(n, contracts[n].Address, &arg.MonitorRequest, onEvent))
+					assert.NoError(t, c.MonitorEvent(ctx, n, contracts[n].Address, &arg.MonitorRequest, onEvent))
 				}
 			}()
 			select {
@@ -630,6 +632,7 @@ func Test_ServerMonitorEvent(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				assert.FailNow(t, "timeout assert Event")
 			}
+			cancel()
 		}
 	}
 }

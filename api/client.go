@@ -18,6 +18,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -40,6 +41,7 @@ type Client struct {
 	baseApiUrl     string
 	baseMonitorUrl string
 	networkToType  map[string]string
+	lv             log.Level
 	l              log.Logger
 }
 
@@ -51,6 +53,7 @@ func NewClient(url string, networkToType map[string]string, transportLogLevel lo
 		baseApiUrl:     url + GroupUrlApi,
 		baseMonitorUrl: url + GroupUrlMonitor,
 		networkToType:  networkToType,
+		lv:             transportLogLevel,
 		l:              l,
 	}
 }
@@ -177,21 +180,134 @@ func (c *Client) monitorUrl(format string, args ...interface{}) string {
 	return c.baseMonitorUrl + fmt.Sprintf(format, args...)
 }
 
-func (c *Client) monitorEvent(network, url string, req *MonitorRequest, cb contract.EventCallback) error {
+func (c *Client) wsID(conn *websocket.Conn) string {
+	return conn.LocalAddr().String()
+}
+
+func (c *Client) wsConnect(ctx context.Context, url string) (*websocket.Conn, error) {
 	url = strings.Replace(url, "http", "ws", 1)
-	conn, _, err := websocket.DefaultDialer.Dial(url, nil)
+	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, url, nil)
 	if err != nil {
+		if err == websocket.ErrBadHandshake {
+			er := &ErrorResponse{}
+			if err = UnmarshalBody(resp.Body, er); err != nil {
+				err = errors.Errorf("server response not success, StatusCode:%d",
+					resp.StatusCode)
+			}
+			err = er
+		}
+		c.l.Debugf("fail to Dial url:%s err:%+v", url, err)
+		return nil, err
+	}
+	c.l.Debugf("[%s]wsConnect", c.wsID(conn))
+	return conn, nil
+}
+
+func (c *Client) wsHandshake(ctx context.Context, conn *websocket.Conn, req interface{}) error {
+	var err error
+	id := c.wsID(conn)
+	if err = c.wsWrite(conn, req); err != nil {
+		c.l.Debugf("[%s]fail to wsWrite err:%+v", id, err)
 		return err
 	}
-	if err = conn.WriteJSON(req); err != nil {
-		return err
-	}
+	tctx, cancel := context.WithTimeout(ctx, WsHandshakeTimeout)
+	defer cancel()
 	er := &ErrorResponse{}
-	if err = conn.ReadJSON(&er); err != nil {
+	if err = c.wsRead(tctx, conn, er); err != nil {
+		c.l.Debugf("[%s]fail to wsRead err:%+v", id, err)
 		return err
 	}
 	if !errors.Success.Equals(er) {
-		return er
+		err = er
+		return err
+	}
+	return nil
+}
+
+func (c *Client) wsClose(conn *websocket.Conn) {
+	c.l.Debugf("[%s]wsClose", c.wsID(conn))
+	conn.Close()
+}
+
+func (c *Client) wsRead(ctx context.Context, conn *websocket.Conn, v interface{}) error {
+	id := c.wsID(conn)
+	ch := make(chan interface{}, 1)
+	go func() {
+		_, b, err := conn.ReadMessage()
+		if err != nil {
+			ch <- err
+		} else {
+			ch <- b
+		}
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case inf := <-ch:
+		switch t := inf.(type) {
+		case error:
+			return t
+		case []byte:
+			if err := json.Unmarshal(t, v); err != nil {
+				return err
+			}
+			c.l.Logf(c.lv, "[%s]wsRead=%s", id, t)
+			return nil
+		default:
+			c.l.Panicln("unreachable code")
+			return nil
+		}
+	}
+}
+
+func (c *Client) wsWrite(conn *websocket.Conn, v interface{}) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	c.l.Logf(c.lv, "[%s]wsWrite=%s", c.wsID(conn), b)
+	return conn.WriteMessage(websocket.TextMessage, b)
+}
+
+func (c *Client) wsReadLoop(ctx context.Context, conn *websocket.Conn, cb func(b []byte) error) error {
+	id := c.wsID(conn)
+	ech := make(chan error, 1)
+	go func() {
+		defer func() {
+			c.l.Debugf("[%s]wsReadLoop finish", id)
+		}()
+		for {
+			_, b, err := conn.ReadMessage()
+			if err != nil {
+				ech <- err
+				break
+			}
+			c.l.Logf(c.lv, "[%s]wsReadLoop=%s", id, b)
+			if err = cb(b); err != nil {
+				ech <- err
+				break
+			}
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		c.l.Debugf("[%s]wsReadLoop context Done", id)
+		return ctx.Err()
+	case err := <-ech:
+		c.l.Debugf("[%s]wsReadLoop err:%+v", id, err)
+		return err
+	}
+}
+
+func (c *Client) monitorEvent(ctx context.Context, network, url string, req *MonitorRequest, cb contract.EventCallback) error {
+	conn, err := c.wsConnect(ctx, url)
+	if err != nil {
+		return err
+	}
+	defer c.wsClose(conn)
+	if err = c.wsHandshake(ctx, conn, req); err != nil {
+		return err
 	}
 	type eventSupplier func() contract.Event
 	var supplier eventSupplier
@@ -203,34 +319,23 @@ func (c *Client) monitorEvent(network, url string, req *MonitorRequest, cb contr
 		case eth.NetworkTypeEth, eth.NetworkTypeEth2:
 			supplier = func() contract.Event { return &eth.Event{} }
 		default:
+			c.wsClose(conn)
 			return errors.Errorf("not supported network %s", network)
 		}
 	}
-	for {
+	return c.wsReadLoop(ctx, conn, func(b []byte) error {
 		v := supplier()
-		var (
-			messageType int
-			r           io.Reader
-		)
-		if messageType, r, err = conn.NextReader(); err != nil {
+		if err = json.Unmarshal(b, v); err != nil {
 			return err
 		}
-		if messageType == websocket.CloseMessage {
-			return io.EOF
-		}
-		if err = json.NewDecoder(r).Decode(v); err != nil {
-			return err
-		}
-		if err = cb(v); err != nil {
-			return err
-		}
-	}
+		return cb(v)
+	})
 }
 
-func (c *Client) MonitorEvent(network string, addr contract.Address, req *MonitorRequest, cb contract.EventCallback) error {
-	return c.monitorEvent(network, c.monitorUrl("/%s/%s/event", network, addr), req, cb)
+func (c *Client) MonitorEvent(ctx context.Context, network string, addr contract.Address, req *MonitorRequest, cb contract.EventCallback) error {
+	return c.monitorEvent(ctx, network, c.monitorUrl("/%s/%s/event", network, addr), req, cb)
 }
 
-func (c *Client) ServiceMonitorEvent(network string, svc string, req *MonitorRequest, cb contract.EventCallback) error {
-	return c.monitorEvent(network, c.monitorUrl("/%s/%s/event", network, svc), req, cb)
+func (c *Client) ServiceMonitorEvent(ctx context.Context, network string, svc string, req *MonitorRequest, cb contract.EventCallback) error {
+	return c.monitorEvent(ctx, network, c.monitorUrl("/%s/%s/event", network, svc), req, cb)
 }
