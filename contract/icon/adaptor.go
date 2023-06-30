@@ -17,6 +17,7 @@
 package icon
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"time"
@@ -194,6 +195,7 @@ func newEventFilters(sigToAddrs map[string][]contract.Address) []*client.EventFi
 }
 
 func (a *Adaptor) MonitorEvent(
+	ctx context.Context,
 	cb contract.EventCallback,
 	efs []contract.EventFilter,
 	height int64) error {
@@ -220,7 +222,7 @@ func (a *Adaptor) MonitorEvent(
 	resp := &ProgressOrEventNotification{}
 	es := make([]*Event, 0)
 	bp := &client.BlockHeightParam{}
-	return a.Client.Monitor("/event", req, resp, func(conn *websocket.Conn, v interface{}) {
+	return a.Client.MonitorWithContext(ctx, "/event", req, resp, func(conn *websocket.Conn, v interface{}) {
 		switch n := v.(type) {
 		case *ProgressOrEventNotification:
 			if n.ProgressNotification != nil {
@@ -267,6 +269,7 @@ func (a *Adaptor) MonitorEvent(
 }
 
 func (a *Adaptor) MonitorBaseEvent(
+	ctx context.Context,
 	cb contract.BaseEventCallback,
 	sigToAddrs map[string][]contract.Address,
 	height int64) error {
@@ -282,7 +285,7 @@ func (a *Adaptor) MonitorBaseEvent(
 		Logs: NewHexBool(true),
 	}
 	resp := &BlockNotification{}
-	return a.Client.Monitor("/block", req, resp, func(conn *websocket.Conn, v interface{}) {
+	return a.Client.MonitorWithContext(ctx, "/block", req, resp, func(conn *websocket.Conn, v interface{}) {
 		switch n := v.(type) {
 		case *BlockNotification:
 			a.l.Logf(a.opt.TransportLogLevel.Level(), "BlockNotification:%+v", n)

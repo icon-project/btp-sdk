@@ -475,6 +475,8 @@ github.com/icon-project/btp2 v1.0.2 h1:cAVO6vp0tKMIHJ9JrnJsZY6k5ZO0I3qfZsXP8N5CX
 github.com/icon-project/btp2 v1.0.2/go.mod h1:b7DySqhjd/RxPmP0bxOvm5yAjjxNvBGK7KFLqxoh4KY=
 github.com/icon-project/btp2 v1.0.3-0.20230623081344-84364c962860 h1:sQ9O1GHr2FARNgQ2NUvcqD+2pVCY6xcGhO8StDFsXJM=
 github.com/icon-project/btp2 v1.0.3-0.20230623081344-84364c962860/go.mod h1:b7DySqhjd/RxPmP0bxOvm5yAjjxNvBGK7KFLqxoh4KY=
+github.com/icon-project/btp2 v1.0.3-0.20230630013949-c7658937ba02 h1:awwhKrVh5yHEV65URylqtZHUAT95titR2WQy9TuNh6w=
+github.com/icon-project/btp2 v1.0.3-0.20230630013949-c7658937ba02/go.mod h1:b7DySqhjd/RxPmP0bxOvm5yAjjxNvBGK7KFLqxoh4KY=
 github.com/icon-project/btp2-eth2 v0.2.2-0.20230609060553-ded7f4c5094b h1:2WS3QQ6YebJjeoYmoVTFxGgBAVHZUlOOUOSrvP/QCk4=
 github.com/icon-project/btp2-eth2 v0.2.2-0.20230609060553-ded7f4c5094b/go.mod h1:+kItKfdcSOHOE3jf9Z39wk4JIvJuaLlhZ7I4egnJf+0=
 github.com/imkira/go-interpol v1.1.0/go.mod h1:z0h2/2T3XF8kyEPpRgJ3kmNv+C43p+I/CoI+jC3w2iA=

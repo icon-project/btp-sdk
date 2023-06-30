@@ -417,6 +417,7 @@ func (h *Handler) Address() contract.Address {
 }
 
 func (h *Handler) MonitorEvent(
+	ctx context.Context,
 	cb contract.EventCallback,
 	nameToParams map[string][]contract.Params,
 	height int64) error {
@@ -433,5 +434,5 @@ func (h *Handler) MonitorEvent(
 			efs = append(efs, ef)
 		}
 	}
-	return h.a.MonitorEvent(cb, efs, height)
+	return h.a.MonitorEvent(ctx, cb, efs, height)
 }

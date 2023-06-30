@@ -17,6 +17,7 @@
 package icon
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"time"
@@ -183,7 +184,7 @@ func (h *Handler) Call(method string, params contract.Params, options contract.O
 func (h *Handler) EventFilter(name string, params contract.Params) (contract.EventFilter, error) {
 	spec, has := h.spec.EventMap[name]
 	if !has {
-		return nil, errors.New("not found event")
+		return nil, errors.Errorf("not found event:%s", name)
 	}
 	validParams, err := contract.ParamsOfWithSpec(spec.InputMap, params)
 	if err != nil {
@@ -205,6 +206,7 @@ func (h *Handler) Address() contract.Address {
 }
 
 func (h *Handler) MonitorEvent(
+	ctx context.Context,
 	cb contract.EventCallback,
 	nameToParams map[string][]contract.Params,
 	height int64) error {
@@ -221,5 +223,5 @@ func (h *Handler) MonitorEvent(
 			efs = append(efs, ef)
 		}
 	}
-	return h.a.MonitorEvent(cb, efs, height)
+	return h.a.MonitorEvent(ctx, cb, efs, height)
 }

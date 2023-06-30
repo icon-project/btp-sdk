@@ -17,6 +17,7 @@
 package contract
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -80,7 +81,7 @@ type Handler interface {
 	EventFilter(name string, params Params) (EventFilter, error)
 	Spec() Spec
 	Address() Address
-	MonitorEvent(cb EventCallback, nameToParams map[string][]Params, height int64) error
+	MonitorEvent(ctx context.Context, cb EventCallback, nameToParams map[string][]Params, height int64) error
 }
 
 type BaseEventCallback func(e BaseEvent) error
@@ -122,8 +123,8 @@ type Adaptor interface {
 	GetResult(id TxID) (TxResult, error)
 	Handler(spec []byte, address Address) (Handler, error)
 	BlockMonitor() BlockMonitor
-	MonitorEvent(cb EventCallback, efs []EventFilter, height int64) error
-	MonitorBaseEvent(cb BaseEventCallback, sigToAddrs map[string][]Address, height int64) error
+	MonitorEvent(ctx context.Context, cb EventCallback, efs []EventFilter, height int64) error
+	MonitorBaseEvent(ctx context.Context, cb BaseEventCallback, sigToAddrs map[string][]Address, height int64) error
 }
 
 type Options map[string]interface{}
