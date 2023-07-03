@@ -79,7 +79,9 @@ func HttpErrorHandler(err error, c echo.Context) {
 			c.Echo().Logger.Error(err)
 		}
 	}
-	if err = c.JSON(code, er); err != nil {
-		c.Echo().Logger.Error(err)
+	if !c.Response().Committed {
+		if err = c.JSON(code, er); err != nil {
+			c.Echo().Logger.Error(err)
+		}
 	}
 }
