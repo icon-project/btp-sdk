@@ -107,14 +107,14 @@ func (s *Server) Start() error {
 }
 
 type Request struct {
-	Method  string           `json:"method" validate:"required"`
-	Params  contract.Params  `json:"params"`
-	Options contract.Options `json:"options"`
+	Method  string           `json:"method" query:"method" validate:"required"`
+	Params  contract.Params  `json:"params" query:"params"`
+	Options contract.Options `json:"options" query:"options"`
 }
 
 type ContractRequest struct {
 	Request
-	Spec json.RawMessage `json:"spec,omitempty"`
+	Spec json.RawMessage `json:"spec,omitempty" query:"spec"`
 }
 
 func (s *Server) RegisterAPIHandler(g *echo.Group) {
