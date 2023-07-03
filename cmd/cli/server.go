@@ -216,6 +216,7 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 				var lwCfg log.WriterConfig
 				lwCfg = *cfg.LogWriter
 				lwCfg.Filename = cfg.ResolveAbsolute(lwCfg.Filename)
+				log.Debugf("log_writer.filename:%s resolved:%s", cfg.LogWriter.Filename, lwCfg.Filename)
 				writer, err := log.NewWriter(&lwCfg)
 				if err != nil {
 					log.Panicf("Fail to make writer err=%+v", err)
@@ -276,7 +277,13 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 					}
 				}
 				if n.Signer != nil {
-					signer, err := NewDefaultSigner(n.NetworkType, n.Signer.Keystore, n.Signer.Secret)
+					var sCfg SignerConfig
+					sCfg = *n.Signer
+					sCfg.Keystore = cfg.ResolveAbsolute(sCfg.Keystore)
+					sCfg.Secret = cfg.ResolveAbsolute(sCfg.Secret)
+					l.Debugf("signer.keystore:%s resolved:%s", n.Signer.Keystore, sCfg.Keystore)
+					l.Debugf("signer.secret:%s resolved:%s", n.Signer.Secret, sCfg.Secret)
+					signer, err := NewDefaultSigner(n.NetworkType, sCfg.Keystore, sCfg.Secret)
 					if err != nil {
 						return err
 					}
