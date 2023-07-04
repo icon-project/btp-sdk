@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -150,8 +152,8 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 	serviceApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			req := &ContractRequest{}
-			if err := BindOrUnmarshalBody(c, req); err != nil {
-				s.l.Debugf("fail to BindOrUnmarshalBody err:%+v", err)
+			if err := BindQueryParamsOrUnmarshalBody(c, req); err != nil {
+				s.l.Debugf("fail to BindQueryParamsOrUnmarshalBody err:%+v", err)
 				return echo.ErrBadRequest
 			}
 			if err := c.Validate(req); err != nil {
@@ -405,14 +407,88 @@ func (s *Server) Stop() error {
 	return s.e.Shutdown(ctx)
 }
 
-func BindOrUnmarshalBody(c echo.Context, v interface{}) error {
-	if err := c.Bind(v); err != nil {
+func BindQueryParamsOrUnmarshalBody(c echo.Context, v interface{}) error {
+	if err := BindQueryParams(c, v); err != nil {
 		if c.Request().ContentLength > 0 {
 			return UnmarshalBody(c.Request().Body, v)
 		}
 		return err
 	}
 	return nil
+}
+
+func QueryParamsToMap(c echo.Context) (map[string]interface{}, error) {
+	m := make(map[string]interface{})
+	for k, v := range c.QueryParams() {
+		tm := m
+		if start := strings.IndexByte(k, '['); start > 0 && k[len(k)-1] == ']' {
+			l := []string{k[:start]}
+			l = append(l, strings.Split(k[start+1:len(k)-1], "][")...)
+			var (
+				elem interface{}
+				ok   = false
+				last = len(l) - 1
+			)
+			for i, p := range l {
+				if i < last {
+					if elem, ok = tm[p]; !ok {
+						cm := make(map[string]interface{})
+						tm[p] = cm
+						tm = cm
+					} else if tm, ok = elem.(map[string]interface{}); ok {
+						continue
+					} else {
+						return nil, errors.Errorf("fail cast k:%s i:%d p:%s", k, i, p)
+					}
+				} else {
+					k = p
+				}
+			}
+		}
+		switch len(v) {
+		case 0:
+			tm[k] = nil
+		case 1:
+			tm[k] = v[0]
+		default:
+			tm[k] = v
+		}
+	}
+	return m, nil
+}
+
+func ContainsMapTypeInStructType(t reflect.Type) bool {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() == reflect.Struct {
+		for i := 0; i < t.NumField(); i++ {
+			if t.Field(i).Type.Kind() == reflect.Map {
+				return true
+			} else if t.Field(i).Type.Kind() == reflect.Struct {
+				if ContainsMapTypeInStructType(t.Field(i).Type) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func BindQueryParams(c echo.Context, v interface{}) error {
+	if ContainsMapTypeInStructType(reflect.TypeOf(v)) {
+		m, err := QueryParamsToMap(c)
+		if err != nil {
+			return err
+		}
+		b, err := json.Marshal(m)
+		if err != nil {
+			return err
+		}
+		return json.Unmarshal(b, v)
+	} else {
+		return c.Bind(v)
+	}
 }
 
 func UnmarshalBody(b io.ReadCloser, v interface{}) error {
