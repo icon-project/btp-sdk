@@ -66,7 +66,7 @@ func (h *Handler) method(name string, params contract.Params, readonly bool) (*c
 	for _, m := range h.out.Methods {
 		if m.RawName == name {
 			if m.IsConstant() != readonly {
-				return nil, nil, errors.Errorf("mismatch readonly, expected:%v", readonly)
+				return nil, nil, contract.ErrorCodeMismatchReadonly.Errorf("mismatch readonly, method:%s expected:%v", name, readonly)
 			}
 			methods = append(methods, m)
 		}
@@ -80,7 +80,7 @@ func (h *Handler) method(name string, params contract.Params, readonly bool) (*c
 				return in, &methods[i], nil
 			}
 		}
-		return nil, nil, errors.New("not found method")
+		return nil, nil, contract.ErrorCodeNotFoundMethod.Errorf("not found method:%s", name)
 	}
 }
 
@@ -89,10 +89,10 @@ func (h *Handler) callData(m *abi.Method, params contract.Params) (b []byte, err
 	for i, v := range m.Inputs {
 		param, ok := params[v.Name]
 		if !ok || param == nil {
-			return nil, errors.New("required param " + v.Name)
+			return nil, contract.ErrorCodeInvalidParam.Errorf("required param:%s", v.Name)
 		}
 		if r[i], err = encode(v.Type, param); err != nil {
-			return nil, err
+			return nil, contract.ErrorCodeInvalidParam.Wrapf(err, "invalid param:%s err:%s", v.Name, err.Error())
 		}
 		h.l.Tracef("callData index:%d name:%s param:%v encoded:%v type:%T\n",
 			i, v.Name, param, r[i], r[i])
@@ -159,36 +159,36 @@ func (h *Handler) newBaseTx(opt *InvokeOptions, data []byte) (p *baseTx, err err
 	}
 	if len(opt.Value) > 0 {
 		if p.Value, err = opt.Value.AsBigInt(); err != nil {
-			return nil, err
+			return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'Value' err:%s", err.Error())
 		}
 	}
 	if len(opt.GasLimit) > 0 {
 		if p.GasLimit, err = opt.GasLimit.AsUint64(); err != nil {
-			return nil, err
+			return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'GasLimit' err:%s", err.Error())
 		}
 	}
 	if len(opt.Nonce) > 0 {
 		if p.Nonce, err = opt.Nonce.AsUint64(); err != nil {
-			return nil, err
+			return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'Nonce' err:%s", err.Error())
 		}
 	}
 	if len(opt.GasPrice) > 0 {
 		if p.GasPrice, err = opt.GasPrice.AsBigInt(); err != nil {
-			return nil, err
+			return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'GasPrice' err:%s", err.Error())
 		}
 	}
 	if len(opt.GasFeeCap) > 0 {
 		if p.GasFeeCap, err = opt.GasFeeCap.AsBigInt(); err != nil {
-			return nil, err
+			return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'GasFeeCap' err:%s", err.Error())
 		}
 	}
 	if len(opt.GasTipCap) > 0 {
 		if p.GasTipCap, err = opt.GasTipCap.AsBigInt(); err != nil {
-			return nil, err
+			return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'GasTipCap' err:%s", err.Error())
 		}
 	}
 	if p.GasPrice != nil && (p.GasFeeCap != nil || p.GasTipCap != nil) {
-		return nil, errors.New("both GasPrice and (GasFeeCap or GasTipCap) specified")
+		return nil, contract.ErrorCodeInvalidOption.Errorf("both GasPrice and (GasFeeCap or GasTipCap) specified")
 	}
 	return p, nil
 }
@@ -207,10 +207,10 @@ func (h *Handler) prepareSign(opt *InvokeOptions, p *baseTx) (optUpdated bool, e
 	}
 	if len(opt.Nonce) == 0 {
 		if len(opt.From) == 0 {
-			return false, errors.New("required 'from'")
+			return false, contract.ErrorCodeInvalidOption.Errorf("required 'from'")
 		}
 		if !common.IsHexAddress(string(opt.From)) {
-			return false, errors.New("invalid 'from'")
+			return false, contract.ErrorCodeInvalidOption.Errorf("invalid 'from'")
 		}
 		from := common.HexToAddress(string(opt.From))
 		if p.Nonce, err = h.a.PendingNonceAt(context.Background(), from); err != nil {
@@ -243,7 +243,7 @@ func (h *Handler) prepareSign(opt *InvokeOptions, p *baseTx) (optUpdated bool, e
 					optUpdated = true
 				}
 				if p.GasFeeCap.Cmp(p.GasTipCap) < 0 {
-					return false, errors.Errorf(
+					return false, contract.ErrorCodeInvalidOption.Errorf(
 						"GasFeeCap (%v) < GasTipCap (%v)", p.GasFeeCap, p.GasTipCap)
 				}
 			} else {
@@ -317,7 +317,7 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 
 	tx, err := types.NewTx(p.TxData()).WithSignature(h.signer, opt.Signature)
 	if err != nil {
-		return nil, errors.Wrapf(err, "fail to WithSignature err:%s", err.Error())
+		return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "fail to WithSignature err:%s", err.Error())
 	}
 	if err = h.a.SendTransaction(context.Background(), tx); err != nil {
 		return nil, errors.Wrapf(err, "fail to SendTransactions err:%s", err.Error())
@@ -365,11 +365,11 @@ func (h *Handler) Call(method string, params contract.Params, options contract.O
 func (h *Handler) EventFilter(name string, params contract.Params) (contract.EventFilter, error) {
 	in, has := h.in.EventMap[name]
 	if !has {
-		return nil, errors.New("not found event from in")
+		return nil, contract.ErrorCodeNotFoundEvent.Errorf("not found event:%s in", name)
 	}
 	out, has := h.out.Events[name]
 	if !has {
-		return nil, errors.New("not found event from out")
+		return nil, contract.ErrorCodeNotFoundEvent.Errorf("not found event:%s out", name)
 	}
 	validParams, err := contract.ParamsOfWithSpec(in.InputMap, params)
 	if err != nil {
@@ -382,7 +382,7 @@ func (h *Handler) EventFilter(name string, params contract.Params) (contract.Eve
 			if p, ok := validParams[arg.Name]; ok {
 				t, err := NewTopic(p)
 				if err != nil {
-					return nil, err
+					return nil, contract.ErrorCodeInvalidParam.Wrapf(err, "fail to NewTopic param:%s err:%s", arg.Name, err.Error())
 				}
 				hashedParams[arg.Name] = t
 			}

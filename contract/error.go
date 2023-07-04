@@ -19,11 +19,16 @@ package contract
 import "github.com/icon-project/btp2/common/errors"
 
 const (
-	RequireSignatureErrorCode errors.Code = errors.CodeGeneral + iota
+	ErrorCodeNotFoundMethod errors.Code = errors.CodeGeneral + iota
+	ErrorCodeMismatchReadonly
+	ErrorCodeNotFoundEvent
+	ErrorCodeInvalidParam
+	ErrorCodeInvalidOption
+	ErrorCodeRequireSignature
 )
 
 var (
-	errRequireSignature = errors.NewBase(RequireSignatureErrorCode, "RequireSignatureError")
+	errRequireSignature = errors.NewBase(ErrorCodeRequireSignature, "RequireSignatureError")
 )
 
 type RequireSignatureError interface {

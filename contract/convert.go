@@ -82,7 +82,7 @@ func ParamOf(value interface{}) (interface{}, error) {
 		case reflect.Map:
 			return ParamsOf(v)
 		default:
-			return nil, errors.Errorf("not supported type %T", v)
+			return nil, ErrorCodeInvalidParam.Errorf("not supported type %T", v)
 		}
 	}
 }
@@ -115,13 +115,13 @@ func primitiveParamOf(s TypeTag, value interface{}) (interface{}, error) {
 	case TBoolean:
 		return BooleanOf(value)
 	default:
-		return nil, errors.Errorf("fail primitiveParamOf, not supported %+v", s)
+		return nil, ErrorCodeInvalidParam.Errorf("fail primitiveParamOf, not supported %+v", s)
 	}
 }
 
 func arrayParamOf(s TypeSpec, dimension int, v reflect.Value) ([]interface{}, error) {
 	if v.Type().Kind() != reflect.Array && v.Type().Kind() != reflect.Slice {
-		return nil, errors.Errorf("fail arrayParamOf, invalid type %v", v.Type().Kind())
+		return nil, ErrorCodeInvalidParam.Errorf("fail to arrayParamOf, invalid type %v", v.Type().Kind())
 	}
 	var err error
 	l := make([]interface{}, v.Len())
@@ -158,7 +158,7 @@ const (
 func integerOf(s string) (Integer, error) {
 	i := Integer(s)
 	if _, err := i.AsBigInt(); err != nil {
-		return invalidInteger, err
+		return invalidInteger, ErrorCodeInvalidParam.Wrapf(err, "invalid param err:%s", err.Error())
 	}
 	return i, nil
 }
@@ -184,7 +184,7 @@ func IntegerOf(value interface{}) (Integer, error) {
 		} else if rv.CanUint() {
 			return Integer(intconv.FormatBigInt(new(big.Int).SetUint64(rv.Uint()))), nil
 		} else {
-			return invalidInteger, errors.Errorf("invalid type %T", value)
+			return invalidInteger, ErrorCodeInvalidParam.Errorf("invalid type %T", value)
 		}
 	}
 }
@@ -204,7 +204,7 @@ func BooleanOf(value interface{}) (Boolean, error) {
 	case bool:
 		return Boolean(v), nil
 	default:
-		return false, errors.Errorf("invalid type %T", v)
+		return false, ErrorCodeInvalidParam.Errorf("invalid type %T", v)
 	}
 }
 
@@ -223,7 +223,7 @@ func StringOf(value interface{}) (String, error) {
 	case string:
 		return String(v), nil
 	default:
-		return "", errors.Errorf("invalid type %T", v)
+		return "", ErrorCodeInvalidParam.Errorf("invalid type %T", v)
 	}
 }
 
@@ -241,7 +241,11 @@ func bytesOf(s string) (Bytes, error) {
 		parseFunc = hex.DecodeString
 		s = s[2:]
 	}
-	return parseFunc(s)
+	b, err := parseFunc(s)
+	if err != nil {
+		return nil, ErrorCodeInvalidParam.Wrapf(err, "invalid param err:%s", err.Error())
+	}
+	return b, nil
 }
 
 func BytesOf(value interface{}) (Bytes, error) {
@@ -255,7 +259,7 @@ func BytesOf(value interface{}) (Bytes, error) {
 	case string:
 		return bytesOf(v)
 	default:
-		return nil, errors.Errorf("invalid type %T", v)
+		return nil, ErrorCodeInvalidParam.Errorf("invalid type %T", v)
 	}
 }
 
@@ -273,7 +277,7 @@ func structOf(value interface{}) (Struct, error) {
 		rv := reflect.ValueOf(value)
 		rt := rv.Type()
 		if rt.Kind() != reflect.Struct {
-			return st, errors.Errorf("invalid type:%T", value)
+			return st, ErrorCodeInvalidParam.Errorf("invalid type:%T", value)
 		}
 		st = Struct{
 			Name:   rt.Name(),
@@ -313,7 +317,7 @@ func StructOfWithSpec(spec StructSpec, value interface{}) (interface{}, error) {
 	if err != nil {
 		var pErr error
 		if params, pErr = paramsOf(value); err != nil {
-			return nil, errors.Wrapf(err, "fail StructOfWithSpec, err:%s pErr:%s", err.Error(), pErr.Error())
+			return nil, ErrorCodeInvalidParam.Wrapf(err, "fail StructOfWithSpec, err:%s pErr:%s", err.Error(), pErr.Error())
 		}
 	} else {
 		params = st.Params()
@@ -321,7 +325,7 @@ func StructOfWithSpec(spec StructSpec, value interface{}) (interface{}, error) {
 	for k, v := range params {
 		s, ok := spec.FieldMap[k]
 		if !ok {
-			return nil, errors.Errorf("unknown field name:%s", k)
+			return nil, ErrorCodeInvalidParam.Errorf("unknown field name:%s", k)
 		}
 		param, err := ParamOfWithSpec(s.Type, v)
 		if err != nil {
@@ -357,7 +361,7 @@ func AddressOf(value interface{}) (Address, error) {
 	case string:
 		return Address(v), nil
 	default:
-		return "", errors.Errorf("invalid type %T", v)
+		return "", ErrorCodeInvalidParam.Errorf("invalid type %T", v)
 	}
 }
 
@@ -375,10 +379,10 @@ func paramsOf(value interface{}) (Params, error) {
 		rv := reflect.ValueOf(value)
 		rt := rv.Type()
 		if rt.Kind() != reflect.Map {
-			return nil, errors.Errorf("invalid type:%T", value)
+			return nil, ErrorCodeInvalidParam.Errorf("invalid type:%T", value)
 		}
 		if rt.Key().Kind() != reflect.String {
-			return nil, errors.Errorf("not supported key type %v", rt.Key())
+			return nil, ErrorCodeInvalidParam.Errorf("not supported key type %v", rt.Key())
 		}
 		params = make(Params)
 		for _, k := range rv.MapKeys() {
@@ -411,7 +415,7 @@ func ParamsOfWithSpec(spec map[string]*NameAndTypeSpec, value interface{}) (Para
 	for k, v := range params {
 		s, ok := spec[k]
 		if !ok {
-			return nil, errors.Errorf("unknown param name:%s", k)
+			return nil, ErrorCodeInvalidParam.Errorf("unknown param name:%s", k)
 		}
 		param, err := ParamOfWithSpec(s.Type, v)
 		if err != nil {

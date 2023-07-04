@@ -52,10 +52,10 @@ type Handler struct {
 func (h *Handler) method(name string, readonly bool) (*contract.MethodSpec, error) {
 	m, has := h.spec.MethodMap[name]
 	if !has {
-		return nil, errors.Errorf("not found method:%s", name)
+		return nil, contract.ErrorCodeNotFoundMethod.Errorf("not found method:%s", name)
 	}
 	if m.ReadOnly != readonly {
-		return nil, errors.Errorf("mismatch readonly, method:%s expected:%v", name, readonly)
+		return nil, contract.ErrorCodeMismatchReadonly.Errorf("mismatch readonly, method:%s expected:%v", name, readonly)
 	}
 	return m, nil
 }
@@ -67,11 +67,11 @@ func (h *Handler) callData(m *contract.MethodSpec, params contract.Params) (*cli
 		param, ok := params[k]
 		if !ok || param == nil {
 			if !v.Optional {
-				return nil, errors.New("required param " + k)
+				return nil, contract.ErrorCodeInvalidParam.Errorf("required param:%s", k)
 			}
 		} else {
 			if r[k], err = encode(v.Type, param); err != nil {
-				return nil, err
+				return nil, contract.ErrorCodeInvalidParam.Wrapf(err, "invalid param:%s err:%s", k, err.Error())
 			}
 		}
 		h.l.Tracef("callData name:%s param:%v encoded:%v type:%T\n",
@@ -109,11 +109,11 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 	}
 	//required fields
 	if len(opt.From) == 0 {
-		return nil, errors.New("required 'from'")
+		return nil, contract.ErrorCodeInvalidOption.Errorf("required 'from'")
 	}
 	p.FromAddress = client.Address(opt.From)
 	if _, err = p.FromAddress.Value(); err != nil {
-		return nil, errors.Wrapf(err, "invalid 'from' err:%s", err.Error())
+		return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'from' err:%s", err.Error())
 	}
 	//optional fields
 	if len(opt.Value) > 0 {
@@ -184,7 +184,7 @@ func (h *Handler) Call(method string, params contract.Params, options contract.O
 func (h *Handler) EventFilter(name string, params contract.Params) (contract.EventFilter, error) {
 	spec, has := h.spec.EventMap[name]
 	if !has {
-		return nil, errors.Errorf("not found event:%s", name)
+		return nil, contract.ErrorCodeNotFoundEvent.Errorf("not found event:%s", name)
 	}
 	validParams, err := contract.ParamsOfWithSpec(spec.InputMap, params)
 	if err != nil {
