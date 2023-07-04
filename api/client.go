@@ -144,7 +144,7 @@ func (c *Client) invoke(url string, req interface{}, s service.Signer) (contract
 	}
 	var txId contract.TxID
 	_, err = c.do(http.MethodPost, url, req, &txId)
-	if s != nil && err != nil && contract.RequireSignatureErrorCode.Equals(err) {
+	if s != nil && err != nil && contract.ErrorCodeRequireSignature.Equals(err) {
 		er := err.(*ErrorResponse)
 		rse := &RequireSignatureError{}
 		if err = er.UnmarshalData(rse); err != nil {
