@@ -147,6 +147,8 @@ func decode(s contract.TypeSpec, value interface{}) (interface{}, error) {
 			return nil, nil
 		case contract.TStruct:
 			return decodeStruct(s.Resolved, value)
+		case contract.TUnknown:
+			return contract.ParamOf(value)
 		default:
 			return decodePrimitive(s.TypeID, value)
 		}
