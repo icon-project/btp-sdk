@@ -80,6 +80,8 @@ func (c *Client) do(method, url string, reqPtr, respPtr interface{}) (resp *http
 		c.l.Debugf("fail to NewRequest err:%+v", err)
 		return nil, err
 	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 	c.l.Debugf("url=%s", req.URL)
 	if resp, err = c.Client.Do(req); err != nil {
 		return
