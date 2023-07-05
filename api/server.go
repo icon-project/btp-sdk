@@ -152,8 +152,8 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 	serviceApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			req := &ContractRequest{}
-			if err := BindQueryParamsOrUnmarshalBody(c, req); err != nil {
-				s.l.Debugf("fail to BindQueryParamsOrUnmarshalBody err:%+v", err)
+			if err := BindQueryParamsAndUnmarshalBody(c, req); err != nil {
+				s.l.Debugf("fail to BindQueryParamsAndUnmarshalBody err:%+v", err)
 				return echo.ErrBadRequest
 			}
 			if err := c.Validate(req); err != nil {
@@ -407,14 +407,17 @@ func (s *Server) Stop() error {
 	return s.e.Shutdown(ctx)
 }
 
-func BindQueryParamsOrUnmarshalBody(c echo.Context, v interface{}) error {
-	if err := BindQueryParams(c, v); err != nil {
-		if c.Request().ContentLength > 0 {
-			return UnmarshalBody(c.Request().Body, v)
+func BindQueryParamsAndUnmarshalBody(c echo.Context, v interface{}) error {
+	if ContainsMapTypeInStructType(reflect.TypeOf(v)) {
+		if err := UnmarshalQueryParams(c, v); err != nil {
+			return err
 		}
-		return err
+	} else {
+		if err := c.Bind(v); err != nil && err != echo.ErrUnsupportedMediaType {
+			return err
+		}
 	}
-	return nil
+	return UnmarshalRequestBody(c, v)
 }
 
 func QueryParamsToMap(c echo.Context) (map[string]interface{}, error) {
@@ -475,20 +478,26 @@ func ContainsMapTypeInStructType(t reflect.Type) bool {
 	return false
 }
 
-func BindQueryParams(c echo.Context, v interface{}) error {
-	if ContainsMapTypeInStructType(reflect.TypeOf(v)) {
-		m, err := QueryParamsToMap(c)
-		if err != nil {
-			return err
-		}
-		b, err := json.Marshal(m)
-		if err != nil {
-			return err
-		}
-		return json.Unmarshal(b, v)
-	} else {
-		return c.Bind(v)
+func UnmarshalQueryParams(c echo.Context, v interface{}) error {
+	m, err := QueryParamsToMap(c)
+	if err != nil {
+		return err
 	}
+	if len(m) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(b, v)
+}
+
+func UnmarshalRequestBody(c echo.Context, v interface{}) error {
+	if c.Request().ContentLength == 0 {
+		return nil
+	}
+	return UnmarshalBody(c.Request().Body, v)
 }
 
 func UnmarshalBody(b io.ReadCloser, v interface{}) error {
