@@ -316,8 +316,8 @@ func StructOfWithSpec(spec StructSpec, value interface{}) (interface{}, error) {
 	st, err := structOf(value)
 	if err != nil {
 		var pErr error
-		if params, pErr = paramsOf(value); err != nil {
-			return nil, ErrorCodeInvalidParam.Wrapf(err, "fail StructOfWithSpec, err:%s pErr:%s", err.Error(), pErr.Error())
+		if params, pErr = paramsOf(value); pErr != nil {
+			return nil, ErrorCodeInvalidParam.Wrapf(pErr, "fail StructOfWithSpec, err:%s pErr:%s", err.Error(), pErr.Error())
 		}
 	} else {
 		params = st.Params()
