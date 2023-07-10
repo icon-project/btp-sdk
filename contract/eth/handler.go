@@ -17,7 +17,6 @@
 package eth
 
 import (
-	"bytes"
 	"context"
 	"math/big"
 
@@ -32,17 +31,12 @@ import (
 )
 
 func NewHandler(spec []byte, address common.Address, a *Adaptor, l log.Logger) (contract.Handler, error) {
-	out, err := abi.JSON(bytes.NewBuffer(spec))
+	out, err := ABIFromJSON(spec)
 	if err != nil {
 		return nil, err
 	}
-	//FIXME not allowed method override
-	//for _, m := range out.Methods {
-	//
-	//}
-	//FIXME len(out.Methods.Outputs) > 0 throw error
 	return &Handler{
-		in:      NewSpec(out),
+		in:      SpecFromABI(out),
 		out:     out,
 		address: address,
 		a:       a,
