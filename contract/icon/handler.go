@@ -19,7 +19,6 @@ package icon
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"time"
 
 	"github.com/icon-project/btp2/chain/icon/client"
@@ -30,12 +29,12 @@ import (
 )
 
 func NewHandler(spec []byte, address client.Address, a *Adaptor, l log.Logger) (contract.Handler, error) {
-	cspec := contract.Spec{}
-	if err := json.Unmarshal(spec, &cspec); err != nil {
-		return nil, errors.Wrapf(err, "fail to unmarshal spec err:%s", err.Error())
+	s, err := NewSpec(spec)
+	if err != nil {
+		return nil, err
 	}
 	return &Handler{
-		spec:    cspec,
+		spec:    *s,
 		address: address,
 		a:       a,
 		l:       l,

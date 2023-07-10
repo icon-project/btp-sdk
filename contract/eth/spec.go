@@ -17,6 +17,7 @@
 package eth
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -25,7 +26,29 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 )
 
-func NewSpec(out abi.ABI) contract.Spec {
+func NewSpec(b []byte) (*contract.Spec, error) {
+	out, err := ABIFromJSON(b)
+	if err != nil {
+		return nil, err
+	}
+	s := SpecFromABI(out)
+	return &s, nil
+}
+
+func ABIFromJSON(b []byte) (abi.ABI, error) {
+	out, err := abi.JSON(bytes.NewBuffer(b))
+	if err != nil {
+		return abi.ABI{}, err
+	}
+	//FIXME not allowed method override
+	//for _, m := range out.Methods {
+	//
+	//}
+	//FIXME len(out.Methods.Outputs) > 0 throw error
+	return out, nil
+}
+
+func SpecFromABI(out abi.ABI) contract.Spec {
 	spec := contract.Spec{
 		Methods: make([]contract.MethodSpec, 0),
 		Events:  make([]contract.EventSpec, 0),
