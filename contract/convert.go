@@ -40,19 +40,15 @@ func MustParamOf(value interface{}) interface{} {
 func ParamOf(value interface{}) (interface{}, error) {
 	var err error
 	switch v := value.(type) {
-	case Params:
-		return ParamsOf(v)
-	case Struct:
-		return StructOf(v)
-	case Address:
-		return v, nil
-	case Integer, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, big.Int, *big.Int:
+	case Params, Struct, Address, Integer, Boolean, String, Bytes:
+		return value, nil
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, big.Int, *big.Int:
 		return IntegerOf(v)
-	case Boolean, bool:
+	case bool:
 		return BooleanOf(v)
-	case String, string:
+	case string:
 		return StringOf(v)
-	case Bytes, []byte:
+	case []byte:
 		return BytesOf(v)
 	default:
 		rv := reflect.ValueOf(value)
