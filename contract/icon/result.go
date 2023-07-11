@@ -272,6 +272,10 @@ func (i EventIndexedValueWithParam) Param() interface{} {
 	return i.param
 }
 
+func (i EventIndexedValueWithParam) MarshalJSON() ([]byte, error) {
+	return json.Marshal(i.EventIndexedValue)
+}
+
 type Event struct {
 	*BaseEvent
 	signature string

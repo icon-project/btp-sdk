@@ -357,6 +357,10 @@ func (t *TopicWithParam) Param() interface{} {
 	return t.param
 }
 
+func (t *TopicWithParam) MarshalJSON() ([]byte, error) {
+	return json.Marshal(t.param)
+}
+
 type Event struct {
 	*BaseEvent
 	signature string
