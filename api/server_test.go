@@ -245,13 +245,14 @@ func Test_ServerCall(t *testing.T) {
 	args := []struct {
 		Networks []string
 		Service  string
+		Method   string
 		Request  Request
 		Response interface{}
 	}{
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
+			Method:   "callInteger",
 			Request: Request{
-				Method: "callInteger",
 				Params: contract.Params{
 					"arg1": byteVal,
 					"arg2": shortVal,
@@ -267,8 +268,8 @@ func Test_ServerCall(t *testing.T) {
 		},
 		{
 			Networks: []string{networkIconTest},
+			Method:   "callPrimitive",
 			Request: Request{
-				Method: "callPrimitive",
 				Params: contract.Params{
 					"arg1": bigIntegerVal,
 					"arg2": booleanVal,
@@ -281,8 +282,8 @@ func Test_ServerCall(t *testing.T) {
 		},
 		{
 			Networks: []string{networkEth2Test},
+			Method:   "callPrimitive",
 			Request: Request{
-				Method: "callPrimitive",
 				Params: contract.Params{
 					"arg1": bigIntegerVal,
 					"arg2": booleanVal,
@@ -296,8 +297,8 @@ func Test_ServerCall(t *testing.T) {
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
 			Service:  serviceTest,
+			Method:   "callInteger",
 			Request: Request{
-				Method: "callInteger",
 				Params: contract.Params{
 					"arg1": byteVal,
 					"arg2": shortVal,
@@ -314,9 +315,8 @@ func Test_ServerCall(t *testing.T) {
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
 			Service:  bmc.ServiceName,
-			Request: Request{
-				Method: "getLinks",
-			},
+			Method:   "getLinks",
+			Request:  Request{},
 			Response: []string{},
 		},
 	}
@@ -325,14 +325,14 @@ func Test_ServerCall(t *testing.T) {
 		for _, n := range arg.Networks {
 			var err error
 			if len(arg.Service) > 0 {
-				_, err = c.ServiceCall(n, arg.Service, &arg.Request, &arg.Response)
+				_, err = c.ServiceCall(n, arg.Service, arg.Method, &arg.Request, &arg.Response)
 			} else {
 				ctr := contracts[n]
 				req := &ContractRequest{
 					Request: arg.Request,
 					Spec:    ctr.Spec,
 				}
-				_, err = c.Call(n, ctr.Address, req, &arg.Response)
+				_, err = c.Call(n, ctr.Address, arg.Method, req, &arg.Response)
 			}
 			assert.NoError(t, err)
 			t.Logf("response:%v", arg.Response)
@@ -351,13 +351,14 @@ func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 	args := []struct {
 		Networks []string
 		Service  string
+		Method   string
 		Request  Request
 	}{
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
 			Service:  serviceTest,
+			Method:   "invokeInteger",
 			Request: Request{
-				Method: "invokeInteger",
 				Params: contract.Params{
 					"arg1": byteVal,
 					"arg2": shortVal,
@@ -373,8 +374,8 @@ func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 		{
 			Networks: []string{networkIconTest},
 			Service:  serviceTest,
+			Method:   "invokePrimitive",
 			Request: Request{
-				Method: "invokePrimitive",
 				Params: contract.Params{
 					"arg1": bigIntegerVal,
 					"arg2": booleanVal,
@@ -387,8 +388,8 @@ func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 		{
 			Networks: []string{networkEth2Test},
 			Service:  serviceTest,
+			Method:   "invokePrimitive",
 			Request: Request{
-				Method: "invokePrimitive",
 				Params: contract.Params{
 					"arg1": bigIntegerVal,
 					"arg2": booleanVal,
@@ -400,8 +401,8 @@ func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 		},
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
+			Method:   "invokeInteger",
 			Request: Request{
-				Method: "invokeInteger",
 				Params: contract.Params{
 					"arg1": byteVal,
 					"arg2": shortVal,
@@ -423,14 +424,14 @@ func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 				err  error
 			)
 			if len(arg.Service) > 0 {
-				txId, err = c.ServiceInvoke(n, arg.Service, &arg.Request, signers[n])
+				txId, err = c.ServiceInvoke(n, arg.Service, arg.Method, &arg.Request, signers[n])
 			} else {
 				ctr := contracts[n]
 				req := &ContractRequest{
 					Request: arg.Request,
 					Spec:    ctr.Spec,
 				}
-				txId, err = c.Invoke(n, ctr.Address, req, signers[n])
+				txId, err = c.Invoke(n, ctr.Address, arg.Method, req, signers[n])
 			}
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
@@ -452,13 +453,14 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 	args := []struct {
 		Networks []string
 		Service  string
+		Method   string
 		Request  Request
 	}{
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
 			Service:  serviceTest,
+			Method:   "invokeInteger",
 			Request: Request{
-				Method: "invokeInteger",
 				Params: contract.Params{
 					"arg1": byteVal,
 					"arg2": shortVal,
@@ -474,8 +476,8 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 		{
 			Networks: []string{networkIconTest},
 			Service:  serviceTest,
+			Method:   "invokePrimitive",
 			Request: Request{
-				Method: "invokePrimitive",
 				Params: contract.Params{
 					"arg1": bigIntegerVal,
 					"arg2": booleanVal,
@@ -488,8 +490,8 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 		{
 			Networks: []string{networkEth2Test},
 			Service:  serviceTest,
+			Method:   "invokePrimitive",
 			Request: Request{
-				Method: "invokePrimitive",
 				Params: contract.Params{
 					"arg1": bigIntegerVal,
 					"arg2": booleanVal,
@@ -501,8 +503,8 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 		},
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
+			Method:   "invokeInteger",
 			Request: Request{
-				Method: "invokeInteger",
 				Params: contract.Params{
 					"arg1": byteVal,
 					"arg2": shortVal,
@@ -524,14 +526,14 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 				err  error
 			)
 			if len(arg.Service) > 0 {
-				txId, err = c.ServiceInvoke(n, arg.Service, &arg.Request, nil)
+				txId, err = c.ServiceInvoke(n, arg.Service, arg.Method, &arg.Request, nil)
 			} else {
 				ctr := contracts[n]
 				req := &ContractRequest{
 					Request: arg.Request,
 					Spec:    ctr.Spec,
 				}
-				txId, err = c.Invoke(n, ctr.Address, req, signers[n])
+				txId, err = c.Invoke(n, ctr.Address, arg.Method, req, signers[n])
 			}
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
@@ -552,14 +554,15 @@ func Test_ServerMonitorEvent(t *testing.T) {
 	args := []struct {
 		Networks       []string
 		Service        string
+		Method         string
 		Request        Request
 		MonitorRequest MonitorRequest
 	}{
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
 			Service:  serviceTest,
+			Method:   "setName",
 			Request: Request{
-				Method: "setName",
 				Params: contract.Params{
 					"name": "testName",
 				},
@@ -580,14 +583,14 @@ func Test_ServerMonitorEvent(t *testing.T) {
 				err  error
 			)
 			if len(arg.Service) > 0 {
-				txId, err = c.ServiceInvoke(n, arg.Service, &arg.Request, nil)
+				txId, err = c.ServiceInvoke(n, arg.Service, arg.Method, &arg.Request, nil)
 			} else {
 				ctr := contracts[n]
 				req := &ContractRequest{
 					Request: arg.Request,
 					Spec:    ctr.Spec,
 				}
-				txId, err = c.Invoke(n, ctr.Address, req, signers[n])
+				txId, err = c.Invoke(n, ctr.Address, arg.Method, req, signers[n])
 			}
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)

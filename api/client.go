@@ -162,20 +162,20 @@ func (c *Client) invoke(url string, req interface{}, s service.Signer) (contract
 	return txId, err
 }
 
-func (c *Client) Invoke(network string, addr contract.Address, req *ContractRequest, s service.Signer) (contract.TxID, error) {
-	return c.invoke(c.apiUrl("/%s/%s/invoke", network, addr), req, s)
+func (c *Client) Invoke(network string, addr contract.Address, method string, req *ContractRequest, s service.Signer) (contract.TxID, error) {
+	return c.invoke(c.apiUrl("/%s/%s/%s", network, addr, method), req, s)
 }
 
-func (c *Client) ServiceInvoke(network, svc string, req *Request, s service.Signer) (contract.TxID, error) {
-	return c.invoke(c.apiUrl("/%s/%s/invoke", network, svc), req, s)
+func (c *Client) ServiceInvoke(network, svc, method string, req *Request, s service.Signer) (contract.TxID, error) {
+	return c.invoke(c.apiUrl("/%s/%s/%s", network, svc, method), req, s)
 }
 
-func (c *Client) Call(network string, addr contract.Address, req *ContractRequest, resp interface{}) (*http.Response, error) {
-	return c.do(http.MethodGet, c.apiUrl("/%s/%s/call", network, addr), req, resp)
+func (c *Client) Call(network string, addr contract.Address, method string, req *ContractRequest, resp interface{}) (*http.Response, error) {
+	return c.do(http.MethodGet, c.apiUrl("/%s/%s/%s", network, addr, method), req, resp)
 }
 
-func (c *Client) ServiceCall(network, svc string, req *Request, resp interface{}) (*http.Response, error) {
-	return c.do(http.MethodGet, c.apiUrl("/%s/%s/call", network, svc), req, resp)
+func (c *Client) ServiceCall(network, svc, method string, req *Request, resp interface{}) (*http.Response, error) {
+	return c.do(http.MethodGet, c.apiUrl("/%s/%s/%s", network, svc, method), req, resp)
 }
 
 func (c *Client) monitorUrl(format string, args ...interface{}) string {

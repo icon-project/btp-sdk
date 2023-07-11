@@ -32,6 +32,7 @@ const (
 	ParamNetwork          = "network"
 	ParamTxID             = "txID"
 	ParamServiceOrAddress = "serviceOrAddress"
+	ParamMethod           = "method"
 	ContextAdaptor        = "adaptor"
 	ContextService        = "service"
 	ContextRequest        = "request"
@@ -109,7 +110,6 @@ func (s *Server) Start() error {
 }
 
 type Request struct {
-	Method  string           `json:"method" query:"method" validate:"required"`
 	Params  contract.Params  `json:"params" query:"params"`
 	Options contract.Options `json:"options" query:"options"`
 }
@@ -148,7 +148,7 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		return c.JSON(http.StatusOK, ret)
 	})
 
-	serviceApi := generalApi.Group("/:" + ParamServiceOrAddress)
+	serviceApi := generalApi.Group("/:" + ParamServiceOrAddress + "/:" + ParamMethod)
 	serviceApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			req := &ContractRequest{}
@@ -180,10 +180,29 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 				}
 			}
 			c.Set(ContextService, svc)
+
+			pm := c.Param(ParamMethod)
+			m, found := svc.Spec().Methods[pm]
+			if !found {
+				return echo.NewHTTPError(http.StatusNotFound,
+					fmt.Sprintf("Method(%s) not found", pm))
+			}
+			hm := c.Request().Method
+			if m.Readonly {
+				if hm != http.MethodGet {
+					return echo.NewHTTPError(http.StatusMethodNotAllowed,
+						fmt.Sprintf("HttpMethod(%s) not allowed, use GET", hm))
+				}
+			} else {
+				if hm != http.MethodPost {
+					return echo.NewHTTPError(http.StatusNotFound,
+						fmt.Sprintf("HttpMethod(%s) not allowed, use POST", hm))
+				}
+			}
 			return next(c)
 		}
 	})
-	serviceApi.POST("/invoke", func(c echo.Context) error {
+	serviceApi.POST("", func(c echo.Context) error {
 		var (
 			txID contract.TxID
 			err  error
@@ -191,14 +210,15 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		req := c.Get(ContextRequest).(*Request)
 		svc := c.Get(ContextService).(service.Service)
 		network := c.Param(ParamNetwork)
-		txID, err = svc.Invoke(network, req.Method, req.Params, req.Options)
+		method := c.Param(ParamMethod)
+		txID, err = svc.Invoke(network, method, req.Params, req.Options)
 		if err != nil {
 			s.l.Errorf("fail to Invoke err:%+v", err)
 			return err
 		}
 		return c.JSON(http.StatusOK, txID)
 	})
-	serviceApi.GET("/call", func(c echo.Context) error {
+	serviceApi.GET("", func(c echo.Context) error {
 		var (
 			ret contract.ReturnValue
 			err error
@@ -206,7 +226,8 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		req := c.Get(ContextRequest).(*Request)
 		svc := c.Get(ContextService).(service.Service)
 		network := c.Param(ParamNetwork)
-		ret, err = svc.Call(network, req.Method, req.Params, req.Options)
+		method := c.Param(ParamMethod)
+		ret, err = svc.Call(network, method, req.Params, req.Options)
 		if err != nil {
 			s.l.Errorf("fail to Call err:%+v", err)
 			return err

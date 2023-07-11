@@ -60,6 +60,7 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 		networkType string
 		svc         string
 		addr        contract.Address
+		method      string
 		req         = &api.ContractRequest{}
 	)
 	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
@@ -137,7 +138,7 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 						return err
 					}
 				}
-				if req.Method, err = fs.GetString("method"); err != nil {
+				if method, err = fs.GetString("method"); err != nil {
 					return err
 				}
 				if req.Params, err = GetStringToInterface(fs, "param"); err != nil {
@@ -177,9 +178,9 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 			resp interface{}
 		)
 		if len(svc) > 0 {
-			_, err = c.ServiceCall(network, svc, &req.Request, &resp)
+			_, err = c.ServiceCall(network, svc, method, &req.Request, &resp)
 		} else if len(addr) > 0 {
-			_, err = c.Call(network, addr, req, &resp)
+			_, err = c.Call(network, addr, method, req, &resp)
 		}
 		if err != nil {
 			return err
@@ -204,9 +205,9 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 			return err
 		}
 		if len(svc) > 0 {
-			txID, err = c.ServiceInvoke(network, svc, &req.Request, s)
+			txID, err = c.ServiceInvoke(network, svc, method, &req.Request, s)
 		} else if len(addr) > 0 {
-			txID, err = c.Invoke(network, addr, req, s)
+			txID, err = c.Invoke(network, addr, method, req, s)
 		}
 		if err != nil {
 			return err
