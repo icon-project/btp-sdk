@@ -32,6 +32,7 @@ type ContractService struct {
 	network string
 	a       contract.Adaptor
 	h       contract.Handler
+	spec    service.Spec
 	l       log.Logger
 }
 
@@ -40,11 +41,14 @@ func NewContractService(a contract.Adaptor, spec []byte, address contract.Addres
 	if err != nil {
 		return nil, err
 	}
+	name := ContractServiceName(network, address)
+	ss := service.NewSpec("", name)
 	return &ContractService{
-		name:    ContractServiceName(network, address),
+		name:    name,
 		network: network,
 		a:       a,
 		h:       h,
+		spec:    ss,
 		l:       l}, nil
 }
 
@@ -54,6 +58,10 @@ func ContractServiceName(network string, address contract.Address) string {
 
 func (s *ContractService) Name() string {
 	return s.name
+}
+
+func (s *ContractService) Spec() service.Spec {
+	return s.spec
 }
 
 func (s *ContractService) Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error) {
