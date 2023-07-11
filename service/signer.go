@@ -68,7 +68,7 @@ func PrepareToSign(options contract.Options, s Signer, force bool) (contract.Opt
 		}
 		return contract.EncodeOptions(opt)
 	default:
-		return nil, errors.Errorf("not support network type:%s", s.NetworkType)
+		return nil, errors.Errorf("not support network type:%s", s.NetworkType())
 	}
 }
 
@@ -99,7 +99,7 @@ func Sign(data []byte, options contract.Options, s Signer) (contract.Options, er
 		opt.Signature = sig
 		return contract.EncodeOptions(opt)
 	default:
-		return nil, errors.Errorf("not support network type:%s", s.NetworkType)
+		return nil, errors.Errorf("not support network type:%s", s.NetworkType())
 	}
 
 }
