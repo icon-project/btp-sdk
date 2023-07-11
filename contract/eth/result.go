@@ -138,9 +138,9 @@ type TxResultJson struct {
 	Failure *TxFailure
 }
 
-func (r *TxResult) UnmarshalJSON(bytes []byte) error {
+func (r *TxResult) UnmarshalJSON(b []byte) error {
 	v := &TxResultJson{}
-	if err := json.Unmarshal(bytes, v); err != nil {
+	if err := json.Unmarshal(b, v); err != nil {
 		return err
 	}
 	txr := NewTxResult(v.Raw, v.Failure)
@@ -234,9 +234,9 @@ func (e *BaseEvent) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v)
 }
 
-func (e *BaseEvent) UnmarshalJSON(bytes []byte) error {
+func (e *BaseEvent) UnmarshalJSON(b []byte) error {
 	v := &BaseEventJson{}
-	if err := json.Unmarshal(bytes, v); err != nil {
+	if err := json.Unmarshal(b, v); err != nil {
 		return err
 	}
 	be := NewBaseEvent(v.Raw)
@@ -400,9 +400,9 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v)
 }
 
-func (e *Event) UnmarshalJSON(bytes []byte) error {
+func (e *Event) UnmarshalJSON(b []byte) error {
 	v := &EventJson{}
-	if err := json.Unmarshal(bytes, v); err != nil {
+	if err := json.Unmarshal(b, v); err != nil {
 		return err
 	}
 	*e = Event{
