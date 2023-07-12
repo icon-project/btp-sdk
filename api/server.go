@@ -232,8 +232,24 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 			s.l.Errorf("fail to Call err:%+v", err)
 			return err
 		}
-		return c.JSON(http.StatusOK, ret)
+		return c.JSON(http.StatusOK, StructToParams(ret))
 	})
+}
+
+func StructToParams(v interface{}) interface{} {
+	var p contract.Params
+	switch t := v.(type) {
+	case contract.Struct:
+		p = t.Params()
+	case contract.Params:
+		p = t
+	default:
+		return v
+	}
+	for k, pv := range p {
+		p[k] = StructToParams(pv)
+	}
+	return p
 }
 
 type MonitorRequest struct {
