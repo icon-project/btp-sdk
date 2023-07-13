@@ -59,6 +59,7 @@ type EventFilter interface {
 	Filter(event BaseEvent) (Event, error)
 	Signature() string
 	Address() Address
+	Spec() EventSpec
 }
 
 type SignatureMatcher interface {

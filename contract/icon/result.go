@@ -439,3 +439,7 @@ func (f *EventFilter) Signature() string {
 func (f *EventFilter) Address() contract.Address {
 	return f.address
 }
+
+func (f *EventFilter) Spec() contract.EventSpec {
+	return f.spec
+}
