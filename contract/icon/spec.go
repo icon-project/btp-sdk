@@ -24,6 +24,10 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 )
 
+func init() {
+	contract.RegisterSpecFactory(NewSpec, NetworkTypes...)
+}
+
 func NewSpec(b []byte) (*contract.Spec, error) {
 	spec := &contract.Spec{}
 	if err := json.Unmarshal(b, &spec); err != nil {

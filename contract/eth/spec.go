@@ -26,6 +26,10 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 )
 
+func init() {
+	contract.RegisterSpecFactory(NewSpec, NetworkTypes...)
+}
+
 func NewSpec(b []byte) (*contract.Spec, error) {
 	out, err := ABIFromJSON(b)
 	if err != nil {

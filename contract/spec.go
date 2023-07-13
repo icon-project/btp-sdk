@@ -352,7 +352,7 @@ func (s *StructSpec) resolveType(structMap map[string]*StructSpec) error {
 		f := reflect.StructField{
 			Name: strings.ToUpper(v.Name[:1]) + v.Name[1:],
 			Type: v.Type.Type,
-			Tag:  reflect.StructTag("json:" + v.Name),
+			Tag:  reflect.StructTag("json:\"" + v.Name + "\""),
 		}
 		fields = append(fields, f)
 	}

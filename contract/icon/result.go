@@ -279,11 +279,16 @@ func (i EventIndexedValueWithParam) MarshalJSON() ([]byte, error) {
 type Event struct {
 	*BaseEvent
 	signature string
+	name      string
 	params    contract.Params
 }
 
 func (e *Event) Signature() string {
 	return e.signature
+}
+
+func (e *Event) Name() string {
+	return e.name
 }
 
 func (e *Event) Params() contract.Params {
@@ -294,9 +299,9 @@ func (e *Event) Format(f fmt.State, c rune) {
 	switch c {
 	case 'v', 's':
 		if f.Flag('+') {
-			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,txIndex:%d,indexInTx:%d,addr:%s,signature:%s,indexed:%d,params:%v}",
+			fmt.Fprintf(f, "Event{blockHeight:%d,blockHash:%s,txHash:%s,txIndex:%d,indexInTx:%d,addr:%s,signature:%s,indexed:%d,name:%s,params:%v}",
 				e.blockHeight, hex.EncodeToString(e.blockHash), hex.EncodeToString(e.txHash), e.txIndex, e.indexInTx,
-				e.Address(), e.signature, e.indexed, e.params)
+				e.Address(), e.signature, e.indexed, e.name, e.params)
 		} else {
 			fmt.Fprintf(f, "Event{addr:%s,signature:%s,indexed:%d,params:%v}",
 				e.Address(), e.signature, e.indexed, e.params)
@@ -307,6 +312,7 @@ func (e *Event) Format(f fmt.State, c rune) {
 type EventJson struct {
 	BaseEvent *BaseEvent
 	Signature string
+	Name      string
 	Params    contract.Params
 }
 
@@ -314,6 +320,7 @@ func (e *Event) MarshalJSON() ([]byte, error) {
 	v := EventJson{
 		BaseEvent: e.BaseEvent,
 		Signature: e.Signature(),
+		Name:      e.Name(),
 		Params:    e.Params(),
 	}
 	return json.Marshal(v)
@@ -327,6 +334,7 @@ func (e *Event) UnmarshalJSON(b []byte) error {
 	*e = Event{
 		BaseEvent: v.BaseEvent,
 		signature: v.Signature,
+		name:      v.Name,
 		params:    v.Params,
 	}
 	return nil
@@ -350,6 +358,7 @@ func NewEvent(spec contract.EventSpec, be *BaseEvent) (*Event, error) {
 	return &Event{
 		BaseEvent: be,
 		signature: spec.Signature,
+		name:      spec.Name,
 		params:    params,
 	}, nil
 }
@@ -429,4 +438,8 @@ func (f *EventFilter) Signature() string {
 
 func (f *EventFilter) Address() contract.Address {
 	return f.address
+}
+
+func (f *EventFilter) Spec() contract.EventSpec {
+	return f.spec
 }

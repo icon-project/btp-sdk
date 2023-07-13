@@ -94,7 +94,7 @@ func encodeStruct(s *contract.StructSpec, value interface{}) (interface{}, error
 	st, err := contract.StructOf(value)
 	if err != nil {
 		var pErr error
-		if params, pErr = contract.ParamsOf(value); err != nil {
+		if params, pErr = contract.ParamsOf(value); pErr != nil {
 			return nil, errors.Wrapf(err, "fail encodeStruct, err:%s pErr:%s", err.Error(), pErr.Error())
 		}
 	} else {
