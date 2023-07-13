@@ -51,6 +51,7 @@ type BaseEvent interface {
 type Event interface {
 	BaseEvent
 	Signature() string
+	Name() string
 	Params() Params
 }
 
