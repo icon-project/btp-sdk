@@ -67,6 +67,45 @@ func (s *Spec) Merge(cs contract.Spec, networkTypes ...string) {
 	}
 }
 
+type MergeInfo struct {
+	Spec *contract.Spec
+	Flag interface{}
+}
+
+func (s *Spec) MergeOverloads(miMap map[string]MergeInfo) error {
+	for name, mi := range miMap {
+		switch f := mi.Flag.(type) {
+		case MethodOverloadFlag:
+			sm := s.Methods[name]
+			if sm == nil {
+				return errors.Errorf("not found method:%s in service spec", name)
+			}
+			cm := mi.Spec.MethodMap[name]
+			if cm == nil {
+				return errors.Errorf("not found method:%s in contract spec", name)
+			}
+			if err := sm.MergeOverloads(cm, f); err != nil {
+				return err
+			}
+		case EventOverloadFlag:
+			se := s.Events[name]
+			if se == nil {
+				return errors.Errorf("not found event:%s in service spec", name)
+			}
+			ce := mi.Spec.EventMap[name]
+			if ce == nil {
+				return errors.Errorf("not found event:%s in contract spec", name)
+			}
+			if err := se.MergeOverloads(ce, f); err != nil {
+				return err
+			}
+		default:
+			return errors.Errorf("not support flag type %T", mi.Flag)
+		}
+	}
+	return nil
+}
+
 func (s *Spec) mergeStructs(m map[string]*contract.NameAndTypeSpec, networkTypes ...string) {
 	for _, v := range m {
 		s.mergeStruct(v.Type, networkTypes...)

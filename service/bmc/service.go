@@ -44,6 +44,32 @@ var (
 			eth.NetworkTypeEth2: []byte(ethBMCMContractSpec),
 		},
 	}
+
+	iconSpec = contract.MustNewSpec(icon.NetworkTypeIcon, []byte(iconContractSpec))
+	ethSpec  = contract.MustNewSpec(eth.NetworkTypeEth, []byte(ethContractSpec))
+
+	mergeInfos = map[string]service.MergeInfo{
+		"getServices": {
+			Flag: service.MethodOverloadOutput,
+			Spec: iconSpec,
+		},
+		"getVerifiers": {
+			Flag: service.MethodOverloadOutput,
+			Spec: iconSpec,
+		},
+		"getRoutes": {
+			Flag: service.MethodOverloadOutput,
+			Spec: iconSpec,
+		},
+		"getStatus": {
+			Flag: service.MethodOverloadOutput,
+			Spec: iconSpec,
+		},
+		"handleRelayMessage": {
+			Flag: service.MethodOverloadInputs,
+			Spec: ethSpec,
+		},
+	}
 )
 
 func init() {
@@ -66,7 +92,7 @@ func NewService(networks map[string]service.Network, l log.Logger) (service.Serv
 		return nil, err
 	}
 	ss := service.CopySpec(s.Spec())
-	if err = specForceMerge(&ss, mergeInfos); err != nil {
+	if err = ss.MergeOverloads(mergeInfos); err != nil {
 		return nil, err
 	}
 	return &Service{
