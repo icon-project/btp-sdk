@@ -153,6 +153,36 @@ func NewAdaptor(networkType string, endpoint string, opt Options, l log.Logger) 
 	return nil, errors.New("not supported networkType:" + networkType)
 }
 
+type SpecFactory func(b []byte) (*Spec, error)
+
+var (
+	sfMap = make(map[string]SpecFactory)
+)
+
+func RegisterSpecFactory(sf SpecFactory, networkTypes ...string) {
+	for _, networkType := range networkTypes {
+		if _, ok := sfMap[networkType]; ok {
+			log.Panicln("already registered networkType:" + networkType)
+		}
+		sfMap[networkType] = sf
+	}
+}
+
+func NewSpec(networkType string, b []byte) (*Spec, error) {
+	if sf, ok := sfMap[networkType]; ok {
+		return sf(b)
+	}
+	return nil, errors.New("not supported networkType:" + networkType)
+}
+
+func MustNewSpec(networkType string, b []byte) *Spec {
+	s, err := NewSpec(networkType, b)
+	if err != nil {
+		log.Panicf("fail to NewSpec err:%v", err)
+	}
+	return s
+}
+
 func EncodeOptions(v interface{}) (Options, error) {
 	b, err := json.Marshal(v)
 	if err != nil {
