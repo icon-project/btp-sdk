@@ -422,6 +422,65 @@ func ParamsOfWithSpec(spec map[string]*NameAndTypeSpec, value interface{}) (Para
 	return params, nil
 }
 
+func ParamToGoType(s TypeSpec, value interface{}) (interface{}, error) {
+	if s.Dimension > 0 {
+		return arrayParamToGoType(s, 1, reflect.ValueOf(value))
+	} else {
+		switch s.TypeID {
+		case TStruct:
+			return StructToGoType(*s.Resolved, value)
+		default:
+			return primitiveParamOf(s.TypeID, value)
+		}
+	}
+}
+
+func arrayParamToGoType(s TypeSpec, dimension int, v reflect.Value) (interface{}, error) {
+	if v.Type().Kind() != reflect.Array && v.Type().Kind() != reflect.Slice {
+		return nil, ErrorCodeInvalidParam.Errorf("fail to arrayParamToGoType, invalid type %v", v.Type().Kind())
+	}
+	var err error
+	t := s.Type
+	if s.TypeID == TStruct {
+		t = s.ResolvedType
+	}
+	l := reflect.MakeSlice(t, v.Len(), v.Len())
+	for i := 0; i < v.Len(); i++ {
+		var ev interface{}
+		element := v.Index(i)
+		if s.Dimension > dimension {
+			ev, err = arrayParamToGoType(s, dimension+1, element)
+		} else {
+			if s.TypeID == TStruct {
+				ev, err = StructToGoType(*s.Resolved, element.Interface())
+			} else {
+				ev, err = primitiveParamOf(s.TypeID, element.Interface())
+			}
+		}
+		if err != nil {
+			return nil, err
+		}
+		l.Index(i).Set(reflect.ValueOf(ev))
+	}
+	return l.Interface(), nil
+}
+
+func StructToGoType(s StructSpec, value interface{}) (interface{}, error) {
+	st, err := StructOfWithSpec(s, value)
+	if err != nil {
+		return nil, err
+	}
+	ret := reflect.New(s.Type).Elem()
+	for i, f := range st.(Struct).Fields {
+		fv, err := ParamToGoType(s.Fields[i].Type, f.Value)
+		if err != nil {
+			return nil, err
+		}
+		ret.Field(i).Set(reflect.ValueOf(fv))
+	}
+	return ret.Interface(), nil
+}
+
 func EqualParam(s TypeSpec, a, b interface{}) (equals bool, err error) {
 	if s.Dimension == 0 {
 		switch s.TypeID {
