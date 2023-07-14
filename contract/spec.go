@@ -150,6 +150,19 @@ func (i Integer) AsBytes() ([]byte, error) {
 	return intconv.BigIntToBytes(bi), nil
 }
 
+func (i Integer) MarshalBinary() (data []byte, err error) {
+	return i.AsBytes()
+}
+
+func (i *Integer) UnmarshalBinary(data []byte) error {
+	ci, err := IntegerOf(data)
+	if err != nil {
+		return err
+	}
+	*i = ci
+	return nil
+}
+
 type Boolean bool
 type String string
 type Bytes []byte
