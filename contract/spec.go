@@ -195,9 +195,10 @@ type TypeSpec struct {
 	Name      string `json:"name"`
 	Dimension int    `json:"dimension,omitempty"`
 
-	Type     reflect.Type `json:"-"`
-	TypeID   TypeTag      `json:"-"`
-	Resolved *StructSpec  `json:"-"`
+	Type         reflect.Type `json:"-"`
+	TypeID       TypeTag      `json:"-"`
+	Resolved     *StructSpec  `json:"-"`
+	ResolvedType reflect.Type `json:"-"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler interface.
@@ -216,7 +217,15 @@ func (s *TypeSpec) resolveType(structMap map[string]*StructSpec) error {
 		if ok {
 			s.TypeID = TStruct
 			s.Resolved = v
-			s.Type = v.Type
+			if v.Type == nil {
+				if err := v.resolveType(structMap); err != nil {
+					return err
+				}
+			}
+			s.ResolvedType = v.Type
+			for i := 0; i < s.Dimension; i++ {
+				s.ResolvedType = reflect.SliceOf(s.ResolvedType)
+			}
 		}
 	}
 	t := s.TypeID.Type()
