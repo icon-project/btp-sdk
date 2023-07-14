@@ -432,12 +432,12 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func ParamsTypeCheck(s *EventSpec, params Params) error {
-	if len(params) > len(s.InputMap) {
+func ParamsTypeCheck(inputs map[string]*NameAndTypeSpec, params Params) error {
+	if len(params) > len(inputs) {
 		return errors.Errorf("invalid length params")
 	}
 	for k, v := range params {
-		spec, ok := s.InputMap[k]
+		spec, ok := inputs[k]
 		if !ok {
 			return errors.Errorf("not found param name:%s", k)
 		}
@@ -539,7 +539,7 @@ func arrayTypeCheck(s *NameAndTypeSpec, dimension int, v reflect.Value) error {
 }
 
 // TypeSpecOf returns TypeSpec of given value,
-//type of value should be one of Integer, Boolean, String, Bytes, Address, Struct
+// type of value should be one of Integer, Boolean, String, Bytes, Address, Struct
 func TypeSpecOf(value interface{}) (*TypeSpec, error) {
 	specLogger.Tracef("TypeSpecOf type:%T value:%v", value, value)
 	v := reflect.ValueOf(value)
