@@ -150,6 +150,19 @@ func (i Integer) AsBytes() ([]byte, error) {
 	return intconv.BigIntToBytes(bi), nil
 }
 
+func (i Integer) MarshalBinary() (data []byte, err error) {
+	return i.AsBytes()
+}
+
+func (i *Integer) UnmarshalBinary(data []byte) error {
+	ci, err := IntegerOf(data)
+	if err != nil {
+		return err
+	}
+	*i = ci
+	return nil
+}
+
 type Boolean bool
 type String string
 type Bytes []byte
@@ -195,9 +208,10 @@ type TypeSpec struct {
 	Name      string `json:"name"`
 	Dimension int    `json:"dimension,omitempty"`
 
-	Type     reflect.Type `json:"-"`
-	TypeID   TypeTag      `json:"-"`
-	Resolved *StructSpec  `json:"-"`
+	Type         reflect.Type `json:"-"`
+	TypeID       TypeTag      `json:"-"`
+	Resolved     *StructSpec  `json:"-"`
+	ResolvedType reflect.Type `json:"-"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler interface.
@@ -216,7 +230,15 @@ func (s *TypeSpec) resolveType(structMap map[string]*StructSpec) error {
 		if ok {
 			s.TypeID = TStruct
 			s.Resolved = v
-			s.Type = v.Type
+			if v.Type == nil {
+				if err := v.resolveType(structMap); err != nil {
+					return err
+				}
+			}
+			s.ResolvedType = v.Type
+			for i := 0; i < s.Dimension; i++ {
+				s.ResolvedType = reflect.SliceOf(s.ResolvedType)
+			}
 		}
 	}
 	t := s.TypeID.Type()
@@ -410,12 +432,12 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func ParamsTypeCheck(s *EventSpec, params Params) error {
-	if len(params) > len(s.InputMap) {
+func ParamsTypeCheck(inputs map[string]*NameAndTypeSpec, params Params) error {
+	if len(params) > len(inputs) {
 		return errors.Errorf("invalid length params")
 	}
 	for k, v := range params {
-		spec, ok := s.InputMap[k]
+		spec, ok := inputs[k]
 		if !ok {
 			return errors.Errorf("not found param name:%s", k)
 		}
@@ -517,7 +539,7 @@ func arrayTypeCheck(s *NameAndTypeSpec, dimension int, v reflect.Value) error {
 }
 
 // TypeSpecOf returns TypeSpec of given value,
-//type of value should be one of Integer, Boolean, String, Bytes, Address, Struct
+// type of value should be one of Integer, Boolean, String, Bytes, Address, Struct
 func TypeSpecOf(value interface{}) (*TypeSpec, error) {
 	specLogger.Tracef("TypeSpecOf type:%T value:%v", value, value)
 	v := reflect.ValueOf(value)

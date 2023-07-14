@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -54,22 +55,6 @@ var (
 		BooleanVal contract.Boolean `json:"booleanVal"`
 	}{booleanVal}
 )
-
-func assertStruct(t *testing.T, expected, actual interface{}) {
-	var ep contract.Params
-	switch e := expected.(type) {
-	case contract.Struct:
-		ep = e.Params()
-	case contract.Params:
-		ep = e
-	default:
-		assert.FailNow(t, "invalid expected type", "%T", expected)
-	}
-	a, ok := actual.(contract.Struct)
-	assert.True(t, ok, "invalid actual type %T", actual)
-	ap := a.Params()
-	assert.Equal(t, ep, ap)
-}
 
 func handler(t *testing.T, networkType string) (*Handler, *Adaptor) {
 	b, err := os.ReadFile(specFile)
@@ -257,23 +242,67 @@ func assertBaseEvent(t *testing.T, el contract.BaseEvent, address contract.Addre
 
 func assertEvent(t *testing.T, e contract.Event, address contract.Address, signature string, indexed int, params contract.Params) {
 	assertBaseEvent(t, e, address, signature, indexed, params)
-	for k, v := range params {
-		p := e.Params()[k]
-		switch pv := p.(type) {
-		case contract.EventIndexedValue:
-			assert.True(t, pv.Match(v), "hashValue name:%s expected:%v actual:%v", k, v, pv)
-		case contract.Struct:
-			assertStruct(t, v, p)
-		case []contract.Struct: //FIXME assertArray
-			est := v.([]contract.Struct)
-			assert.Equal(t, len(est), len(pv))
-			for i, ast := range pv {
-				assertStruct(t, est[i], ast)
+	assertParams(t, e.Params(), params)
+}
+
+func assertParams(t *testing.T, e contract.Params, a interface{}) {
+	var ap contract.Params
+	switch at := a.(type) {
+	case contract.Struct:
+		ap = at.Params()
+	case contract.Params:
+		ap = at
+	default:
+		assert.FailNow(t, "invalid actual type", "%T", a)
+	}
+	assert.Equal(t, len(e), len(ap))
+	for k, ev := range e {
+		av, ok := ap[k]
+		assert.True(t, ok, "Params name:%s not found", k)
+		assertParam(t, k, ev, av)
+	}
+}
+
+func assertParam(t *testing.T, k string, e, a interface{}) {
+	switch v := e.(type) {
+	case contract.EventIndexedValue:
+		assert.True(t, v.Match(a), "EventIndexedValue name:%s expected:%v actual:%v", k, e, a)
+	case contract.Struct:
+		assertStruct(t, e, a)
+	case contract.Params:
+		assertParams(t, v, a)
+	case contract.Bytes, contract.Integer, contract.Address, contract.String, contract.Boolean:
+		assert.Equal(t, e, a, "Equals name:%s expected:%v, actual:%v", k, e, a)
+	default:
+		ev, av := reflect.ValueOf(e), reflect.ValueOf(a)
+		switch ev.Kind() {
+		case reflect.Array, reflect.Slice:
+			assert.Equal(t, ev.Kind(), av.Kind())
+			assert.Equal(t, ev.Len(), av.Len())
+			for i := 0; i < ev.Len(); i++ {
+				assertParam(t, k, ev.Index(i).Interface(), av.Index(i).Interface())
 			}
 		default:
-			assert.Equal(t, v, p, "name:%s expected:%v actual:%v", k, v, pv)
+			assert.FailNow(t, "invalid compare expected", "%T", e)
 		}
 	}
+}
+
+func assertStruct(t *testing.T, expected, actual interface{}) {
+	var ep contract.Params
+	switch e := expected.(type) {
+	case contract.Struct:
+		ep = e.Params()
+	case contract.Params:
+		ep = e
+	default:
+		assert.FailNow(t, "invalid expected type", "%T", expected)
+	}
+	a, ok := actual.(contract.Struct)
+	if !ok {
+		assert.FailNow(t, "invalid actual type", "%T", actual)
+	}
+	assertParams(t, ep, a.Params())
 }
 
 func Test_invokeInteger(t *testing.T) {
