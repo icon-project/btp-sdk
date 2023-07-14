@@ -56,7 +56,7 @@ func NewDefaultService(name string, networks map[string]Network, typeToSpec map[
 		}
 		spec.Merge(h.Spec(), n.NetworkType)
 		m[network] = DefaultServiceNetwork{
-			NetworkType: network,
+			NetworkType: n.NetworkType,
 			Adaptor:     n.Adaptor,
 			Options:     *opt,
 			Handler:     h,
@@ -224,7 +224,7 @@ func NewMultiContractService(name string, networks map[string]Network, optToType
 			ss.Merge(h.Spec(), n.NetworkType)
 		}
 		m[network] = MultiContractServiceNetwork{
-			NetworkType:    network,
+			NetworkType:    n.NetworkType,
 			Adaptor:        n.Adaptor,
 			Options:        opt,
 			NameToHandlers: nameToHandlers,
