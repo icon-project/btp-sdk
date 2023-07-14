@@ -18,10 +18,10 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -44,9 +44,6 @@ var (
 	configs = map[string]TestConfig{
 		networkIconTest: {
 			Endpoint: "http://localhost:9080/api/v3/icon_dex",
-			Wallet: MustLoadWallet(
-				"../example/javascore/src/test/resources/keystore.json",
-				"../example/javascore/src/test/resources/keysecret"),
 			NetworkType: icon.NetworkTypeIcon,
 			AdaptorOption: icon.AdaptorOption{
 				NetworkID: "0x3",
@@ -58,9 +55,6 @@ var (
 		},
 		networkEthTest: {
 			Endpoint: "http://localhost:8545",
-			Wallet: MustLoadWallet(
-				"../example/solidity/test/keystore.json",
-				"../example/solidity/test/keysecret"),
 			NetworkType: eth.NetworkTypeEth,
 			AdaptorOption: eth.AdaptorOption{
 				BlockMonitor: MustEncodeOptions(eth.BlockMonitorOptions{
@@ -78,12 +72,19 @@ var (
 			},
 		},
 	}
+	signers = map[string]Signer{
+		networkIconTest: NewDefaultSigner(
+			MustLoadWallet("../example/javascore/src/test/resources/keystore.json", "../example/javascore/src/test/resources/keysecret"),
+			icon.NetworkTypeIcon),
+		networkEthTest: NewDefaultSigner(
+			MustLoadWallet("../example/solidity/test/keystore.json", "../example/solidity/test/keysecret"),
+			eth.NetworkTypeEth),
+	}
 )
 
 type TestConfig struct {
 	NetworkType   string
 	Endpoint      string
-	Wallet        wallet.Wallet
 	AdaptorOption interface{}
 	ServiceOption DefaultServiceOptions
 }
@@ -154,18 +155,75 @@ func (s *TestService) Spec() Spec {
 	return s.spec
 }
 
-func (s *TestService) MonitorEvent(ctx context.Context, network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error {
-	m := UnmarshalRLPEventCallbackMap(s.spec, "StructEvent", "ArrayEvent")
-	return s.DefaultService.MonitorEvent(ctx, network, func(e contract.Event) error {
-		s.l.Infof("%+v", e)
-		if ecb, ok := m[e.Name()]; ok {
-			if err := ecb(e); err != nil {
-				s.l.Infof("fail to ecb err:%+v", err)
-				return err
+func (s *TestService) EventFilters(network string, nameToParams map[string][]contract.Params) ([]contract.EventFilter, error) {
+	n, err := s.network(network)
+	if err != nil {
+		return nil, err
+	}
+	if n.NetworkType == icon.NetworkTypeIcon {
+		m := make(map[string][]contract.Params)
+		for name, l := range nameToParams {
+			switch name {
+			case "StructEvent", "ArrayEvent":
+				se := s.spec.Events[name]
+				tl := make([]contract.Params, len(l))
+				m[name] = tl
+				for i, p := range l {
+					if p == nil {
+						continue
+					}
+					tp := make(contract.Params)
+					tl[i] = tp
+					for k, v := range p {
+						b, err := MarshalRLP(v, se.Inputs[k].Type)
+						if err != nil {
+							s.l.Infof("fail to MarshalRLP event:%s param:%s err:%+v", name, k, err)
+							return nil, err
+						}
+						tp[k] = contract.Bytes(b)
+						s.l.Infof("EventFilter k:%s v:%s", k, hex.EncodeToString(b))
+					}
+				}
+			default:
+				m[name] = l
 			}
 		}
-		return cb(e)
-	}, efs, height)
+		nameToParams = m
+	}
+	return s.DefaultService.EventFilters(network, nameToParams)
+}
+
+func (s *TestService) MonitorEvent(ctx context.Context, network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error {
+	n, err := s.network(network)
+	if err != nil {
+		return err
+	}
+	ecb := cb
+	if n.NetworkType == icon.NetworkTypeIcon {
+		ecb = func(e contract.Event) error {
+			name := e.Name()
+			switch name {
+			case "StructEvent", "ArrayEvent":
+				se := s.spec.Events[name]
+				p := e.Params()
+				for k, v := range p {
+					if eivp, ok := v.(contract.EventIndexedValueWithParam); ok {
+						v = eivp.Param()
+					}
+					if b, ok := v.(contract.Bytes); ok {
+						cv, err := UnmarshalRLP(b, se.Inputs[k].Type)
+						if err != nil {
+							s.l.Infof("fail to UnmarshalRLP event:%s param:%s err:%+v", name, k, err)
+							return err
+						}
+						p[k] = cv
+					}
+				}
+			}
+			return cb(e)
+		}
+	}
+	return s.DefaultService.MonitorEvent(ctx, network, ecb, efs, height)
 }
 
 func NewTestService(networks map[string]Network, l log.Logger) (Service, error) {
@@ -193,16 +251,14 @@ func NewTestService(networks map[string]Network, l log.Logger) (Service, error) 
 	}, nil
 }
 
-func Test_Service(t *testing.T) {
+func service(t *testing.T, withSignerService bool) (Service, map[string]Network) {
 	networks := make(map[string]Network)
-	signers := make(map[string]Signer)
 	for network, config := range configs {
 		networks[network] = Network{
 			NetworkType: config.NetworkType,
 			Adaptor:     adaptor(t, network),
 			Options:     MustEncodeOptions(config.ServiceOption),
 		}
-		signers[network] = NewDefaultSigner(config.Wallet, config.NetworkType)
 	}
 	RegisterFactory(serviceName, NewTestService)
 	l := log.GlobalLogger()
@@ -210,43 +266,131 @@ func Test_Service(t *testing.T) {
 	if err != nil {
 		assert.FailNow(t, "fail to NewService", err)
 	}
-	if s, err = NewSignerService(s, signers, l); err != nil {
-		assert.FailNow(t, "fail to NewSignerService", err)
+	if withSignerService {
+		if s, err = NewSignerService(s, signers, l); err != nil {
+			assert.FailNow(t, "fail to NewSignerService", err)
+		}
 	}
-	assert.Equal(t, serviceName, s.Name())
-	//LogJsonPretty(t, s.Spec())
+	return s, networks
+}
 
-	network := networkIconTest
-	txId, err := s.Invoke(network, "invokeStruct", contract.Params{"arg1": contract.Params{"booleanVal": true}}, nil)
-	if err != nil {
-		assert.FailNow(t, "fail to Invoke", err)
+var (
+	integerVal = "0x7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	booleanVal = true
+	stringVal  = "string"
+	bytesVal   = "0x" + hex.EncodeToString([]byte("bytes"))
+	structVal  = contract.Params{
+		"booleanVal": booleanVal,
 	}
-	t.Logf("txId:%v", txId)
-	txr, err := networks[network].Adaptor.GetResult(txId)
-	assert.NoError(t, err)
-	t.Logf("txr:%+v", txr)
+)
 
-	efs, err := s.EventFilters(network, map[string][]contract.Params{"StructEvent": nil})
-	if err != nil {
-		assert.FailNow(t, "fail to EventFilters", err)
+func Test_Service(t *testing.T) {
+	s, networks := service(t, true)
+
+	args := []struct {
+		Networks     []string
+		Method       string
+		MethodParams contract.Params
+		Event        string
+		EventParams  contract.Params
+	}{
+		{
+			Networks: []string{
+				networkIconTest,
+				networkEthTest,
+			},
+			Method: "invokeStruct",
+			MethodParams: contract.Params{
+				"arg1": structVal,
+			},
+			Event: "StructEvent",
+			EventParams: contract.Params{
+				"arg1": structVal,
+			},
+		},
+		{
+			Networks: []string{
+				networkIconTest,
+				networkEthTest,
+			},
+			Method: "invokeArray",
+			MethodParams: contract.Params{
+				"arg1": []interface{}{integerVal},
+				"arg2": []interface{}{booleanVal},
+				"arg3": []interface{}{stringVal},
+				"arg4": []interface{}{bytesVal},
+				"arg5": []interface{}{},
+				"arg6": []interface{}{structVal},
+			},
+			Event: "ArrayEvent",
+			EventParams: contract.Params{
+				"arg1": []interface{}{integerVal},
+				"arg2": []interface{}{booleanVal},
+				"arg3": []interface{}{stringVal},
+				"arg4": []interface{}{bytesVal},
+				"arg5": []interface{}{},
+				"arg6": []interface{}{structVal},
+			},
+		},
 	}
-	ch := make(chan contract.Event, 0)
-	onEvent := func(e contract.Event) error {
-		LogJson(t, e)
-		ch <- e
-		return nil
+	for _, arg := range args {
+		for _, n := range arg.Networks {
+			txId, err := s.Invoke(n, arg.Method, arg.MethodParams, nil)
+			if err != nil {
+				assert.FailNow(t, "fail to Invoke", err)
+			}
+			t.Logf("txId:%v", txId)
+			txr, err := networks[n].Adaptor.GetResult(txId)
+			assert.NoError(t, err)
+			t.Logf("txr:%+v", txr)
+
+			efs, err := s.EventFilters(n, map[string][]contract.Params{arg.Event: {arg.EventParams}})
+			if err != nil {
+				assert.FailNow(t, "fail to EventFilters", err)
+			}
+			if len(txr.Events()) == 0 {
+				assert.FailNow(t, "not found event in TxResult")
+			}
+			var expected contract.Event
+			for _, be := range txr.Events() {
+				e, _ := efs[0].Filter(be)
+				if e != nil {
+					expected = e
+				}
+			}
+			if expected == nil {
+				assert.FailNow(t, "not found event by EventFilter")
+			}
+
+			ch := make(chan contract.Event, 0)
+			onEvent := func(e contract.Event) error {
+				LogJson(t, e)
+				ch <- e
+				return nil
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			go func() {
+				err := s.MonitorEvent(ctx, n, onEvent, efs, txr.BlockHeight())
+				assert.Equal(t, ctx.Err(), err)
+			}()
+			select {
+			case e := <-ch:
+				//Replace if EventIndexedValueWithParam
+				params := e.Params()
+				for k, p := range params {
+					if eivp, ok := p.(contract.EventIndexedValueWithParam); ok {
+						t.Logf("EventIndexedValueWithParam k:%s v:%v", k, eivp.Param())
+						params[k] = eivp.Param()
+					}
+				}
+				assert.NoError(t, contract.ParamsTypeCheck(s.Spec().Events[arg.Event].Inputs, params))
+				t.Logf("%+v", e)
+			case <-time.After(10 * time.Second):
+				assert.FailNow(t, "timeout assert Event")
+			}
+			cancel()
+		}
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		assert.NoError(t, s.MonitorEvent(ctx, network, onEvent, efs, txr.BlockHeight()))
-	}()
-	select {
-	case e := <-ch:
-		t.Logf("%+v", e)
-	case <-time.After(10 * time.Second):
-		assert.FailNow(t, "timeout assert Event")
-	}
-	cancel()
 }
 
 func LogJson(t *testing.T, v interface{}) {
@@ -265,58 +409,21 @@ func LogJsonPretty(t *testing.T, v interface{}) {
 	t.Log(string(b))
 }
 
-func UnmarshalRLPEventCallbackMap(s Spec, names ...string) map[string]contract.EventCallback {
-	m := make(map[string]contract.EventCallback)
-	for _, name := range names {
-		m[name] = UnmarshalRLPEventCallback(s.Events[name])
+func MarshalRLP(v interface{}, spec contract.TypeSpec) ([]byte, error) {
+	p, err := contract.ParamToGoType(spec, v)
+	if err != nil {
+		return nil, err
 	}
-	return m
+	log.Infof("MarshalRLP %+v", p)
+	return codec.RLP.MarshalToBytes(p)
 }
 
-func UnmarshalRLPEventCallback(s *EventSpec) contract.EventCallback {
-	rtMap := make(map[string]reflect.Type)
-	for k, i := range s.Inputs {
-		rtMap[k] = ReflectType(i.Type)
+func UnmarshalRLP(b []byte, spec contract.TypeSpec) (interface{}, error) {
+	t := spec.Type
+	if spec.TypeID == contract.TStruct {
+		t = spec.ResolvedType
 	}
-	return func(e contract.Event) error {
-		p := e.Params()
-		for k, v := range p {
-			if b, ok := v.(contract.Bytes); ok {
-				cv, err := UnmarshalRLP(b, s.Inputs[k].Type, rtMap[k])
-				if err != nil {
-					return err
-				}
-				p[k] = cv
-			}
-		}
-		return nil
-	}
-}
-
-func ReflectType(s contract.TypeSpec) reflect.Type {
-	switch s.TypeID {
-	case contract.TStruct:
-		sfs := make([]reflect.StructField, 0)
-		for _, f := range s.Resolved.Fields {
-			sf := reflect.StructField{
-				Name: strings.ToUpper(f.Name[:1]) + f.Name[1:],
-				Type: ReflectType(f.Type),
-				Tag:  reflect.StructTag("json:\"" + f.Name + "\""),
-			}
-			sfs = append(sfs, sf)
-		}
-		t := reflect.StructOf(sfs)
-		for i := 0; i < s.Dimension; i++ {
-			t = reflect.SliceOf(t)
-		}
-		return t
-	default:
-		return s.Type
-	}
-}
-
-func UnmarshalRLP(b []byte, spec contract.TypeSpec, rt reflect.Type) (interface{}, error) {
-	ptr := reflect.New(rt)
+	ptr := reflect.New(t)
 	if _, err := codec.RLP.UnmarshalFromBytes(b, ptr.Interface()); err != nil {
 		return nil, err
 	}
