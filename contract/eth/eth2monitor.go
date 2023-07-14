@@ -254,7 +254,10 @@ func (m *Eth2BlockMonitor) finalizeBlockInfo(ctx context.Context, s phase0.Slot)
 func (m *Eth2BlockMonitor) BlockInfo(height int64) contract.BlockInfo {
 	m.biMtx.RLock()
 	defer m.biMtx.RUnlock()
-	return m.biMapByHeight[height]
+	if bi, ok := m.biMapByHeight[height]; ok {
+		return bi
+	}
+	return nil
 }
 
 func (m *Eth2BlockMonitor) Start(height int64, finalizedOnly bool) (<-chan contract.BlockInfo, error) {
