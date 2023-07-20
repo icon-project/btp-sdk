@@ -43,7 +43,7 @@ func NewContractService(a contract.Adaptor, spec []byte, address contract.Addres
 	}
 	name := ContractServiceName(network, address)
 	ss := service.NewSpec("", name)
-	ss.Merge(h.Spec())
+	ss.Merge(h.Spec(), a.NetworkType())
 	return &ContractService{
 		name:    name,
 		network: network,
