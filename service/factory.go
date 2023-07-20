@@ -27,6 +27,7 @@ import (
 
 type Service interface {
 	Name() string
+	Networks() map[string]string
 	Spec() Spec
 	Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error)
 	Call(network, method string, params contract.Params, options contract.Options) (contract.ReturnValue, error)

@@ -37,6 +37,7 @@ type DefaultServiceNetwork struct {
 }
 type DefaultService struct {
 	name string
+	nMap map[string]string
 	m    map[string]DefaultServiceNetwork
 	spec Spec
 	l    log.Logger
@@ -44,6 +45,7 @@ type DefaultService struct {
 
 func NewDefaultService(name string, networks map[string]Network, typeToSpec map[string][]byte, l log.Logger) (*DefaultService, error) {
 	m := make(map[string]DefaultServiceNetwork)
+	nMap := make(map[string]string)
 	spec := NewSpec("", name)
 	for network, n := range networks {
 		opt := &DefaultServiceOptions{}
@@ -61,10 +63,12 @@ func NewDefaultService(name string, networks map[string]Network, typeToSpec map[
 			Options:     *opt,
 			Handler:     h,
 		}
+		nMap[network] = n.NetworkType
 	}
 	return &DefaultService{
 		name: name,
 		m:    m,
+		nMap: nMap,
 		spec: spec,
 		l:    l,
 	}, nil
@@ -72,6 +76,10 @@ func NewDefaultService(name string, networks map[string]Network, typeToSpec map[
 
 func (s *DefaultService) Name() string {
 	return s.name
+}
+
+func (s *DefaultService) Networks() map[string]string {
+	return s.nMap
 }
 
 func (s *DefaultService) Spec() Spec {
@@ -163,6 +171,7 @@ func (n *MultiContractServiceNetwork) Handler(methodOrEvent string) (contract.Ha
 
 type MultiContractService struct {
 	name string
+	nMap map[string]string
 	m    map[string]MultiContractServiceNetwork
 	spec Spec
 	l    log.Logger
@@ -189,6 +198,7 @@ func getSpec(optToTypeToSpec map[string]map[string][]byte, optionName, networkTy
 func NewMultiContractService(name string, networks map[string]Network, optToTypeToSpec map[string]map[string][]byte, l log.Logger) (*MultiContractService, error) {
 	m := make(map[string]MultiContractServiceNetwork)
 	ss := NewSpec("", name)
+	nMap := make(map[string]string)
 	for network, n := range networks {
 		opt := make(MultiContractServiceOption)
 		if err := contract.DecodeOptions(n.Options, &opt); err != nil {
@@ -229,9 +239,11 @@ func NewMultiContractService(name string, networks map[string]Network, optToType
 			Options:        opt,
 			NameToHandlers: nameToHandlers,
 		}
+		nMap[network] = n.NetworkType
 	}
 	return &MultiContractService{
 		name: name,
+		nMap: nMap,
 		m:    m,
 		spec: ss,
 		l:    l,
@@ -240,6 +252,10 @@ func NewMultiContractService(name string, networks map[string]Network, optToType
 
 func (s *MultiContractService) Name() string {
 	return s.name
+}
+
+func (s *MultiContractService) Networks() map[string]string {
+	return s.nMap
 }
 
 func (s *MultiContractService) Spec() Spec {

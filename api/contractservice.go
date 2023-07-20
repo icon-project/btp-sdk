@@ -61,6 +61,10 @@ func (s *ContractService) Name() string {
 	return s.name
 }
 
+func (s *ContractService) Networks() map[string]string {
+	return map[string]string{s.network: s.a.NetworkType()}
+}
+
 func (s *ContractService) Spec() service.Spec {
 	return s.spec
 }
