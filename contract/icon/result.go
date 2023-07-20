@@ -24,9 +24,18 @@ import (
 
 	"github.com/icon-project/btp2/chain/icon/client"
 	"github.com/icon-project/btp2/common/errors"
+	"github.com/icon-project/btp2/common/log"
 
 	"github.com/icon-project/btp-sdk/contract"
 )
+
+func NewTxID(txh HexBytes) contract.TxID {
+	return txh.String()
+}
+
+func NewBlockID(bh HexBytes) contract.BlockID {
+	return bh.String()
+}
 
 type HexBytes []byte
 
@@ -72,7 +81,7 @@ func (r *TxResult) Failure() interface{} {
 }
 
 func (r *TxResult) BlockID() contract.BlockID {
-	return r.blockHash
+	return NewBlockID(r.blockHash)
 }
 
 func (r *TxResult) BlockHeight() int64 {
@@ -80,8 +89,11 @@ func (r *TxResult) BlockHeight() int64 {
 }
 
 func (r *TxResult) TxID() contract.TxID {
-	txh, _ := r.TransactionResult.TxHash.Value()
-	return txh
+	b, err := r.TransactionResult.TxHash.Value()
+	if err != nil {
+		log.Warnf("invalid TxResult.TransactionResult.TxHash err:%+v", err)
+	}
+	return NewTxID(b)
 }
 
 func (r *TxResult) Format(f fmt.State, c rune) {
@@ -186,7 +198,7 @@ func (e *BaseEvent) IndexedValue(i int) contract.EventIndexedValue {
 }
 
 func (e *BaseEvent) BlockID() contract.BlockID {
-	return e.blockHash
+	return NewBlockID(e.blockHash)
 }
 
 func (e *BaseEvent) BlockHeight() int64 {
@@ -194,7 +206,7 @@ func (e *BaseEvent) BlockHeight() int64 {
 }
 
 func (e *BaseEvent) TxID() contract.TxID {
-	return e.txHash
+	return NewTxID(e.txHash)
 }
 
 func (e *BaseEvent) Identifier() int {

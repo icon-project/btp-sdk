@@ -37,11 +37,11 @@ import (
 )
 
 func NewTxID(txh common.Hash) contract.TxID {
-	return txh.Bytes()
+	return txh.Hex()
 }
 
 func NewBlockID(bh common.Hash) contract.BlockID {
-	return bh.Bytes()
+	return bh.Hex()
 }
 
 type TxFailure struct {
