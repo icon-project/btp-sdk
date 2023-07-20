@@ -45,7 +45,7 @@ type Spec struct {
 func (s *Spec) Merge(cs contract.Spec, networkTypes ...string) {
 	for name, cm := range cs.MethodMap {
 		if sm, ok := s.Methods[name]; ok {
-			f := sm.Merge(cm, networkTypes...)
+			f := sm.merge(cm, networkTypes...)
 			if f.Inputs() {
 				s.mergeStructs(cm.InputMap, networkTypes...)
 			}
@@ -58,7 +58,7 @@ func (s *Spec) Merge(cs contract.Spec, networkTypes ...string) {
 	}
 	for name, ce := range cs.EventMap {
 		if se, ok := s.Events[name]; ok {
-			f := se.Merge(ce, networkTypes...)
+			f := se.merge(ce, networkTypes...)
 			if f.Inputs() {
 				s.mergeStructs(ce.InputMap, networkTypes...)
 			}
@@ -86,7 +86,7 @@ func (s *Spec) MergeOverloads(miMap map[string]MergeInfo) error {
 			if cm == nil {
 				return errors.Errorf("not found method:%s in contract spec", name)
 			}
-			if err := sm.MergeOverloads(cm, f); err != nil {
+			if err := sm.mergeOverloads(cm, f); err != nil {
 				return err
 			}
 		case EventOverloadFlag:
@@ -98,7 +98,7 @@ func (s *Spec) MergeOverloads(miMap map[string]MergeInfo) error {
 			if ce == nil {
 				return errors.Errorf("not found event:%s in contract spec", name)
 			}
-			if err := se.MergeOverloads(ce, f); err != nil {
+			if err := se.mergeOverloads(ce, f); err != nil {
 				return err
 			}
 		default:
@@ -119,7 +119,7 @@ func (s *Spec) mergeStruct(cs contract.TypeSpec, networkTypes ...string) {
 		rcs := cs.Resolved
 		equals := false
 		if ss, ok := s.Structs[rcs.Name]; ok {
-			equals = ss.Merge(rcs, networkTypes...)
+			equals = ss.merge(rcs, networkTypes...)
 		} else {
 			s.Structs[cs.Name] = NewStructSpec(rcs, networkTypes...)
 		}
@@ -176,7 +176,7 @@ func (s *MethodSpec) Overload(networkType string) *MethodOverload {
 	return nil
 }
 
-func (s *MethodSpec) Merge(cs *contract.MethodSpec, networkTypes ...string) MethodOverloadFlag {
+func (s *MethodSpec) merge(cs *contract.MethodSpec, networkTypes ...string) MethodOverloadFlag {
 	f := CompareMethodSpec(s, cs)
 	if f.None() {
 		for _, networkType := range networkTypes {
@@ -215,7 +215,7 @@ func (s *MethodSpec) Merge(cs *contract.MethodSpec, networkTypes ...string) Meth
 	return f
 }
 
-func (s *MethodSpec) MergeOverloads(cs *contract.MethodSpec, f MethodOverloadFlag) error {
+func (s *MethodSpec) mergeOverloads(cs *contract.MethodSpec, f MethodOverloadFlag) error {
 	supports := make([]string, 0)
 	for _, o := range s.Overloads {
 		if !f.None() {
@@ -277,7 +277,7 @@ func (s *EventSpec) Overload(networkType string) *EventOverload {
 	return nil
 }
 
-func (s *EventSpec) Merge(cs *contract.EventSpec, networkTypes ...string) EventOverloadFlag {
+func (s *EventSpec) merge(cs *contract.EventSpec, networkTypes ...string) EventOverloadFlag {
 	f := CompareEventSpec(s, cs)
 	if f.None() {
 		for _, networkType := range networkTypes {
@@ -317,7 +317,7 @@ func (s *EventSpec) Merge(cs *contract.EventSpec, networkTypes ...string) EventO
 	return f
 }
 
-func (s *EventSpec) MergeOverloads(cs *contract.EventSpec, f EventOverloadFlag) error {
+func (s *EventSpec) mergeOverloads(cs *contract.EventSpec, f EventOverloadFlag) error {
 	supports := make([]string, 0)
 	for _, o := range s.Overloads {
 		if !f.None() {
@@ -370,7 +370,7 @@ func (s *StructSpec) Conflict(networkType string) *StructConflict {
 	return nil
 }
 
-func (s *StructSpec) Merge(cs *contract.StructSpec, networkTypes ...string) bool {
+func (s *StructSpec) merge(cs *contract.StructSpec, networkTypes ...string) bool {
 	equals := EqualsNameAndTypes(s.Fields, cs.FieldMap)
 	if equals {
 		for _, networkType := range networkTypes {
@@ -820,6 +820,14 @@ func StringSetIndex(l []string, v string) int {
 
 func StringSetContains(l []string, v string) bool {
 	return StringSetIndex(l, v) >= 0
+}
+
+func StringSetAdd(l []string, v string) ([]string, bool) {
+	i := StringSetIndex(l, v)
+	if i < 0 {
+		return append(l, v), true
+	}
+	return l, false
 }
 
 func StringSetRemove(l []string, v string) ([]string, bool) {
