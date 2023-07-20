@@ -162,6 +162,35 @@ func (c *Client) invoke(url string, req interface{}, s service.Signer) (contract
 	return txId, err
 }
 
+func (c *Client) NetworkInfos() (NetworkInfos, error) {
+	r := NetworkInfos{}
+	if _, err := c.do(http.MethodGet, c.baseApiUrl, nil, &r); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (c *Client) ServiceInfos(network string) (ServiceInfos, error) {
+	r := ServiceInfos{}
+	if _, err := c.do(http.MethodGet, c.apiUrl("/%s", network), nil, &r); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (c *Client) RegisterContractService(network string, req *RegisterContractServiceRequest) error {
+	_, err := c.do(http.MethodPost, c.apiUrl("/%s", network), req, nil)
+	return err
+}
+
+func (c *Client) MethodInfos(network string, serviceOrAddress string) (MethodInfos, error) {
+	r := MethodInfos{}
+	if _, err := c.do(http.MethodGet, c.apiUrl("/%s/%s", network, serviceOrAddress), nil, &r); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
 func (c *Client) Invoke(network string, addr contract.Address, method string, req *ContractRequest, s service.Signer) (contract.TxID, error) {
 	return c.invoke(c.apiUrl("/%s/%s/%s", network, addr, method), req, s)
 }

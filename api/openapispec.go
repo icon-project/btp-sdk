@@ -389,8 +389,22 @@ func NewOpenAPISpecProvider(l log.Logger) *OpenAPISpecProvider {
 	oas := NewOpenAPISpec("")
 	oas.Tags = append(openapi3.Tags{NewTag(tagGeneral, "General purpose")}, oas.Tags...)
 
+	oas.Paths[GroupUrlApi] = &openapi3.PathItem{
+		Get: &openapi3.Operation{
+			Tags:        []string{tagGeneral},
+			Summary:     "Retrieve networks",
+			Description: "",
+			OperationID: "",
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(MustGenerateSchema(NetworkInfos{}))),
+		},
+	}
+
 	gpi := make(openapi3.Paths)
 	npr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchema(PathParamNetwork, NewStringEnumSchema()))
+	nau, napi := newNetworkAPIPathItem(npr)
+	gpi[nau] = napi
+
 	tpr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchemaRef(PathParamTxID, DefaultSchemaRef(schemaTxID)))
 	gru, grpi := newGetResultPathItem(npr, tpr)
 	gpi[gru] = grpi
@@ -398,6 +412,9 @@ func NewOpenAPISpecProvider(l log.Logger) *OpenAPISpecProvider {
 	as := openapi3.NewOneOfSchema(openapi3.NewStringSchema())
 	as.OneOf = append(as.OneOf, DefaultSchemaRef(contract.TAddress.String()))
 	apr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchema(PathParamServiceOrAddress, as))
+	sau, sapi := newServiceAPIPathItem(npr, apr)
+	gpi[sau] = sapi
+
 	mpr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchema(PathParamMethod, openapi3.NewStringSchema()))
 	mu, mpi := newMethodAPIPathItem(npr, apr, mpr)
 	gpi[mu] = mpi
@@ -416,6 +433,30 @@ func NewOpenAPISpecProvider(l log.Logger) *OpenAPISpecProvider {
 	}
 }
 
+func newNetworkAPIPathItem(npr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
+	pi := &openapi3.PathItem{
+		Parameters: openapi3.Parameters{npr},
+		Get: &openapi3.Operation{
+			Tags:        []string{tagGeneral},
+			Summary:     "Retrieve services",
+			Description: "",
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(MustGenerateSchema(ServiceInfos{}))),
+		},
+		Post: &openapi3.Operation{
+			Tags:        []string{tagGeneral},
+			Summary:     "Register contract service",
+			Description: "",
+			RequestBody: &openapi3.RequestBodyRef{
+				Value: openapi3.NewRequestBody().WithContent(
+					openapi3.NewContentWithJSONSchema(MustGenerateSchema(RegisterContractServiceRequest{}))),
+			},
+			Responses: ResponsesWithResponse(nil, http.StatusOK, NewSuccessResponse()),
+		},
+	}
+	return fmt.Sprintf("%s/{%s}", GroupUrlApi, npr.Value.Name), pi
+}
+
 func newGetResultPathItem(npr, tpr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
 	pi := &openapi3.PathItem{
 		Parameters: openapi3.Parameters{npr, tpr},
@@ -428,6 +469,20 @@ func newGetResultPathItem(npr, tpr *openapi3.ParameterRef) (string, *openapi3.Pa
 		},
 	}
 	return fmt.Sprintf("%s/{%s}%s/{%s}", GroupUrlApi, npr.Value.Name, UrlGetResult, tpr.Value.Name), pi
+}
+
+func newServiceAPIPathItem(npr, apr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
+	pi := &openapi3.PathItem{
+		Parameters: openapi3.Parameters{npr, apr},
+		Get: &openapi3.Operation{
+			Tags:        []string{tagGeneral},
+			Summary:     "Retrieve methods",
+			Description: "",
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(MustGenerateSchema(MethodInfos{}))),
+		},
+	}
+	return fmt.Sprintf("%s/{%s}/{%s}", GroupUrlApi, npr.Value.Name, apr.Value.Name), pi
 }
 
 func newMethodAPIPathItem(npr, apr, mpr *openapi3.ParameterRef) (string, *openapi3.PathItem) {

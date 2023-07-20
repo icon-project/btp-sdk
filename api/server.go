@@ -133,6 +133,59 @@ func (s *Server) Start() error {
 	return s.e.Start(s.addr)
 }
 
+type NetworkInfo struct {
+	Network     string `json:"network"`
+	NetworkType string `json:"type"`
+}
+type NetworkInfos []NetworkInfo
+
+type RegisterContractServiceRequest struct {
+	Address contract.Address `json:"address"`
+	Spec    json.RawMessage  `json:"spec"`
+}
+
+type ServiceInfo struct {
+	Name string `json:"name"`
+}
+type ServiceInfos []ServiceInfo
+
+type MethodInfo struct {
+	NetworkTypes []string            `json:"networkTypes"`
+	Name         string              `json:"name"`
+	Inputs       map[string]TypeInfo `json:"inputs"`
+	Output       TypeInfo            `json:"output"`
+	Payable      bool                `json:"payable"`
+	Readonly     bool                `json:"readonly"`
+}
+type MethodInfos []MethodInfo
+
+type NameAndTypeInfos map[string]TypeInfo
+
+func NewNameAndTypeInfos(m map[string]*contract.NameAndTypeSpec) NameAndTypeInfos {
+	r := make(NameAndTypeInfos)
+	for _, s := range m {
+		r[s.Name] = NewTypeInfo(s.Type)
+	}
+	return r
+}
+
+type TypeInfo struct {
+	Type      string              `json:"type"`
+	Dimension int                 `json:"dimension,omitempty"`
+	Fields    map[string]TypeInfo `json:"fields,omitempty"`
+}
+
+func NewTypeInfo(s contract.TypeSpec) TypeInfo {
+	r := TypeInfo{
+		Type:      s.Name,
+		Dimension: s.Dimension,
+	}
+	if s.Resolved != nil {
+		r.Fields = NewNameAndTypeInfos(s.Resolved.FieldMap)
+	}
+	return r
+}
+
 type Request struct {
 	Params  contract.Params  `json:"params" query:"params"`
 	Options contract.Options `json:"options" query:"options"`
@@ -149,6 +202,13 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		s.l.Logf(s.lv, "request=%s", reqBody)
 		s.l.Logf(s.lv, "response=%s", resBody)
 	}))
+	g.GET("", func(c echo.Context) error {
+		r := make(NetworkInfos, 0)
+		for n, a := range s.aMap {
+			r = append(r, NetworkInfo{Network: n, NetworkType: a.NetworkType()})
+		}
+		return c.JSON(http.StatusOK, r)
+	})
 	networkApi := g.Group("/:" + PathParamNetwork)
 	networkApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -162,6 +222,39 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 			return next(c)
 		}
 	})
+	networkApi.GET("", func(c echo.Context) error {
+		r := make(ServiceInfos, 0)
+		for _, v := range s.sMap {
+			si := ServiceInfo{v.Name()}
+			if cs, ok := v.(*ContractService); ok {
+				si.Name = string(cs.Address())
+			}
+			r = append(r, si)
+		}
+		return c.JSON(http.StatusOK, r)
+	})
+	networkApi.POST("", func(c echo.Context) error {
+		req := &RegisterContractServiceRequest{}
+		if err := c.Bind(req); err != nil {
+			return err
+		}
+		network := c.Param(PathParamNetwork)
+		a := c.Get(ContextAdaptor).(contract.Adaptor)
+		svc, err := NewContractService(a, req.Spec, req.Address, network, s.l)
+		if err != nil {
+			s.l.Debugf("fail to NewContractService err:%+v", err)
+			return err
+		}
+		if _, ok := s.Signers[network]; ok {
+			if svc, err = service.NewSignerService(svc, s.Signers, s.l); err != nil {
+				s.l.Debugf("fail to NewSignerService err:%+v", err)
+				return err
+			}
+		}
+		s.SetService(svc)
+		return c.NoContent(http.StatusOK)
+	})
+
 	networkApi.GET(UrlGetResult+"/:"+PathParamTxID, func(c echo.Context) error {
 		a := c.Get(ContextAdaptor).(contract.Adaptor)
 		p := c.Param(PathParamTxID)
@@ -174,6 +267,56 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 	})
 
 	serviceApi := networkApi.Group("/:" + PathParamServiceOrAddress)
+	serviceInjection := func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			p := c.Param(PathParamServiceOrAddress)
+			svc := s.GetService(p)
+			if svc == nil {
+				return echo.NewHTTPError(http.StatusNotFound,
+					fmt.Sprintf("Service(%s) not found", p))
+			}
+			c.Set(ContextService, svc)
+			return next(c)
+		}
+	}
+	serviceApi.GET("", func(c echo.Context) error {
+		svc := c.Get(ContextService).(service.Service)
+		r := make(MethodInfos, 0)
+		networkType := svc.Networks()[c.Param(PathParamNetwork)]
+		for _, v := range svc.Spec().Methods {
+			mi := MethodInfo{
+				NetworkTypes: v.NetworkTypes,
+				Name:         v.Name,
+				Inputs:       NewNameAndTypeInfos(v.Inputs),
+				Output:       NewTypeInfo(v.Output),
+				Payable:      v.Payable,
+				Readonly:     v.Readonly,
+			}
+			if !service.StringSetContains(v.NetworkTypes, networkType) {
+				for _, o := range v.Overloads {
+					if service.StringSetContains(o.NetworkTypes, networkType) {
+						mi.NetworkTypes = o.NetworkTypes
+						if o.Inputs != nil {
+							mi.Inputs = NewNameAndTypeInfos(*o.Inputs)
+						}
+						if o.Output != nil {
+							mi.Output = NewTypeInfo(*o.Output)
+						}
+						if o.Payable != nil {
+							mi.Payable = *o.Payable
+						}
+						if o.Readonly != nil {
+							mi.Readonly = *o.Readonly
+						}
+						break
+					}
+				}
+			}
+			r = append(r, mi)
+		}
+		return c.JSON(http.StatusOK, r)
+	}, serviceInjection)
+
 	methodApi := serviceApi.Group("/:" + PathParamMethod)
 	methodApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

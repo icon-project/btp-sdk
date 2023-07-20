@@ -37,6 +37,7 @@ func main() {
 `,
 	}
 	NewServerCommand(rootCmd, rootVc, version, build, logoLines)
+	NewNetworksCommand(rootCmd, rootVc)
 	NewApiCommand(rootCmd, rootVc)
 	NewMonitorCommand(rootCmd, rootVc)
 

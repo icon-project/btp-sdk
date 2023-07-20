@@ -98,6 +98,24 @@ func AddAdminRequiredFlags(c *cobra.Command) {
 	pFlags.String("network.type", "", "network type")
 }
 
+func NewNetworksCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Command, *viper.Viper) {
+	rootCmd, rootVc := cli.NewCommand(parentCmd, parentVc, "networks", "Get list of network information")
+	var (
+		c api.Client
+	)
+	rootCmd.PersistentPreRunE = ClientPersistentPreRunE(rootVc, &c)
+	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
+		r, err := c.NetworkInfos()
+		if err != nil {
+			return err
+		}
+		return cli.JsonPrettyPrintln(os.Stdout, r)
+	}
+	AddAdminRequiredFlags(rootCmd)
+	cli.BindPFlags(rootVc, rootCmd.PersistentFlags())
+	return rootCmd, rootVc
+}
+
 func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Command, *viper.Viper) {
 	rootCmd, rootVc := cli.NewCommand(parentCmd, parentVc, "api", "API cli")
 	var (
@@ -118,6 +136,43 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 	cli.MarkAnnotationCustom(rootCmd.PersistentFlags(), "network.name", "network.type")
 	cli.BindPFlags(rootVc, rootCmd.PersistentFlags())
 
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "services",
+		Short: "Get list of service information",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			r, err := c.ServiceInfos(network)
+			if err != nil {
+				return err
+			}
+			return cli.JsonPrettyPrintln(os.Stdout, r)
+		},
+	})
+	registerCmd := &cobra.Command{
+		Use:   "register",
+		Short: "Register contract service",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			spec, err := os.ReadFile(cmd.Flag("contract.spec").Value.String())
+			if err != nil {
+				return err
+			}
+			registerReq := &api.RegisterContractServiceRequest{
+				Address: contract.Address(cmd.Flag("contract.address").Value.String()),
+				Spec:    spec,
+			}
+			if err = c.RegisterContractService(network, registerReq); err != nil {
+				return err
+			}
+			cmd.Println("Operation success")
+			return nil
+		},
+	}
+	rootCmd.AddCommand(registerCmd)
+	registerFlags := registerCmd.Flags()
+	registerFlags.String("contract.address", "", "contract address")
+	registerFlags.String("contract.spec", "", "contract spec")
+	cli.MarkAnnotationRequired(registerFlags, "contract.address", "contract.spec")
 
 	resultCmd := &cobra.Command{
 		Use:   "result TX_ID",
@@ -145,6 +200,25 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 		}
 		return nil
 	}
+	methodInfosCmd := &cobra.Command{
+		Use:     "methods",
+		Short:   "Get list of method information",
+		Args:    cobra.NoArgs,
+		PreRunE: serviceApiPreRunE,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(svc) == 0 {
+				svc = string(addr)
+			}
+			txr, err := c.MethodInfos(network, svc)
+			if err != nil {
+				return err
+			}
+			return cli.JsonPrettyPrintln(os.Stdout, txr)
+		},
+	}
+	methodInfosCmd.Flags().String("service", "", "service name")
+	methodInfosCmd.Flags().String("contract.address", "", "contract address, if '--service' used, will be ignored")
+	rootCmd.AddCommand(methodInfosCmd)
 
 	var (
 		method string

@@ -57,6 +57,10 @@ func ContractServiceName(network string, address contract.Address) string {
 	return fmt.Sprintf("%s-%s", network, address)
 }
 
+func (s *ContractService) Address() contract.Address {
+	return s.h.Address()
+}
+
 func (s *ContractService) Name() string {
 	return s.name
 }
