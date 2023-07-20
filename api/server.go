@@ -59,6 +59,8 @@ type Server struct {
 	u    websocket.Upgrader
 	lv   log.Level
 	l    log.Logger
+
+	Signers map[string]service.Signer //FIXME [TBD] signer management
 }
 
 func NewServer(addr string, transportLogLevel log.Level, l log.Logger) *Server {
@@ -68,12 +70,13 @@ func NewServer(addr string, transportLogLevel log.Level, l log.Logger) *Server {
 	e.Validator = NewValidator()
 	e.HTTPErrorHandler = HttpErrorHandler
 	return &Server{
-		e:    e,
-		addr: addr,
-		aMap: make(map[string]contract.Adaptor),
-		sMap: make(map[string]service.Service),
-		lv:   contract.EnsureTransportLogLevel(transportLogLevel),
-		l:    Logger(l),
+		e:       e,
+		addr:    addr,
+		aMap:    make(map[string]contract.Adaptor),
+		sMap:    make(map[string]service.Service),
+		lv:      contract.EnsureTransportLogLevel(transportLogLevel),
+		l:       sl,
+		Signers: make(map[string]service.Signer),
 	}
 }
 
@@ -185,6 +188,12 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 					if svc, err = NewContractService(a, req.Spec, address, network, s.l); err != nil {
 						s.l.Debugf("fail to NewContractService err:%+v", err)
 						return err
+					}
+					if _, ok := s.Signers[network]; ok {
+						if svc, err = service.NewSignerService(svc, s.Signers, s.l); err != nil {
+							s.l.Debugf("fail to NewSignerService err:%+v", err)
+							return err
+						}
 					}
 					s.SetService(svc)
 				} else if svc = s.GetService(ContractServiceName(network, address)); svc == nil {

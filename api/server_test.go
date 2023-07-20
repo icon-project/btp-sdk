@@ -240,6 +240,9 @@ func server(t *testing.T, withSignerService bool) *Server {
 	l := log.GlobalLogger()
 	//s := NewServer("localhost:8081", serverLogLevel, l)
 	s := NewServer(serverAddress, serverLogLevel, l)
+	if withSignerService {
+		s.Signers = signers
+	}
 	aMap := adaptors(t)
 	for network, a := range aMap {
 		s.SetAdaptor(network, a)

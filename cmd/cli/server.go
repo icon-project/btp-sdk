@@ -253,7 +253,6 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 			}
 			s := api.NewServer(cfg.Server.Address, serverDumpLogLevel, l)
 			svcToNetworks := make(map[string]map[string]service.Network)
-			signers := make(map[string]service.Signer)
 			for network, n := range cfg.Networks {
 				opt, err := contract.EncodeOptions(n.Options)
 				if err != nil {
@@ -281,13 +280,14 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 					sCfg = *n.Signer
 					sCfg.Keystore = cfg.ResolveAbsolute(sCfg.Keystore)
 					sCfg.Secret = cfg.ResolveAbsolute(sCfg.Secret)
-					l.Debugf("signer.keystore:%s resolved:%s", n.Signer.Keystore, sCfg.Keystore)
-					l.Debugf("signer.secret:%s resolved:%s", n.Signer.Secret, sCfg.Secret)
+					l.Debugf("signer network:%s keystore:[config:%s,resolved:%s] secret:[config:%s,resolved:%s]",
+						n.Signer.Keystore, sCfg.Keystore, n.Signer.Secret, sCfg.Secret)
 					signer, err := NewDefaultSigner(n.NetworkType, sCfg.Keystore, sCfg.Secret)
 					if err != nil {
 						return err
 					}
-					signers[network] = signer
+					s.Signers[network] = signer
+					l.Debugf("NewDefaultSigner network:%s signer:%s", network, signer.Address())
 				}
 			}
 
@@ -296,8 +296,8 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 				if err != nil {
 					return err
 				}
-				if len(signers) > 0 {
-					if svc, err = service.NewSignerService(svc, signers, l); err != nil {
+				if len(s.Signers) > 0 {
+					if svc, err = service.NewSignerService(svc, s.Signers, l); err != nil {
 						return err
 					}
 				}
