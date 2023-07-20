@@ -122,6 +122,7 @@ type BlockMonitor interface {
 }
 
 type Adaptor interface {
+	NetworkType() string
 	GetResult(id TxID) (TxResult, error)
 	Handler(spec []byte, address Address) (Handler, error)
 	BlockMonitor() BlockMonitor

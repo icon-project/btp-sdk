@@ -115,6 +115,10 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 	}, nil
 }
 
+func (a *Adaptor) NetworkType() string {
+	return a.networkType
+}
+
 func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
 	txh, err := contract.BytesOf(id)
 	if err != nil {
