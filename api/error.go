@@ -28,9 +28,9 @@ import (
 )
 
 type ErrorResponse struct {
-	Code    errors.Code
-	Message string
-	Data    json.RawMessage
+	Code    errors.Code     `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
 }
 
 func (e *ErrorResponse) Error() string {
