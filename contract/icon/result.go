@@ -28,11 +28,35 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 )
 
+type HexBytes []byte
+
+func (h HexBytes) String() string {
+	return "0x" + hex.EncodeToString(h)
+}
+
+func (h HexBytes) MarshalJSON() ([]byte, error) {
+	return json.Marshal(h.String())
+}
+
+func (h *HexBytes) UnmarshalJSON(input []byte) error {
+	var str string
+	err := json.Unmarshal(input, &str)
+	if err != nil {
+		return err
+	}
+	b, err := contract.BytesOf(str)
+	if err != nil {
+		return err
+	}
+	*h = HexBytes(b)
+	return nil
+}
+
 type TxResult struct {
 	*client.TransactionResult
 	events      []contract.BaseEvent
 	blockHeight int64
-	blockHash   []byte
+	blockHash   HexBytes
 }
 
 func (r *TxResult) Success() bool {
@@ -106,7 +130,7 @@ func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []b
 type TxResultJson struct {
 	Raw         *client.TransactionResult
 	BlockHeight int64
-	BlockHash   []byte
+	BlockHash   HexBytes
 }
 
 func (r *TxResult) UnmarshalJSON(b []byte) error {
@@ -134,8 +158,8 @@ func (r *TxResult) MarshalJSON() ([]byte, error) {
 type BaseEvent struct {
 	client.EventLog
 	blockHeight int64
-	blockHash   []byte
-	txHash      []byte
+	blockHash   HexBytes
+	txHash      HexBytes
 	txIndex     int
 	indexInTx   int
 	sigMatcher  SignatureMatcher
@@ -206,8 +230,8 @@ func NewBaseEvent(el client.EventLog, blockHeight int64, blockHash, txHash []byt
 type BaseEventJson struct {
 	Raw         client.EventLog
 	BlockHeight int64
-	BlockHash   []byte
-	TxHash      []byte
+	BlockHash   HexBytes
+	TxHash      HexBytes
 	TxIndex     int
 	IndexInTx   int
 }
