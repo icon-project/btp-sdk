@@ -78,8 +78,9 @@ func adaptor(t *testing.T, networkType string) *Adaptor {
 
 func Test_MonitorEvents(t *testing.T) {
 	a := adaptor(t, NetworkTypeIcon)
+	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		err := a.MonitorBaseEvent(context.Background(), func(be contract.BaseEvent) error {
+		err := a.MonitorBaseEvent(ctx, func(be contract.BaseEvent) error {
 			t.Logf("%+v", be)
 			if paramValue, err := decodePrimitive(contract.TString, be.(*BaseEvent).Data[0]); err != nil {
 				assert.NoError(t, err, "fail to decodePrimitive")
@@ -92,7 +93,7 @@ func Test_MonitorEvents(t *testing.T) {
 			"HelloEvent(str)": {addr},
 		},
 			0)
-		assert.NoError(t, err)
+		assert.Equal(t, ctx.Err(), err)
 	}()
 
 	name := "hello"
@@ -117,4 +118,5 @@ func Test_MonitorEvents(t *testing.T) {
 	assert.NoError(t, err)
 	t.Logf("%+v", txr)
 	<-time.After(5 * time.Second)
+	cancel()
 }

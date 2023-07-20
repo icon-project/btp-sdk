@@ -133,9 +133,9 @@ func Test_MonitorEvents(t *testing.T) {
 	}
 	arg.Type, _ = abi.NewType("string", "", nil)
 	args := abi.Arguments{arg}
-
+	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		err := a.MonitorBaseEvent(context.Background(), func(be contract.BaseEvent) error {
+		err := a.MonitorBaseEvent(ctx, func(be contract.BaseEvent) error {
 			t.Logf("%+v", be)
 			if vl, err := args.UnpackValues(be.(*BaseEvent).Data); err != nil {
 				assert.NoError(t, err, "fail to UnpackValues")
@@ -148,7 +148,7 @@ func Test_MonitorEvents(t *testing.T) {
 			"HelloEvent(string)": {addr},
 		},
 			0)
-		assert.NoError(t, err)
+		assert.Equal(t, ctx.Err(), err)
 	}()
 
 	b, err := args.Pack(name)
@@ -192,4 +192,5 @@ func Test_MonitorEvents(t *testing.T) {
 	assert.NoError(t, err)
 	t.Logf("%+v", txr)
 	<-time.After(5 * time.Second)
+	cancel()
 }

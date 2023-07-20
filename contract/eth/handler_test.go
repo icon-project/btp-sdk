@@ -482,11 +482,13 @@ func Test_invokeArray(t *testing.T) {
 	assertEvent(t, e, address, sig, indexed, params)
 
 	ch := make(chan contract.Event, 1)
+	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		err = h.MonitorEvent(context.Background(), func(e contract.Event) error {
 			ch <- e
 			return nil
 		}, map[string][]contract.Params{event: nil}, r.BlockHeight())
+		assert.Equal(t, ctx.Err(), err)
 	}()
 	select {
 	case actual := <-ch:
@@ -495,4 +497,5 @@ func Test_invokeArray(t *testing.T) {
 	case <-time.After(time.Second * 10):
 		assert.FailNow(t, "timeout")
 	}
+	cancel()
 }
