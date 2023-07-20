@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
+	"github.com/invopop/yaml"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
@@ -34,12 +35,15 @@ const (
 	PathParamServiceOrAddress = "serviceOrAddress"
 	PathParamMethod           = "method"
 
+	QueryParamService = "service"
+
 	ContextAdaptor = "adaptor"
 	ContextService = "service"
 	ContextRequest = "request"
 
 	GroupUrlApi     = "/api"
 	GroupUrlMonitor = "/monitor"
+	GroupUrlApiDocs = "/api-docs"
 
 	UrlGetResult = "/result"
 
@@ -56,6 +60,7 @@ type Server struct {
 	aMap map[string]contract.Adaptor
 	sMap map[string]service.Service
 	mtx  sync.RWMutex
+	oasp *OpenAPISpecProvider
 	u    websocket.Upgrader
 	lv   log.Level
 	l    log.Logger
@@ -69,11 +74,13 @@ func NewServer(addr string, transportLogLevel log.Level, l log.Logger) *Server {
 	e.HidePort = true
 	e.Validator = NewValidator()
 	e.HTTPErrorHandler = HttpErrorHandler
+	sl := Logger(l)
 	return &Server{
 		e:       e,
 		addr:    addr,
 		aMap:    make(map[string]contract.Adaptor),
 		sMap:    make(map[string]service.Service),
+		oasp:    NewOpenAPISpecProvider(sl),
 		lv:      contract.EnsureTransportLogLevel(transportLogLevel),
 		l:       sl,
 		Signers: make(map[string]service.Signer),
@@ -88,6 +95,7 @@ func (s *Server) SetAdaptor(network string, a contract.Adaptor) {
 		s.l.Debugf("overwrite adaptor network:%s", network)
 	}
 	s.aMap[network] = a
+	s.oasp.PutNetworkToNetworkType(network, a.NetworkType())
 	s.l.Debugf("SetAdaptor network:%s", network)
 }
 
@@ -101,6 +109,7 @@ func (s *Server) SetService(svc service.Service) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	s.sMap[svc.Name()] = svc
+	s.oasp.Merge(svc)
 	s.l.Debugf("SetService %s", svc.Name())
 }
 
@@ -119,6 +128,7 @@ func (s *Server) Start() error {
 		}),
 		middleware.Recover())
 	s.RegisterAPIHandler(s.e.Group(GroupUrlApi))
+	s.RegisterAPIDocHandler(s.e.Group(GroupUrlApiDocs))
 	s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
 	return s.e.Start(s.addr)
 }
@@ -268,6 +278,20 @@ func StructToParams(v interface{}) interface{} {
 		p[k] = StructToParams(pv)
 	}
 	return p
+}
+
+func (s *Server) RegisterAPIDocHandler(g *echo.Group) {
+	g.GET("", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, s.oasp.Get(c.QueryParam(QueryParamService)))
+	})
+	g.GET(".yaml", func(c echo.Context) error {
+		t := s.oasp.Get(c.QueryParam(QueryParamService))
+		b, err := yaml.Marshal(t)
+		if err != nil {
+			return err
+		}
+		return c.Blob(http.StatusOK, "application/vnd.oai.openapi", b)
+	})
 }
 
 type MonitorRequest struct {
