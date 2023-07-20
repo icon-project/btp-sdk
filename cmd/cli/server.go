@@ -263,7 +263,7 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 				if err != nil {
 					return err
 				}
-				s.AddAdaptor(network, a)
+				s.SetAdaptor(network, a)
 				for name, so := range n.Services {
 					networks, ok := svcToNetworks[name]
 					if !ok {
@@ -301,7 +301,7 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 						return err
 					}
 				}
-				s.AddService(svc)
+				s.SetService(svc)
 			}
 			return s.Start()
 		},

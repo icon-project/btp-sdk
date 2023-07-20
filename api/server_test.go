@@ -175,10 +175,9 @@ func MustEncodeOptions(v interface{}) contract.Options {
 	return opt
 }
 
-func server(t *testing.T, withSignerService bool) *Server {
+func adaptors(t *testing.T) map[string]contract.Adaptor {
 	l := log.GlobalLogger()
-	s := NewServer(serverAddress, serverLogLevel, l)
-	svcToNetworks := make(map[string]map[string]service.Network)
+	m := make(map[string]contract.Adaptor)
 	for network, config := range configs {
 		opt, err := contract.EncodeOptions(config.AdaptorOption)
 		if err != nil {
@@ -188,12 +187,20 @@ func server(t *testing.T, withSignerService bool) *Server {
 		if err != nil {
 			assert.FailNow(t, "fail to NewAdaptor", err)
 		}
-		s.AddAdaptor(network, a)
+		m[network] = a
+	}
+	return m
+}
+
+func services(t *testing.T, adaptors map[string]contract.Adaptor, withSigner bool) map[string]service.Service {
+	networksMap := make(map[string]map[string]service.Network)
+	for network, config := range configs {
+		a := adaptors[network]
 		for name, so := range config.ServiceOptions {
-			networks, ok := svcToNetworks[name]
+			networks, ok := networksMap[name]
 			if !ok {
 				networks = make(map[string]service.Network)
-				svcToNetworks[name] = networks
+				networksMap[name] = networks
 			}
 			networks[network] = service.Network{
 				NetworkType: config.NetworkType,
@@ -202,7 +209,9 @@ func server(t *testing.T, withSignerService bool) *Server {
 			}
 		}
 	}
-	for name, networks := range svcToNetworks {
+	l := log.GlobalLogger()
+	sMap := make(map[string]service.Service)
+	for name, networks := range networksMap {
 		if name == serviceTest {
 			typeToSpec := make(map[string][]byte)
 			for network, n := range networks {
@@ -216,12 +225,28 @@ func server(t *testing.T, withSignerService bool) *Server {
 		if err != nil {
 			assert.FailNow(t, "fail to NewService", err)
 		}
-		if withSignerService {
-			if svc, err = service.NewSignerService(svc, signers, l); err != nil {
+		if withSigner {
+			svc, err = service.NewSignerService(svc, signers, l)
+			if err != nil {
 				assert.FailNow(t, "fail to NewSignerService", err)
 			}
 		}
-		s.AddService(svc)
+		sMap[name] = svc
+	}
+	return sMap
+}
+
+func server(t *testing.T, withSignerService bool) *Server {
+	l := log.GlobalLogger()
+	//s := NewServer("localhost:8081", serverLogLevel, l)
+	s := NewServer(serverAddress, serverLogLevel, l)
+	aMap := adaptors(t)
+	for network, a := range aMap {
+		s.SetAdaptor(network, a)
+	}
+	sMap := services(t, aMap, withSignerService)
+	for _, svc := range sMap {
+		s.SetService(svc)
 	}
 	return s
 }
@@ -615,9 +640,11 @@ func Test_ServerMonitorEvent(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			go func() {
 				if len(arg.Service) > 0 {
-					assert.NoError(t, c.ServiceMonitorEvent(ctx, n, arg.Service, &arg.MonitorRequest, onEvent))
+					err := c.ServiceMonitorEvent(ctx, n, arg.Service, &arg.MonitorRequest, onEvent)
+					assert.Equal(t, ctx.Err(), err)
 				} else {
-					assert.NoError(t, c.MonitorEvent(ctx, n, contracts[n].Address, &arg.MonitorRequest, onEvent))
+					err := c.MonitorEvent(ctx, n, contracts[n].Address, &arg.MonitorRequest, onEvent)
+					assert.Equal(t, ctx.Err(), err)
 				}
 			}()
 			select {
