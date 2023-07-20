@@ -101,21 +101,12 @@ func Sign(data []byte, options contract.Options, s Signer) (contract.Options, er
 	default:
 		return nil, errors.Errorf("not support network type:%s", s.NetworkType())
 	}
-
-}
-
-func (s *SignerService) Signer(network string) (Signer, error) {
-	signer, ok := s.m[network]
-	if !ok {
-		return nil, errors.Errorf("not found signer network:%s", network)
-	}
-	return signer, nil
 }
 
 func (s *SignerService) Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error) {
-	signer, err := s.Signer(network)
-	if err != nil {
-		return nil, err
+	signer, ok := s.m[network]
+	if !ok {
+		return s.Service.Invoke(network, method, params, options)
 	}
 	opt, err := PrepareToSign(options, signer, false)
 	if err != nil {
@@ -142,11 +133,24 @@ func (s *SignerService) Call(network, method string, params contract.Params, opt
 }
 
 func NewSignerService(s Service, signers map[string]Signer, l log.Logger) (*SignerService, error) {
-	return &SignerService{
+	if s == nil {
+		return nil, errors.Errorf("service must be not nil")
+	}
+	if len(signers) == 0 {
+		return nil, errors.Errorf("require signers at least one")
+	}
+	ss := &SignerService{
 		Service: s,
-		m:       signers,
+		m:       make(map[string]Signer),
 		l:       l,
-	}, nil
+	}
+	for k, v := range signers {
+		if v == nil {
+			return nil, errors.Errorf("signer must be not nil, network:%s", k)
+		}
+		ss.m[k] = v
+	}
+	return ss, nil
 }
 
 type DefaultSigner struct {
