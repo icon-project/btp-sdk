@@ -18,6 +18,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/icon-project/btp2/common/cli"
@@ -52,57 +53,71 @@ func ReadAndUnmarshal(file string, v interface{}) error {
 	return json.Unmarshal(b, v)
 }
 
-func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Command, *viper.Viper) {
-	rootCmd, rootVc := cli.NewCommand(parentCmd, parentVc, "api", "API cli")
-	var (
-		c           *api.Client
-		network     string
-		networkType string
-		svc         string
-		addr        contract.Address
-		method      string
-		req         = &api.ContractRequest{}
-	)
-	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
-		if err := cli.ValidateFlagsWithViper(rootVc, cmd.Flags()); err != nil {
+func ClientPersistentPreRunE(vc *viper.Viper, c *api.Client) func(cmd *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		if err := cli.ValidateFlagsWithViper(vc, cmd.Flags()); err != nil {
 			return err
 		}
 		l := log.GlobalLogger()
-		if lv, err := log.ParseLevel(rootVc.GetString("log_level")); err != nil {
+		if lv, err := log.ParseLevel(vc.GetString("log_level")); err != nil {
 			return errors.Wrapf(err, "fail to parseLevel log_level err:%s", err.Error())
 		} else {
 			l.SetLevel(lv)
 		}
-		if lv, err := log.ParseLevel(rootVc.GetString("console_level")); err != nil {
+		if lv, err := log.ParseLevel(vc.GetString("console_level")); err != nil {
 			return errors.Wrapf(err, "fail to parseLevel console_level err:%s", err.Error())
 		} else {
 			l.SetConsoleLevel(lv)
 		}
-		dumpLogLevel, err := log.ParseLevel(rootVc.GetString("dump_log_level"))
+		dumpLogLevel, err := log.ParseLevel(vc.GetString("dump_log_level"))
 		if err != nil {
 			return errors.Wrapf(err, "fail to parseLevel dump_log_level err:%s", err.Error())
 		} else {
 			dumpLogLevel = contract.EnsureTransportLogLevel(dumpLogLevel)
 		}
-		network = rootVc.GetString("network.name")
-		networkType = rootVc.GetString("network.type")
-		c = api.NewClient(
-			rootVc.GetString("url"),
-			map[string]string{network: networkType},
+		networkToType := make(map[string]string)
+		if network := vc.GetString("network.name"); len(network) > 0 {
+			networkToType[network] = vc.GetString("network.type")
+		}
+		*c = *api.NewClient(
+			vc.GetString("url"),
+			networkToType,
 			dumpLogLevel,
 			l)
 		return nil
 	}
+}
 
-	rootPFlags := rootCmd.PersistentFlags()
-	rootPFlags.String("url", "http://localhost:8080", "server address")
-	rootPFlags.String("log_level", "debug", "Global log level (trace,debug,info,warn,error,fatal,panic)")
-	rootPFlags.String("console_level", "trace", "Console log level (trace,debug,info,warn,error,fatal,panic)")
-	rootPFlags.String("dump_log_level", "trace", "client dump log level (trace,debug,info)")
-	rootPFlags.String("network.name", "", "network name")
-	rootPFlags.String("network.type", "", "network type")
-	cli.MarkAnnotationCustom(rootPFlags, "server.address", "network.name", "network.type", "method")
-	cli.BindPFlags(rootVc, rootPFlags)
+func AddAdminRequiredFlags(c *cobra.Command) {
+	pFlags := c.PersistentFlags()
+	pFlags.String("url", "http://localhost:8080", "server address")
+	pFlags.String("log_level", "debug", "Global log level (trace,debug,info,warn,error,fatal,panic)")
+	pFlags.String("console_level", "trace", "Console log level (trace,debug,info,warn,error,fatal,panic)")
+	pFlags.String("dump_log_level", "trace", "client dump log level (trace,debug,info)")
+	pFlags.String("network.name", "", "network name")
+	pFlags.String("network.type", "", "network type")
+}
+
+func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Command, *viper.Viper) {
+	rootCmd, rootVc := cli.NewCommand(parentCmd, parentVc, "api", "API cli")
+	var (
+		c           api.Client
+		network     string
+		networkType string
+	)
+	persistentPreRunE := ClientPersistentPreRunE(rootVc, &c)
+	rootCmd.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		if err := persistentPreRunE(cmd, args); err != nil {
+			return err
+		}
+		network = rootVc.GetString("network.name")
+		networkType = rootVc.GetString("network.type")
+		return nil
+	}
+	AddAdminRequiredFlags(rootCmd)
+	cli.MarkAnnotationCustom(rootCmd.PersistentFlags(), "network.name", "network.type")
+	cli.BindPFlags(rootVc, rootCmd.PersistentFlags())
+
 
 	resultCmd := &cobra.Command{
 		Use:   "result TX_ID",
@@ -118,17 +133,33 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 	}
 	rootCmd.AddCommand(resultCmd)
 
-	newServiceApiCommand := func(use, short string) *cobra.Command {
+	var (
+		svc  string
+		addr contract.Address
+	)
+	serviceApiPreRunE := func(cmd *cobra.Command, args []string) error {
+		svc = cmd.Flag("service").Value.String()
+		addr = contract.Address(cmd.Flag("contract.address").Value.String())
+		if len(svc) == 0 && len(addr) == 0 {
+			return errors.New("require service or contract.address")
+		}
+		return nil
+	}
+
+	var (
+		method string
+		req    = &api.ContractRequest{}
+	)
+	newMethodApiCommand := func(use, short string) *cobra.Command {
 		cmd := &cobra.Command{
-			Use:   use,
+			Use:   fmt.Sprintf("%s METHOD", use),
 			Short: short,
-			Args:  cobra.NoArgs,
+			Args:  cli.ArgsWithDefaultErrorFunc(cobra.ExactArgs(1)),
 			PreRunE: func(cmd *cobra.Command, args []string) error {
-				svc = cmd.Flag("service").Value.String()
-				addr = contract.Address(cmd.Flag("contract.address").Value.String())
-				if len(svc) == 0 && len(addr) == 0 {
-					return errors.New("require service or contract.address")
+				if err := serviceApiPreRunE(cmd, args); err != nil {
+					return err
 				}
+				method = args[0]
 				var (
 					fs  = cmd.Flags()
 					err error
@@ -137,9 +168,6 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 					if err = ReadAndUnmarshal(raw, req); err != nil {
 						return err
 					}
-				}
-				if method, err = fs.GetString("method"); err != nil {
-					return err
 				}
 				if req.Params, err = GetStringToInterface(fs, "param"); err != nil {
 					return err
@@ -157,8 +185,8 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 		}
 		fs := cmd.Flags()
 		fs.String("service", "", "service name")
-		fs.String("contract.address", "", "contract address")
-		fs.String("contract.spec", "", "contract spec")
+		fs.String("contract.address", "", "contract address, if '--service' used, will be ignored")
+		fs.String("contract.spec", "", "contract spec, if '--service' used, will be ignored")
 		fs.String("method", "",
 			"Name of the function to invoke, if '--raw' used, will overwrite")
 		fs.StringToString("param", nil,
@@ -171,7 +199,7 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 		return cmd
 	}
 
-	callCmd := newServiceApiCommand("call", "Call")
+	callCmd := newMethodApiCommand("call", "Call")
 	callCmd.RunE = func(cmd *cobra.Command, args []string) error {
 		var (
 			err  error
@@ -192,7 +220,7 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 	}
 	rootCmd.AddCommand(callCmd)
 
-	invokeCmd := newServiceApiCommand("invoke", "Invoke")
+	invokeCmd := newMethodApiCommand("invoke", "Invoke")
 	invokeCmd.RunE = func(cmd *cobra.Command, args []string) error {
 		var (
 			err  error
