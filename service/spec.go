@@ -34,11 +34,12 @@ func init() {
 }
 
 type Spec struct {
-	SpecVersion string                 `json:"specVersion"`
-	Name        string                 `json:"name"`
-	Methods     map[string]*MethodSpec `json:"methods"`
-	Events      map[string]*EventSpec  `json:"events"`
-	Structs     map[string]*StructSpec `json:"structs"`
+	SpecVersion  string                 `json:"specVersion"`
+	Name         string                 `json:"name"`
+	NetworkTypes []string               `json:"networkTypes"`
+	Methods      map[string]*MethodSpec `json:"methods"`
+	Events       map[string]*EventSpec  `json:"events"`
+	Structs      map[string]*StructSpec `json:"structs"`
 }
 
 func (s *Spec) Merge(cs contract.Spec, networkTypes ...string) {
@@ -65,6 +66,7 @@ func (s *Spec) Merge(cs contract.Spec, networkTypes ...string) {
 			s.Events[name] = NewEventSpec(ce, networkTypes...)
 		}
 	}
+	StringSetMerge(s.NetworkTypes, networkTypes)
 }
 
 type MergeInfo struct {
