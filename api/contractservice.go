@@ -54,7 +54,7 @@ func NewContractService(a contract.Adaptor, spec []byte, address contract.Addres
 }
 
 func ContractServiceName(network string, address contract.Address) string {
-	return fmt.Sprintf("%s|%s", network, address)
+	return fmt.Sprintf("%s-%s", network, address)
 }
 
 func (s *ContractService) Name() string {
