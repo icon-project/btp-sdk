@@ -126,7 +126,7 @@ func (s *Service) Call(network, method string, params contract.Params, options c
 	switch method {
 	case "getServices", "getVerifiers", "getRoutes":
 		if l, ok := ret.([]contract.Struct); ok {
-			m := make(map[string]interface{})
+			m := make(contract.Params)
 			for _, st := range l {
 				k, err := contract.StringOf(st.Fields[0].Value)
 				if err != nil {

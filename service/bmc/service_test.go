@@ -146,7 +146,25 @@ func Test_Service(t *testing.T) {
 		assert.FailNow(t, "fail to NewService", err)
 	}
 	assert.Equal(t, ServiceName, s.Name())
-	//s.Invoke()
+	var r contract.ReturnValue
+	for network := range networks {
+		for _, name := range []string{"getServices", "getVerifiers", "getRoutes"} {
+			r, err = s.Call(network, name, nil, nil)
+			assert.NoError(t, err)
+			assert.IsType(t, contract.Params{}, r)
+			t.Logf("%T %+v", r, r)
+		}
+
+		r, err = s.Call(network, "getLinks", nil, nil)
+		assert.NoError(t, err)
+		t.Logf("%T %+v", r, r)
+
+		r, err = s.Call(network, "getStatus", contract.Params{"_link": r.([]contract.String)[0]}, nil)
+		assert.NoError(t, err)
+		_, err = contract.StructOfWithSpec(*iconSpec.MethodMap["getStatus"].Output.Resolved, r)
+		assert.NoError(t, err)
+		t.Logf("%T %+v", r, r)
+	}
 }
 
 func handler(t *testing.T, a contract.Adaptor, config TestConfig) contract.Handler {
