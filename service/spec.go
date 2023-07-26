@@ -371,7 +371,7 @@ func (s *StructSpec) Conflict(networkType string) *StructConflict {
 }
 
 func (s *StructSpec) merge(cs *contract.StructSpec, networkTypes ...string) bool {
-	equals := EqualsNameAndTypes(s.Fields, cs.FieldMap)
+	equals := contract.EqualsNameAndTypes(s.Fields, cs.FieldMap)
 	if equals {
 		for _, networkType := range networkTypes {
 			if !s.IsSupport(networkType) {
@@ -392,7 +392,7 @@ func (s *StructSpec) merge(cs *contract.StructSpec, networkTypes ...string) bool
 		}
 		var tc *StructConflict
 		for _, c := range s.Conflicts {
-			if EqualsNameAndTypes(c.Fields, cs.FieldMap) {
+			if contract.EqualsNameAndTypes(c.Fields, cs.FieldMap) {
 				tc = c
 				break
 			}
@@ -628,23 +628,6 @@ func CopyStructConflict(c *StructConflict) *StructConflict {
 	return cc
 }
 
-func EqualsNameAndTypes(a map[string]*contract.NameAndTypeSpec, b map[string]*contract.NameAndTypeSpec) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, av := range a {
-		bv, ok := b[k]
-		if !ok {
-			return false
-		}
-		if !EqualsTypeSpec(av.Type, bv.Type) {
-			return false
-		}
-		//TODO NameAndTypeSpec.Optional
-	}
-	return true
-}
-
 func EqualsEventIndexed(a []string, b []string) bool {
 	if len(a) != len(b) {
 		return false
@@ -659,24 +642,6 @@ aLoop:
 		return false
 	}
 	return true
-}
-
-func EqualsTypeSpec(a contract.TypeSpec, b contract.TypeSpec) bool {
-	if a.Dimension != b.Dimension {
-		return false
-	}
-	if a.TypeID != b.TypeID {
-		return false
-	}
-	switch a.TypeID {
-	case contract.TUnknown:
-		return a.Name == b.Name
-	case contract.TStruct:
-		//ignore StructSpec.Name
-		return EqualsNameAndTypes(a.Resolved.FieldMap, b.Resolved.FieldMap)
-	default:
-		return true
-	}
 }
 
 const (
@@ -710,10 +675,10 @@ func (f MethodOverloadFlag) Readonly() bool {
 
 func CompareMethodSpec(ss *MethodSpec, cs *contract.MethodSpec) MethodOverloadFlag {
 	f := MethodOverloadNone
-	if !EqualsNameAndTypes(ss.Inputs, cs.InputMap) {
+	if !contract.EqualsNameAndTypes(ss.Inputs, cs.InputMap) {
 		f |= MethodOverloadInputs
 	}
-	if !EqualsTypeSpec(ss.Output, cs.Output) {
+	if !contract.EqualsTypeSpec(ss.Output, cs.Output) {
 		f |= MethodOverloadOutput
 	}
 	if ss.Payable != cs.Payable {
@@ -726,10 +691,10 @@ func CompareMethodSpec(ss *MethodSpec, cs *contract.MethodSpec) MethodOverloadFl
 }
 
 func CompareMethodOverload(o *MethodOverload, cs *contract.MethodSpec) bool {
-	if o.Inputs != nil && !EqualsNameAndTypes(*o.Inputs, cs.InputMap) {
+	if o.Inputs != nil && !contract.EqualsNameAndTypes(*o.Inputs, cs.InputMap) {
 		return false
 	}
-	if o.Output != nil && !EqualsTypeSpec(*o.Output, cs.Output) {
+	if o.Output != nil && !contract.EqualsTypeSpec(*o.Output, cs.Output) {
 		return false
 	}
 	if o.Payable != nil && *o.Payable != cs.Payable {
@@ -779,7 +744,7 @@ func (f EventOverloadFlag) Indexed() bool {
 
 func CompareEventSpec(ss *EventSpec, cs *contract.EventSpec) EventOverloadFlag {
 	f := EventOverloadNone
-	if !EqualsNameAndTypes(ss.Inputs, cs.InputMap) {
+	if !contract.EqualsNameAndTypes(ss.Inputs, cs.InputMap) {
 		f |= EventOverloadInputs
 	}
 	if !EqualsEventIndexed(ss.Indexed, NewEventSpecIndexed(cs)) {
@@ -789,7 +754,7 @@ func CompareEventSpec(ss *EventSpec, cs *contract.EventSpec) EventOverloadFlag {
 }
 
 func CompareEventOverload(o *EventOverload, cs *contract.EventSpec) bool {
-	if o.Inputs != nil && !EqualsNameAndTypes(*o.Inputs, cs.InputMap) {
+	if o.Inputs != nil && !contract.EqualsNameAndTypes(*o.Inputs, cs.InputMap) {
 		return false
 	}
 	if o.Indexed != nil && !EqualsEventIndexed(*o.Indexed, NewEventSpecIndexed(cs)) {

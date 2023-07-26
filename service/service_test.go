@@ -383,7 +383,9 @@ func Test_Service(t *testing.T) {
 						params[k] = eivp.Param()
 					}
 				}
-				assert.NoError(t, contract.ParamsTypeCheck(s.Spec().Events[arg.Event].Inputs, params))
+				if !assertParamsType(t, s.Spec().Events[arg.Event].Inputs, params) {
+					assert.FailNow(t, "fail assertParamsType")
+				}
 				t.Logf("%+v", e)
 			case <-time.After(10 * time.Second):
 				assert.FailNow(t, "timeout assert Event")
@@ -436,4 +438,105 @@ func UnmarshalRLP(b []byte, spec contract.TypeSpec) (interface{}, error) {
 		return nil, err
 	}
 	return contract.ParamOfWithSpec(spec, i)
+}
+
+func assertParamsType(t *testing.T, inputs map[string]*contract.NameAndTypeSpec, params contract.Params) bool {
+	if !assert.Equal(t, len(params), len(inputs), "invalid length params") {
+		return false
+	}
+	for k, v := range params {
+		spec, ok := inputs[k]
+		if !ok {
+			return assert.Fail(t, "not found param name:%s", k)
+		}
+		if !assertParamType(t, spec, v) {
+			return false
+		}
+	}
+	return true
+}
+
+func assertParamType(t *testing.T, s *contract.NameAndTypeSpec, value interface{}) bool {
+	if s.Type.Dimension > 0 {
+		return assertArrayType(t, s, 1, reflect.ValueOf(value))
+	} else {
+		switch s.Type.TypeID {
+		case contract.TStruct:
+			return assertStructType(t, s, value)
+		default:
+			return assertPrimitiveType(t, s, value)
+		}
+	}
+}
+
+func assertPrimitiveType(t *testing.T, s *contract.NameAndTypeSpec, value interface{}) bool {
+	ok := false
+	switch s.Type.TypeID {
+	case contract.TInteger:
+		_, ok = value.(contract.Integer)
+	case contract.TString:
+		_, ok = value.(contract.String)
+	case contract.TAddress:
+		_, ok = value.(contract.Address)
+	case contract.TBytes:
+		_, ok = value.(contract.Bytes)
+	case contract.TBoolean:
+		_, ok = value.(contract.Boolean)
+	default:
+		return assert.Fail(t, "not supported param type name:%s typeID:%v", s.Name, s.Type.TypeID.String())
+	}
+	return assert.True(t, ok, "invalid param type name:%s expected:%s actual:%T",
+		s.Name, s.Type.TypeID.String(), value)
+}
+
+func assertStructType(t *testing.T, s *contract.NameAndTypeSpec, value interface{}) bool {
+	var m map[string]interface{}
+	st, ok := value.(contract.Struct)
+	if ok {
+		m = st.Params()
+	} else {
+		if m, ok = value.(contract.Params); !ok {
+			if m, ok = value.(map[string]interface{}); !ok {
+				return assert.Fail(t, "invalid param type name:%s, expected:%s actual:%T",
+					s.Name, s.Type.TypeID.String(), value)
+			}
+		}
+	}
+
+	for k, v := range m {
+		spec, ok := s.Type.Resolved.FieldMap[k]
+		if !ok {
+			return assert.Fail(t, "not found param name:%s", k)
+		}
+		if !assertParamType(t, spec, v) {
+			return false
+		}
+	}
+	return true
+}
+
+func assertArrayType(t *testing.T, s *contract.NameAndTypeSpec, dimension int, v reflect.Value) bool {
+	if v.Kind() != reflect.Array && v.Kind() != reflect.Slice {
+		return assert.Fail(t, "invalid param type name:%s, expected:%s actual:%v",
+			s.Name, s.Type.TypeID.String(), v.Type())
+	}
+	for i := 0; i < v.Len(); i++ {
+		if s.Type.Dimension == dimension {
+			switch s.Type.TypeID {
+			case contract.TStruct:
+				if !assertStructType(t, s, v.Index(i).Interface()) {
+					return false
+				}
+			default:
+				if !assertPrimitiveType(t, s, v.Index(i).Interface()) {
+					return false
+				}
+			}
+		} else {
+			if !assertArrayType(t, s, dimension+1, v.Index(i)) {
+				return false
+			}
+		}
+	}
+	return true
 }
