@@ -449,3 +449,58 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	}
 	return nil
 }
+
+func EqualsTypeSpec(a, b TypeSpec) bool {
+	if a.Dimension != b.Dimension {
+		return false
+	}
+	if a.TypeID != b.TypeID {
+		return false
+	}
+	switch a.TypeID {
+	case TUnknown:
+		return a.Name == b.Name
+	case TStruct:
+		//ignore StructSpec.Name
+		return EqualsNameAndTypes(a.Resolved.FieldMap, b.Resolved.FieldMap)
+	default:
+		return true
+	}
+}
+
+func EqualsNameAndTypes(a, b map[string]*NameAndTypeSpec) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, av := range a {
+		bv, ok := b[k]
+		if !ok {
+			return false
+		}
+		if !EqualsTypeSpec(av.Type, bv.Type) {
+			return false
+		}
+		//TODO NameAndTypeSpec.Optional
+	}
+	return true
+}
+
+func OptionalInputs(a, b map[string]*NameAndTypeSpec) (map[string]*NameAndTypeSpec, error) {
+	r := make(map[string]*NameAndTypeSpec)
+	for k, v := range a {
+		bv, ok := b[k]
+		if ok {
+			if !EqualsTypeSpec(v.Type, bv.Type) {
+				return nil, errors.Errorf("mismatch input name:%s", k)
+			}
+		} else {
+			r[k] = v
+		}
+	}
+	for k, v := range b {
+		if _, ok := a[k]; !ok {
+			r[k] = v
+		}
+	}
+	return r, nil
+}

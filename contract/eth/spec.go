@@ -21,7 +21,7 @@ import (
 	"encoding/json"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/icon-project/btp2/common/log"
+	"github.com/icon-project/btp2/common/errors"
 
 	"github.com/icon-project/btp-sdk/contract"
 )
@@ -31,109 +31,151 @@ func init() {
 }
 
 func NewSpec(b []byte) (*contract.Spec, error) {
-	out, err := ABIFromJSON(b)
+	out, err := abi.JSON(bytes.NewBuffer(b))
 	if err != nil {
 		return nil, err
 	}
-	s := SpecFromABI(out)
-	return &s, nil
+	return SpecFromABI(out)
 }
 
-func ABIFromJSON(b []byte) (abi.ABI, error) {
-	out, err := abi.JSON(bytes.NewBuffer(b))
-	if err != nil {
-		return abi.ABI{}, err
+func SpecFromABI(out abi.ABI) (*contract.Spec, error) {
+	spec := &contract.Spec{
+		Methods:   make([]contract.MethodSpec, 0),
+		Events:    make([]contract.EventSpec, 0),
+		Structs:   make([]contract.StructSpec, 0),
+		MethodMap: make(map[string]*contract.MethodSpec),
+		EventMap:  make(map[string]*contract.EventSpec),
+		StructMap: make(map[string]*contract.StructSpec),
 	}
-	//FIXME not allowed method override
-	//for _, m := range out.Methods {
-	//
-	//}
-	//FIXME len(out.Methods.Outputs) > 0 throw error
-	return out, nil
-}
-
-func SpecFromABI(out abi.ABI) contract.Spec {
-	spec := contract.Spec{
-		Methods: make([]contract.MethodSpec, 0),
-		Events:  make([]contract.EventSpec, 0),
-		Structs: make([]contract.StructSpec, 0),
-	}
-	structMap := make(map[string]contract.StructSpec)
 	for _, m := range out.Methods {
-		inputs := make([]contract.NameAndTypeSpec, 0)
-		for _, i := range m.Inputs {
-			input := contract.NameAndTypeSpec{
-				Name: i.Name,
-				Type: NewTypeSpec(i.Type, structMap),
-			}
-			inputs = append(inputs, input)
-		}
-		var output contract.TypeSpec
-		if len(m.Outputs) == 0 {
-			output.Name = contract.TVoid.String()
-		} else if len(m.Outputs) == 1 {
-			o := m.Outputs[0]
-			output = NewTypeSpec(o.Type, structMap)
-		} else {
-			log.Panicln("not support multiple Outputs method:", m.Name)
-		}
-
 		method := contract.MethodSpec{
-			Name:     m.RawName,
-			Inputs:   inputs,
-			Output:   output,
+			Name:   m.RawName,
+			Inputs: make([]contract.NameAndTypeSpec, 0),
+			Output: contract.TypeSpec{
+				Name:   contract.TVoid.String(),
+				TypeID: contract.TVoid,
+			},
 			ReadOnly: m.IsConstant(),
 			Payable:  m.IsPayable(),
+			InputMap: make(map[string]*contract.NameAndTypeSpec),
 		}
-		spec.Methods = append(spec.Methods, method)
-	}
-	for _, e := range out.Events {
-		indexed := 0
-		inputs := make([]contract.NameAndTypeSpec, 0)
-		for _, i := range e.Inputs {
+		for _, i := range m.Inputs {
+			it, err := newTypeSpec(i.Type, spec)
+			if err != nil {
+				return nil, errors.Wrapf(err, "method:%s input:%s err:%s", method.Name, i.Name, err.Error())
+			}
 			input := contract.NameAndTypeSpec{
 				Name: i.Name,
-				Type: NewTypeSpec(i.Type, structMap),
+				Type: it,
+			}
+			method.Inputs = append(method.Inputs, input)
+			method.InputMap[input.Name] = &method.Inputs[len(method.Inputs)-1]
+		}
+		if len(m.Outputs) > 1 {
+			return nil, errors.Errorf("method:%s output err:not support multiple", method.Name)
+		}
+		if len(m.Outputs) == 1 {
+			ot, err := newTypeSpec(m.Outputs[0].Type, spec)
+			if err != nil {
+				return nil, errors.Wrapf(err, "method:%s output err:%s", method.Name, err.Error())
+			}
+			method.Output = ot
+		}
+
+		if old, exists := spec.MethodMap[method.Name]; exists {
+			if !contract.EqualsTypeSpec(old.Output, method.Output) {
+				return nil, errors.Errorf("method:%s overload err:not support output overload", method.Name)
+			}
+			optionals, err := contract.OptionalInputs(old.InputMap, method.InputMap)
+			if err != nil {
+				return nil, errors.Wrapf(err, "method:%s overload err:%s", method.Name, err.Error())
+			}
+			for k, v := range optionals {
+				if input, ok := old.InputMap[k]; ok {
+					input.Optional = true
+				} else {
+					cp := *v
+					cp.Optional = true
+					old.Inputs = append(old.Inputs, cp)
+					old.InputMap[v.Name] = &old.Inputs[len(old.Inputs)-1]
+				}
+			}
+			continue
+		}
+		spec.Methods = append(spec.Methods, method)
+		spec.MethodMap[method.Name] = &spec.Methods[len(spec.Methods)-1]
+	}
+	for _, e := range out.Events {
+		event := contract.EventSpec{
+			Name:        e.RawName,
+			Indexed:     0,
+			Inputs:      make([]contract.NameAndTypeSpec, 0),
+			InputMap:    make(map[string]*contract.NameAndTypeSpec),
+			Signature:   "",
+			NameToIndex: make(map[string]int),
+		}
+
+		for idx, i := range e.Inputs {
+			it, err := newTypeSpec(i.Type, spec)
+			if err != nil {
+				return nil, errors.Wrapf(err, "event:%s input:%s err:%s", event.Name, i.Name, err.Error())
+			}
+			input := contract.NameAndTypeSpec{
+				Name: i.Name,
+				Type: it,
 			}
 			if i.Indexed {
-				indexed++
+				event.Indexed++
+				event.NameToIndex[input.Name] = idx
 			}
-			inputs = append(inputs, input)
+			event.Inputs = append(event.Inputs, input)
+			event.InputMap[input.Name] = &event.Inputs[len(event.Inputs)-1]
 		}
-		event := contract.EventSpec{
-			Name:    e.RawName,
-			Indexed: indexed,
-			Inputs:  inputs,
+
+		if old, exists := spec.EventMap[event.Name]; exists {
+			optionals, err := contract.OptionalInputs(old.InputMap, event.InputMap)
+			if err != nil {
+				return nil, errors.Wrapf(err, "event:%s overload err:%s", event.Name, err.Error())
+			}
+			for k, v := range optionals {
+				if input, ok := old.InputMap[k]; ok {
+					input.Optional = true
+				} else {
+					cp := *v
+					cp.Optional = true
+					old.Inputs = append(old.Inputs, cp)
+					old.InputMap[v.Name] = &old.Inputs[len(old.Inputs)-1]
+				}
+			}
+			continue
 		}
 		spec.Events = append(spec.Events, event)
-	}
-	for _, v := range structMap {
-		spec.Structs = append(spec.Structs, v)
+		spec.EventMap[event.Name] = &spec.Events[len(spec.Events)-1]
 	}
 	b, err := json.Marshal(spec)
 	if err != nil {
-		log.Panicf("fail to Marshal err:%v", err.Error())
+		return nil, errors.Wrapf(err, "fail to Marshal err:%v", err.Error())
 	}
-	ret := contract.Spec{}
-	err = json.Unmarshal(b, &ret)
+	ret := &contract.Spec{}
+	err = json.Unmarshal(b, ret)
 	if err != nil {
-		log.Panicf("fail to Unmarshal err:%v", err.Error())
+		return nil, errors.Wrapf(err, "fail to Unmarshal err:%v", err.Error())
 	}
-	return ret
+	return ret, nil
 }
 
-func NewTypeSpec(t abi.Type, structMap map[string]contract.StructSpec) contract.TypeSpec {
+func newTypeSpec(t abi.Type, spec *contract.Spec) (contract.TypeSpec, error) {
 	switch t.T {
 	case abi.ArrayTy, abi.SliceTy:
-		return NewArrayTypeSpec(t, structMap)
+		return newArrayTypeSpec(t, spec)
 	case abi.TupleTy:
-		return NewStructTypeSpec(t, structMap)
+		return newStructTypeSpec(t, spec)
 	default:
-		return NewPrimitiveTypeSpec(t)
+		return newPrimitiveTypeSpec(t)
 	}
 }
 
-func NewPrimitiveTypeSpec(t abi.Type) contract.TypeSpec {
+func newPrimitiveTypeSpec(t abi.Type) (contract.TypeSpec, error) {
 	var s contract.TypeTag
 	switch t.T {
 	case abi.IntTy, abi.UintTy:
@@ -147,38 +189,55 @@ func NewPrimitiveTypeSpec(t abi.Type) contract.TypeSpec {
 	case abi.BoolTy:
 		s = contract.TBoolean
 	default:
-		log.Panicln("not supported type:", t)
+		return contract.TypeSpec{}, errors.Errorf("not supported type:%s", t.String())
 	}
 	return contract.TypeSpec{
-		Name: s.String(),
-	}
+		Name:   s.String(),
+		TypeID: s,
+	}, nil
 }
 
-func NewStructTypeSpec(t abi.Type, structMap map[string]contract.StructSpec) contract.TypeSpec {
+func newStructTypeSpec(t abi.Type, spec *contract.Spec) (contract.TypeSpec, error) {
 	s := contract.StructSpec{
 		Name:   t.TupleRawName,
 		Fields: make([]contract.NameAndTypeSpec, 0),
 	}
 	for i, n := range t.TupleRawNames {
+		ft, err := newTypeSpec(*t.TupleElems[i], spec)
+		if err != nil {
+			return contract.TypeSpec{}, err
+		}
 		field := contract.NameAndTypeSpec{
 			Name: n,
-			Type: NewTypeSpec(*t.TupleElems[i], structMap),
+			Type: ft,
 		}
 		s.Fields = append(s.Fields, field)
 	}
-	structMap[s.Name] = s
-	return contract.TypeSpec{
-		Name: s.Name,
+	if old, ok := spec.StructMap[s.Name]; ok {
+		if !contract.EqualsNameAndTypes(old.FieldMap, s.FieldMap) {
+			return contract.TypeSpec{}, errors.Errorf("duplicated struct type:%s", s.Name)
+		}
 	}
+	spec.Structs = append(spec.Structs, s)
+	ptr := &spec.Structs[len(spec.Structs)-1]
+	spec.StructMap[s.Name] = ptr
+	return contract.TypeSpec{
+		Name:     s.Name,
+		Resolved: ptr,
+	}, nil
 }
 
-func NewArrayTypeSpec(t abi.Type, structMap map[string]contract.StructSpec) contract.TypeSpec {
+func newArrayTypeSpec(t abi.Type, spec *contract.Spec) (contract.TypeSpec, error) {
 	if t.T != abi.ArrayTy && t.T != abi.SliceTy {
-		log.Panicln("invalid type:", t)
+		return contract.TypeSpec{}, errors.Errorf("invalid array type:%s", t.String())
 	}
-	s := NewTypeSpec(*t.Elem, structMap)
+	s, err := newTypeSpec(*t.Elem, spec)
+	if err != nil {
+		return contract.TypeSpec{}, err
+	}
 	return contract.TypeSpec{
 		Name:      s.Name,
+		TypeID:    s.TypeID,
 		Dimension: s.Dimension + 1,
-	}
+	}, nil
 }
