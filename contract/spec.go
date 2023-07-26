@@ -276,6 +276,9 @@ func (s *MethodSpec) UnmarshalJSON(data []byte) error {
 	s.InputMap = make(map[string]*NameAndTypeSpec)
 	for i := 0; i < len(s.Inputs); i++ {
 		v := &s.Inputs[i]
+		if old, exists := s.InputMap[v.Name]; exists {
+			specLogger.Warnf("MethodSpec overwrite name:%s input:%+v", s.Name, old)
+		}
 		s.InputMap[v.Name] = v
 	}
 	return nil
@@ -283,12 +286,12 @@ func (s *MethodSpec) UnmarshalJSON(data []byte) error {
 
 func (s *MethodSpec) resolveType(structMap map[string]*StructSpec) error {
 	for _, v := range s.InputMap {
-		specLogger.Traceln("MethodSpec resolve input:", v.Name)
+		specLogger.Tracef("MethodSpec resolve name:%s input:%s", s.Name, v.Name)
 		if err := v.Type.resolveType(structMap); err != nil {
 			return err
 		}
 	}
-	specLogger.Traceln("MethodSpec resolve output:", s.Output.Name)
+	specLogger.Tracef("MethodSpec resolve name:%s output:%s", s.Name, s.Output.Name)
 	return s.Output.resolveType(structMap)
 }
 
@@ -312,6 +315,9 @@ func (s *EventSpec) UnmarshalJSON(data []byte) error {
 	s.NameToIndex = make(map[string]int)
 	for i := 0; i < len(s.Inputs); i++ {
 		v := &s.Inputs[i]
+		if old, exists := s.InputMap[v.Name]; exists {
+			specLogger.Warnf("EventSpec overwrite name:%s input:%+v", s.Name, old)
+		}
 		s.InputMap[v.Name] = v
 		s.NameToIndex[v.Name] = i
 	}
@@ -320,7 +326,7 @@ func (s *EventSpec) UnmarshalJSON(data []byte) error {
 
 func (s *EventSpec) resolveType(structMap map[string]*StructSpec) error {
 	for _, v := range s.InputMap {
-		specLogger.Traceln("EventSpec resolve input:", v.Name)
+		specLogger.Tracef("EventSpec resolve name:%s input:%s", s.Name, v.Name)
 		if err := v.Type.resolveType(structMap); err != nil {
 			return err
 		}
@@ -357,6 +363,9 @@ func (s *StructSpec) UnmarshalJSON(data []byte) error {
 	s.FieldMap = make(map[string]*NameAndTypeSpec)
 	for i := 0; i < len(s.Fields); i++ {
 		v := &s.Fields[i]
+		if old, exists := s.FieldMap[v.Name]; exists {
+			specLogger.Warnf("StructSpec overwrite name:%s input:%+v", s.Name, old)
+		}
 		s.FieldMap[v.Name] = v
 	}
 	return nil
@@ -364,7 +373,7 @@ func (s *StructSpec) UnmarshalJSON(data []byte) error {
 
 func (s *StructSpec) resolveType(structMap map[string]*StructSpec) error {
 	for _, v := range s.FieldMap {
-		specLogger.Traceln("StructSpec resolve field:", v.Name)
+		specLogger.Tracef("StructSpec resolve name:%s field:%s", s.Name, v.Name)
 		if err := v.Type.resolveType(structMap); err != nil {
 			return err
 		}
@@ -403,10 +412,13 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 
 	s.StructMap = make(map[string]*StructSpec)
 	for i := 0; i < len(s.Structs); i++ {
-		s.StructMap[s.Structs[i].Name] = &s.Structs[i]
+		v := &s.Structs[i]
+		if old, exists := s.StructMap[v.Name]; exists {
+			specLogger.Warnf("StructSpec overwrite name:%s fields:%v", old.Name, old.Fields)
+		}
+		s.StructMap[v.Name] = v
 	}
 	for _, v := range s.StructMap {
-		specLogger.Tracef("StructSpec resolve name:%s ptr:%p\n", v.Name, v)
 		if err := v.resolveType(s.StructMap); err != nil {
 			return err
 		}
@@ -414,8 +426,11 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	s.MethodMap = make(map[string]*MethodSpec)
 	for i := 0; i < len(s.Methods); i++ {
 		v := &s.Methods[i]
+		if old, exists := s.MethodMap[v.Name]; exists {
+			specLogger.Warnf("MethodSpec overwrite name:%s inputs:%v output:%v readonly:%v payable:%v",
+				old.Name, old.Inputs, old.Output, old.ReadOnly, old.Payable)
+		}
 		s.MethodMap[v.Name] = v
-		specLogger.Tracef("MethodSpec resolve name:%s readonly:%v\n", v.Name, v.ReadOnly)
 		if err := v.resolveType(s.StructMap); err != nil {
 			return err
 		}
@@ -423,8 +438,11 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	s.EventMap = make(map[string]*EventSpec)
 	for i := 0; i < len(s.Events); i++ {
 		v := &s.Events[i]
+		if old, exists := s.EventMap[v.Name]; exists {
+			specLogger.Warnf("EventSpec overwrite name:%s inputs:%v indexed:%v",
+				old.Name, old.Inputs, old.Indexed)
+		}
 		s.EventMap[v.Name] = v
-		specLogger.Tracef("EventSpec resolve name:%s indexed:%v\n", v.Name, v.Indexed)
 		if err := v.resolveType(s.StructMap); err != nil {
 			return err
 		}
