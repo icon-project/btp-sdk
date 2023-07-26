@@ -276,6 +276,9 @@ func (s *MethodSpec) UnmarshalJSON(data []byte) error {
 	s.InputMap = make(map[string]*NameAndTypeSpec)
 	for i := 0; i < len(s.Inputs); i++ {
 		v := &s.Inputs[i]
+		if old, exists := s.InputMap[v.Name]; exists {
+			specLogger.Warnf("MethodSpec overwrite name:%s input:%+v", s.Name, old)
+		}
 		s.InputMap[v.Name] = v
 	}
 	return nil
@@ -283,12 +286,12 @@ func (s *MethodSpec) UnmarshalJSON(data []byte) error {
 
 func (s *MethodSpec) resolveType(structMap map[string]*StructSpec) error {
 	for _, v := range s.InputMap {
-		specLogger.Traceln("MethodSpec resolve input:", v.Name)
+		specLogger.Tracef("MethodSpec resolve name:%s input:%s", s.Name, v.Name)
 		if err := v.Type.resolveType(structMap); err != nil {
 			return err
 		}
 	}
-	specLogger.Traceln("MethodSpec resolve output:", s.Output.Name)
+	specLogger.Tracef("MethodSpec resolve name:%s output:%s", s.Name, s.Output.Name)
 	return s.Output.resolveType(structMap)
 }
 
@@ -312,6 +315,9 @@ func (s *EventSpec) UnmarshalJSON(data []byte) error {
 	s.NameToIndex = make(map[string]int)
 	for i := 0; i < len(s.Inputs); i++ {
 		v := &s.Inputs[i]
+		if old, exists := s.InputMap[v.Name]; exists {
+			specLogger.Warnf("EventSpec overwrite name:%s input:%+v", s.Name, old)
+		}
 		s.InputMap[v.Name] = v
 		s.NameToIndex[v.Name] = i
 	}
@@ -320,7 +326,7 @@ func (s *EventSpec) UnmarshalJSON(data []byte) error {
 
 func (s *EventSpec) resolveType(structMap map[string]*StructSpec) error {
 	for _, v := range s.InputMap {
-		specLogger.Traceln("EventSpec resolve input:", v.Name)
+		specLogger.Tracef("EventSpec resolve name:%s input:%s", s.Name, v.Name)
 		if err := v.Type.resolveType(structMap); err != nil {
 			return err
 		}
@@ -357,6 +363,9 @@ func (s *StructSpec) UnmarshalJSON(data []byte) error {
 	s.FieldMap = make(map[string]*NameAndTypeSpec)
 	for i := 0; i < len(s.Fields); i++ {
 		v := &s.Fields[i]
+		if old, exists := s.FieldMap[v.Name]; exists {
+			specLogger.Warnf("StructSpec overwrite name:%s input:%+v", s.Name, old)
+		}
 		s.FieldMap[v.Name] = v
 	}
 	return nil
@@ -364,7 +373,7 @@ func (s *StructSpec) UnmarshalJSON(data []byte) error {
 
 func (s *StructSpec) resolveType(structMap map[string]*StructSpec) error {
 	for _, v := range s.FieldMap {
-		specLogger.Traceln("StructSpec resolve field:", v.Name)
+		specLogger.Tracef("StructSpec resolve name:%s field:%s", s.Name, v.Name)
 		if err := v.Type.resolveType(structMap); err != nil {
 			return err
 		}
@@ -403,10 +412,13 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 
 	s.StructMap = make(map[string]*StructSpec)
 	for i := 0; i < len(s.Structs); i++ {
-		s.StructMap[s.Structs[i].Name] = &s.Structs[i]
+		v := &s.Structs[i]
+		if old, exists := s.StructMap[v.Name]; exists {
+			specLogger.Warnf("StructSpec overwrite name:%s fields:%v", old.Name, old.Fields)
+		}
+		s.StructMap[v.Name] = v
 	}
 	for _, v := range s.StructMap {
-		specLogger.Tracef("StructSpec resolve name:%s ptr:%p\n", v.Name, v)
 		if err := v.resolveType(s.StructMap); err != nil {
 			return err
 		}
@@ -414,8 +426,11 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	s.MethodMap = make(map[string]*MethodSpec)
 	for i := 0; i < len(s.Methods); i++ {
 		v := &s.Methods[i]
+		if old, exists := s.MethodMap[v.Name]; exists {
+			specLogger.Warnf("MethodSpec overwrite name:%s inputs:%v output:%v readonly:%v payable:%v",
+				old.Name, old.Inputs, old.Output, old.ReadOnly, old.Payable)
+		}
 		s.MethodMap[v.Name] = v
-		specLogger.Tracef("MethodSpec resolve name:%s readonly:%v\n", v.Name, v.ReadOnly)
 		if err := v.resolveType(s.StructMap); err != nil {
 			return err
 		}
@@ -423,8 +438,11 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	s.EventMap = make(map[string]*EventSpec)
 	for i := 0; i < len(s.Events); i++ {
 		v := &s.Events[i]
+		if old, exists := s.EventMap[v.Name]; exists {
+			specLogger.Warnf("EventSpec overwrite name:%s inputs:%v indexed:%v",
+				old.Name, old.Inputs, old.Indexed)
+		}
 		s.EventMap[v.Name] = v
-		specLogger.Tracef("EventSpec resolve name:%s indexed:%v\n", v.Name, v.Indexed)
 		if err := v.resolveType(s.StructMap); err != nil {
 			return err
 		}
@@ -432,187 +450,57 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func ParamsTypeCheck(inputs map[string]*NameAndTypeSpec, params Params) error {
-	if len(params) > len(inputs) {
-		return errors.Errorf("invalid length params")
+func EqualsTypeSpec(a, b TypeSpec) bool {
+	if a.Dimension != b.Dimension {
+		return false
 	}
-	for k, v := range params {
-		spec, ok := inputs[k]
-		if !ok {
-			return errors.Errorf("not found param name:%s", k)
-		}
-		return typeCheck(spec, v)
+	if a.TypeID != b.TypeID {
+		return false
 	}
-	return nil
-}
-
-func typeCheck(s *NameAndTypeSpec, value interface{}) error {
-	specLogger.Traceln("typeCheck name:", s.Name, "typeName:", s.Type.Name, "type:", s.Type.TypeID.String(),
-		"reflect:", s.Type.Type)
-	if s.Type.Dimension > 0 {
-		return arrayTypeCheck(s, 1, reflect.ValueOf(value))
-	} else {
-		switch s.Type.TypeID {
-		case TStruct:
-			return structTypeCheck(s, value)
-		default:
-			return primitiveTypeCheck(s, value)
-		}
-	}
-}
-
-func primitiveTypeCheck(s *NameAndTypeSpec, value interface{}) error {
-	specLogger.Traceln("primitiveTypeCheck name:", s.Name, "typeName:", s.Type.Name,
-		"type:", s.Type.TypeID.String(), "reflect:", s.Type.TypeID.Type(), value)
-	ok := false
-	switch s.Type.TypeID {
-	case TInteger:
-		_, ok = value.(Integer)
-	case TString:
-		_, ok = value.(String)
-	case TAddress:
-		_, ok = value.(Address)
-	case TBytes:
-		_, ok = value.(Bytes)
-	case TBoolean:
-		_, ok = value.(Boolean)
+	switch a.TypeID {
+	case TUnknown:
+		return a.Name == b.Name
+	case TStruct:
+		//ignore StructSpec.Name
+		return EqualsNameAndTypes(a.Resolved.FieldMap, b.Resolved.FieldMap)
 	default:
-		return errors.Errorf("not supported param type name:%s typeID:%v", s.Name, s.Type.TypeID.String())
+		return true
 	}
-	if !ok {
-		return errors.Errorf("invalid param type name:%s expected:%s actual:%T",
-			s.Name, s.Type.TypeID.String(), value)
-	}
-	return nil
 }
 
-func structTypeCheck(s *NameAndTypeSpec, value interface{}) error {
-	specLogger.Traceln("structTypeCheck name:", s.Name, "typeName:", s.Type.Name, value)
-	var m map[string]interface{}
-	st, ok := value.(Struct)
-	if ok {
-		m = st.Params()
-	} else {
-		if m, ok = value.(Params); !ok {
-			if m, ok = value.(map[string]interface{}); !ok {
-				return errors.Errorf("invalid param type name:%s, expected:%s actual:%T",
-					s.Name, s.Type.TypeID.String(), value)
-			}
-		}
+func EqualsNameAndTypes(a, b map[string]*NameAndTypeSpec) bool {
+	if len(a) != len(b) {
+		return false
 	}
-
-	for k, v := range m {
-		spec, ok := s.Type.Resolved.FieldMap[k]
+	for k, av := range a {
+		bv, ok := b[k]
 		if !ok {
-			return errors.Errorf("not found param name:%s", k)
+			return false
 		}
-		if err := typeCheck(spec, v); err != nil {
-			return err
+		if !EqualsTypeSpec(av.Type, bv.Type) {
+			return false
 		}
+		//TODO NameAndTypeSpec.Optional
 	}
-	return nil
+	return true
 }
 
-func arrayTypeCheck(s *NameAndTypeSpec, dimension int, v reflect.Value) error {
-	specLogger.Traceln("arrayTypeCheck name:", s.Name, "typeName:", s.Type.Name, v.Interface())
-	if v.Kind() != reflect.Array && v.Kind() != reflect.Slice {
-		return errors.Errorf("invalid param type name:%s, expected:%s actual:%v",
-			s.Name, s.Type.TypeID.String(), v.Type())
-	}
-	for i := 0; i < v.Len(); i++ {
-		var err error
-		if s.Type.Dimension == dimension {
-			switch s.Type.TypeID {
-			case TStruct:
-				err = structTypeCheck(s, v.Index(i).Interface())
-			default:
-				err = primitiveTypeCheck(s, v.Index(i).Interface())
+func OptionalInputs(a, b map[string]*NameAndTypeSpec) (map[string]*NameAndTypeSpec, error) {
+	r := make(map[string]*NameAndTypeSpec)
+	for k, v := range a {
+		bv, ok := b[k]
+		if ok {
+			if !EqualsTypeSpec(v.Type, bv.Type) {
+				return nil, errors.Errorf("mismatch input name:%s", k)
 			}
 		} else {
-			err = arrayTypeCheck(s, dimension+1, v.Index(i))
-		}
-		if err != nil {
-			return err
+			r[k] = v
 		}
 	}
-	return nil
-}
-
-// TypeSpecOf returns TypeSpec of given value,
-// type of value should be one of Integer, Boolean, String, Bytes, Address, Struct
-func TypeSpecOf(value interface{}) (*TypeSpec, error) {
-	specLogger.Tracef("TypeSpecOf type:%T value:%v", value, value)
-	v := reflect.ValueOf(value)
-	s := TypeIDByType(v.Type())
-	switch s {
-	case TUnknown:
-		if v.Type().Kind() == reflect.Array || v.Type().Kind() == reflect.Slice {
-			if v.Len() == 0 {
-				log.Panicln("invalid array length")
-			}
-			spec, err := TypeSpecOf(v.Index(0).Interface())
-			if err != nil {
-				return nil, err
-			}
-			return &TypeSpec{
-				Name:      spec.Name,
-				Dimension: spec.Dimension + 1,
-				TypeID:    spec.TypeID,
-				Type:      reflect.SliceOf(spec.Type),
-			}, nil
+	for k, v := range b {
+		if _, ok := a[k]; !ok {
+			r[k] = v
 		}
-		return nil, errors.Errorf("not supported type %v", v.Type())
-	case TStruct:
-		st, ok := v.Interface().(Struct)
-		if !ok {
-			return nil, errors.Errorf("invalid type %v", v.Type())
-		}
-		spec := &StructSpec{
-			Name:     st.Name,
-			Fields:   make([]NameAndTypeSpec, len(st.Fields)),
-			FieldMap: make(map[string]*NameAndTypeSpec),
-		}
-		sfs := make([]reflect.StructField, 0)
-		for i, f := range st.Fields {
-			fs, err := TypeSpecOf(f.Value)
-			if err != nil {
-				return nil, err
-			}
-			spec.Fields[i] = NameAndTypeSpec{
-				Name: f.Key,
-				Type: *fs,
-			}
-			spec.FieldMap[f.Key] = &spec.Fields[i]
-			sf := reflect.StructField{
-				Name: strings.ToUpper(f.Key[:1]) + f.Key[1:],
-				Type: fs.Type,
-				Tag:  reflect.StructTag("json:\"" + f.Key + "\""),
-			}
-			sfs = append(sfs, sf)
-		}
-		spec.Type = reflect.StructOf(sfs)
-		return &TypeSpec{
-			Name:     spec.Name,
-			Type:     spec.Type,
-			TypeID:   TStruct,
-			Resolved: spec,
-		}, nil
-	default:
-		types := []reflect.Type{
-			nil,
-			nil,
-			reflect.TypeOf(new(big.Int)),
-			reflect.TypeOf(true),
-			reflect.TypeOf(""),
-			reflect.TypeOf([]byte("")),
-			nil,
-			reflect.TypeOf(""),
-		}
-		//FIXME TypeSpec.Type should be golang type
-		return &TypeSpec{
-			Name:   s.String(),
-			Type:   types[s],
-			TypeID: s,
-		}, nil
 	}
+	return r, nil
 }

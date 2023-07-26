@@ -17,6 +17,7 @@
 package eth
 
 import (
+	"bytes"
 	"context"
 	"math/big"
 
@@ -31,12 +32,16 @@ import (
 )
 
 func NewHandler(spec []byte, address common.Address, a *Adaptor, l log.Logger) (contract.Handler, error) {
-	out, err := ABIFromJSON(spec)
+	out, err := abi.JSON(bytes.NewBuffer(spec))
+	if err != nil {
+		return nil, err
+	}
+	in, err := SpecFromABI(out)
 	if err != nil {
 		return nil, err
 	}
 	return &Handler{
-		in:      SpecFromABI(out),
+		in:      *in,
 		out:     out,
 		address: address,
 		a:       a,

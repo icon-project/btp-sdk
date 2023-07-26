@@ -323,6 +323,10 @@ func StructOfWithSpec(spec StructSpec, value interface{}) (interface{}, error) {
 		if !ok {
 			return nil, ErrorCodeInvalidParam.Errorf("unknown field name:%s", k)
 		}
+		if v == nil {
+			params[k] = nil
+			continue
+		}
 		param, err := ParamOfWithSpec(s.Type, v)
 		if err != nil {
 			return nil, err
@@ -412,6 +416,10 @@ func ParamsOfWithSpec(spec map[string]*NameAndTypeSpec, value interface{}) (Para
 		s, ok := spec[k]
 		if !ok {
 			return nil, ErrorCodeInvalidParam.Errorf("unknown param name:%s", k)
+		}
+		if v == nil {
+			params[k] = nil
+			continue
 		}
 		param, err := ParamOfWithSpec(s.Type, v)
 		if err != nil {
