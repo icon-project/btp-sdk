@@ -54,6 +54,7 @@ func (s *Spec) Merge(cs contract.Spec, networkTypes ...string) {
 			}
 		} else {
 			s.Methods[name] = NewMethodSpec(cm, networkTypes...)
+			specLogger.Tracef("Spec append MethodSpec:%s networkType:%v", name, networkTypes)
 		}
 	}
 	for name, ce := range cs.EventMap {
@@ -64,6 +65,7 @@ func (s *Spec) Merge(cs contract.Spec, networkTypes ...string) {
 			}
 		} else {
 			s.Events[name] = NewEventSpec(ce, networkTypes...)
+			specLogger.Tracef("Spec append EventSpec:%s networkType:%v", name, networkTypes)
 		}
 	}
 	StringSetMerge(s.NetworkTypes, networkTypes)
@@ -205,11 +207,11 @@ func (s *MethodSpec) merge(cs *contract.MethodSpec, networkTypes ...string) Meth
 		}
 		if to != nil {
 			to.NetworkTypes = StringSetMerge(to.NetworkTypes, networkTypes)
-			specLogger.Tracef("MethodSpec:%s add overload networkTypes:%s", s.Name, strings.Join(networkTypes, ","))
+			specLogger.Tracef("MethodSpec:%s add overload networkTypes:%s flag:%x", s.Name, strings.Join(networkTypes, ","), f)
 		} else {
 			to = NewMethodOverload(f, cs, networkTypes...)
 			s.Overloads = append(s.Overloads, to)
-			specLogger.Tracef("MethodSpec:%s new overload networkTypes:%s", s.Name, strings.Join(networkTypes, ","))
+			specLogger.Tracef("MethodSpec:%s new overload networkTypes:%s flag:%x", s.Name, strings.Join(networkTypes, ","), f)
 		}
 	}
 	return f
