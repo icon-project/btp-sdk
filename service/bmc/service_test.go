@@ -141,7 +141,7 @@ func Test_Service(t *testing.T) {
 		}
 	}
 	l := log.GlobalLogger()
-	s, err := NewService(networks, l)
+	s, err := service.NewService(ServiceName, networks, l)
 	if err != nil {
 		assert.FailNow(t, "fail to NewService", err)
 	}

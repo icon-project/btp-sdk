@@ -81,9 +81,8 @@ type ServiceOptions struct {
 }
 
 type Service struct {
-	*service.MultiContractService
-	spec service.Spec
-	l    log.Logger
+	*service.MergedService
+	l log.Logger
 }
 
 func NewService(networks map[string]service.Network, l log.Logger) (service.Service, error) {
@@ -91,54 +90,64 @@ func NewService(networks map[string]service.Network, l log.Logger) (service.Serv
 	if err != nil {
 		return nil, err
 	}
-	ss := service.CopySpec(s.Spec())
-	if err = ss.MergeOverloads(mergeInfos); err != nil {
-		return nil, err
-	}
-	return &Service{
-		MultiContractService: s,
-		spec:                 ss,
-		l:                    l,
-	}, nil
-}
-
-func (s *Service) Spec() service.Spec {
-	return s.spec
-}
-
-func (s *Service) Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error) {
-	switch method {
-	case "handleRelayMessage":
-		b, err := contract.BytesOf(params["_msg"])
-		if err != nil {
-			return nil, err
-		}
-		params["_msg"] = base64.StdEncoding.EncodeToString(b)
-	}
-	return s.MultiContractService.Invoke(network, method, params, options)
-}
-
-func (s *Service) Call(network, method string, params contract.Params, options contract.Options) (contract.ReturnValue, error) {
-	ret, err := s.MultiContractService.Call(network, method, params, options)
+	ms, err := service.NewMergedService(s, &mergeHandler{l: l}, l)
 	if err != nil {
 		return nil, err
 	}
-	switch method {
+	return &Service{
+		MergedService: ms,
+		l:             l,
+	}, nil
+}
+
+type mergeHandler struct {
+	l log.Logger
+}
+
+func (h *mergeHandler) MergeMethodOverloads(s *service.MethodSpec) (bool, error) {
+	switch s.Name {
+	case "getServices", "getVerifiers", "getRoutes", "getStatus":
+		return true, s.MergeOverloads(iconSpec.MethodMap[s.Name], service.MethodOverloadOutput)
+	case "handleRelayMessage":
+		return true, s.MergeOverloads(ethSpec.MethodMap[s.Name], service.MethodOverloadInputs)
+	}
+	return false, nil
+}
+
+func (h *mergeHandler) MergeEventOverloads(s *service.EventSpec) (bool, error) {
+	return false, nil
+}
+
+func (h *mergeHandler) HandleMethodInputs(name string, org, merged map[string]*contract.NameAndTypeSpec, params contract.Params) (contract.Params, error) {
+	switch name {
+	case "handleRelayMessage":
+		inputName := "_msg"
+		b, err := contract.BytesOf(params[inputName])
+		if err != nil {
+			return nil, err
+		}
+		params[inputName] = base64.StdEncoding.EncodeToString(b)
+	}
+	return params, nil
+}
+
+func (h *mergeHandler) HandleMethodOutput(name string, org, merged contract.TypeSpec, r contract.ReturnValue) (contract.ReturnValue, error) {
+	switch name {
 	case "getServices", "getVerifiers", "getRoutes":
-		if l, ok := ret.([]contract.Struct); ok {
-			m := make(contract.Params)
+		if l, ok := r.([]contract.Struct); ok {
+			ret := make(contract.Params)
 			for _, st := range l {
 				k, err := contract.StringOf(st.Fields[0].Value)
 				if err != nil {
 					return nil, err
 				}
-				m[string(k)] = st.Fields[1].Value
+				ret[string(k)] = st.Fields[1].Value
 			}
-			return m, nil
+			return ret, nil
 		}
 	case "getStatus":
-		if st, ok := ret.(contract.Struct); ok {
-			to := s.spec.Methods[method].Output.Resolved
+		if st, ok := r.(contract.Struct); ok {
+			to := merged.Resolved
 			t := make(contract.Params)
 			for i, f := range st.Fields {
 				t[to.Fields[i].Name] = f.Value
@@ -146,5 +155,13 @@ func (s *Service) Call(network, method string, params contract.Params, options c
 			return contract.StructOfWithSpec(*to, t)
 		}
 	}
-	return ret, nil
+	return r, nil
+}
+
+func (h *mergeHandler) HandleEventFilterParams(s *service.EventSpec, o *service.EventOverload, l []contract.Params) ([]contract.Params, error) {
+	return l, nil
+}
+
+func (h *mergeHandler) HandleEvent(s *service.EventSpec, o *service.EventOverload, e contract.Event) error {
+	return nil
 }
