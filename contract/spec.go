@@ -258,11 +258,11 @@ type NameAndTypeSpec struct {
 }
 
 type MethodSpec struct {
-	Name     string            `json:"name"`
-	Inputs   []NameAndTypeSpec `json:"inputs"`
-	Output   TypeSpec          `json:"output"`
-	Payable  bool              `json:"payable,omitempty"`
-	ReadOnly bool              `json:"readOnly,omitempty"`
+	Name     string             `json:"name"`
+	Inputs   []*NameAndTypeSpec `json:"inputs"`
+	Output   TypeSpec           `json:"output"`
+	Payable  bool               `json:"payable,omitempty"`
+	ReadOnly bool               `json:"readOnly,omitempty"`
 
 	InputMap map[string]*NameAndTypeSpec `json:"-"`
 }
@@ -275,7 +275,7 @@ func (s *MethodSpec) UnmarshalJSON(data []byte) error {
 	}
 	s.InputMap = make(map[string]*NameAndTypeSpec)
 	for i := 0; i < len(s.Inputs); i++ {
-		v := &s.Inputs[i]
+		v := s.Inputs[i]
 		if old, exists := s.InputMap[v.Name]; exists {
 			specLogger.Warnf("MethodSpec overwrite name:%s input:%+v", s.Name, old)
 		}
@@ -296,9 +296,9 @@ func (s *MethodSpec) resolveType(structMap map[string]*StructSpec) error {
 }
 
 type EventSpec struct {
-	Name    string            `json:"name"`
-	Indexed int               `json:"indexed,omitempty"`
-	Inputs  []NameAndTypeSpec `json:"inputs"`
+	Name    string             `json:"name"`
+	Indexed int                `json:"indexed,omitempty"`
+	Inputs  []*NameAndTypeSpec `json:"inputs"`
 
 	InputMap    map[string]*NameAndTypeSpec `json:"-"`
 	Signature   string                      `json:"-"`
@@ -314,7 +314,7 @@ func (s *EventSpec) UnmarshalJSON(data []byte) error {
 	s.InputMap = make(map[string]*NameAndTypeSpec)
 	s.NameToIndex = make(map[string]int)
 	for i := 0; i < len(s.Inputs); i++ {
-		v := &s.Inputs[i]
+		v := s.Inputs[i]
 		if old, exists := s.InputMap[v.Name]; exists {
 			specLogger.Warnf("EventSpec overwrite name:%s input:%+v", s.Name, old)
 		}
@@ -347,8 +347,8 @@ func (s *EventSpec) resolveType(structMap map[string]*StructSpec) error {
 }
 
 type StructSpec struct {
-	Name   string            `json:"name"`
-	Fields []NameAndTypeSpec `json:"fields"`
+	Name   string             `json:"name"`
+	Fields []*NameAndTypeSpec `json:"fields"`
 
 	FieldMap map[string]*NameAndTypeSpec `json:"-"`
 	Type     reflect.Type                `json:"-"`
@@ -362,7 +362,7 @@ func (s *StructSpec) UnmarshalJSON(data []byte) error {
 	}
 	s.FieldMap = make(map[string]*NameAndTypeSpec)
 	for i := 0; i < len(s.Fields); i++ {
-		v := &s.Fields[i]
+		v := s.Fields[i]
 		if old, exists := s.FieldMap[v.Name]; exists {
 			specLogger.Warnf("StructSpec overwrite name:%s input:%+v", s.Name, old)
 		}
@@ -392,11 +392,11 @@ func (s *StructSpec) resolveType(structMap map[string]*StructSpec) error {
 }
 
 type Spec struct {
-	SpecVersion string       `json:"specVersion"`
-	Name        string       `json:"name"`
-	Methods     []MethodSpec `json:"methods"`
-	Events      []EventSpec  `json:"events"`
-	Structs     []StructSpec `json:"structs"`
+	SpecVersion string        `json:"specVersion"`
+	Name        string        `json:"name"`
+	Methods     []*MethodSpec `json:"methods"`
+	Events      []*EventSpec  `json:"events"`
+	Structs     []*StructSpec `json:"structs"`
 
 	MethodMap map[string]*MethodSpec `json:"-"`
 	EventMap  map[string]*EventSpec  `json:"-"`
@@ -412,9 +412,9 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 
 	s.StructMap = make(map[string]*StructSpec)
 	for i := 0; i < len(s.Structs); i++ {
-		v := &s.Structs[i]
+		v := s.Structs[i]
 		if old, exists := s.StructMap[v.Name]; exists {
-			specLogger.Warnf("StructSpec overwrite name:%s fields:%v", old.Name, old.Fields)
+			specLogger.Warnf("StructSpec overwrite %d name:%s fields:%v", i, old.Name, old.Fields)
 		}
 		s.StructMap[v.Name] = v
 	}
@@ -425,7 +425,7 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	}
 	s.MethodMap = make(map[string]*MethodSpec)
 	for i := 0; i < len(s.Methods); i++ {
-		v := &s.Methods[i]
+		v := s.Methods[i]
 		if old, exists := s.MethodMap[v.Name]; exists {
 			specLogger.Warnf("MethodSpec overwrite name:%s inputs:%v output:%v readonly:%v payable:%v",
 				old.Name, old.Inputs, old.Output, old.ReadOnly, old.Payable)
@@ -437,7 +437,7 @@ func (s *Spec) UnmarshalJSON(data []byte) error {
 	}
 	s.EventMap = make(map[string]*EventSpec)
 	for i := 0; i < len(s.Events); i++ {
-		v := &s.Events[i]
+		v := s.Events[i]
 		if old, exists := s.EventMap[v.Name]; exists {
 			specLogger.Warnf("EventSpec overwrite name:%s inputs:%v indexed:%v",
 				old.Name, old.Inputs, old.Indexed)
