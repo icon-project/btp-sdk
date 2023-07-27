@@ -88,7 +88,7 @@ func (s *Spec) MergeOverloads(miMap map[string]MergeInfo) error {
 			if cm == nil {
 				return errors.Errorf("not found method:%s in contract spec", name)
 			}
-			if err := sm.mergeOverloads(cm, f); err != nil {
+			if err := sm.MergeOverloads(cm, f); err != nil {
 				return err
 			}
 		case EventOverloadFlag:
@@ -100,7 +100,7 @@ func (s *Spec) MergeOverloads(miMap map[string]MergeInfo) error {
 			if ce == nil {
 				return errors.Errorf("not found event:%s in contract spec", name)
 			}
-			if err := se.mergeOverloads(ce, f); err != nil {
+			if err := se.MergeOverloads(ce, f); err != nil {
 				return err
 			}
 		default:
@@ -217,7 +217,7 @@ func (s *MethodSpec) merge(cs *contract.MethodSpec, networkTypes ...string) Meth
 	return f
 }
 
-func (s *MethodSpec) mergeOverloads(cs *contract.MethodSpec, f MethodOverloadFlag) error {
+func (s *MethodSpec) MergeOverloads(cs *contract.MethodSpec, f MethodOverloadFlag) error {
 	supports := make([]string, 0)
 	for _, o := range s.Overloads {
 		if !f.None() {
@@ -319,7 +319,7 @@ func (s *EventSpec) merge(cs *contract.EventSpec, networkTypes ...string) EventO
 	return f
 }
 
-func (s *EventSpec) mergeOverloads(cs *contract.EventSpec, f EventOverloadFlag) error {
+func (s *EventSpec) MergeOverloads(cs *contract.EventSpec, f EventOverloadFlag) error {
 	supports := make([]string, 0)
 	for _, o := range s.Overloads {
 		if !f.None() {
