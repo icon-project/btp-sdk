@@ -40,17 +40,17 @@ func NewSpec(b []byte) (*contract.Spec, error) {
 
 func SpecFromABI(out abi.ABI) (*contract.Spec, error) {
 	spec := &contract.Spec{
-		Methods:   make([]contract.MethodSpec, 0),
-		Events:    make([]contract.EventSpec, 0),
-		Structs:   make([]contract.StructSpec, 0),
+		Methods:   make([]*contract.MethodSpec, 0),
+		Events:    make([]*contract.EventSpec, 0),
+		Structs:   make([]*contract.StructSpec, 0),
 		MethodMap: make(map[string]*contract.MethodSpec),
 		EventMap:  make(map[string]*contract.EventSpec),
 		StructMap: make(map[string]*contract.StructSpec),
 	}
 	for _, m := range out.Methods {
-		method := contract.MethodSpec{
+		method := &contract.MethodSpec{
 			Name:   m.RawName,
-			Inputs: make([]contract.NameAndTypeSpec, 0),
+			Inputs: make([]*contract.NameAndTypeSpec, 0),
 			Output: contract.TypeSpec{
 				Name:   contract.TVoid.String(),
 				TypeID: contract.TVoid,
@@ -64,12 +64,12 @@ func SpecFromABI(out abi.ABI) (*contract.Spec, error) {
 			if err != nil {
 				return nil, errors.Wrapf(err, "method:%s input:%s err:%s", method.Name, i.Name, err.Error())
 			}
-			input := contract.NameAndTypeSpec{
+			input := &contract.NameAndTypeSpec{
 				Name: i.Name,
 				Type: it,
 			}
 			method.Inputs = append(method.Inputs, input)
-			method.InputMap[input.Name] = &method.Inputs[len(method.Inputs)-1]
+			method.InputMap[input.Name] = input
 		}
 		if len(m.Outputs) > 1 {
 			return nil, errors.Errorf("method:%s output err:not support multiple", method.Name)
@@ -91,25 +91,24 @@ func SpecFromABI(out abi.ABI) (*contract.Spec, error) {
 				return nil, errors.Wrapf(err, "method:%s overload err:%s", method.Name, err.Error())
 			}
 			for k, v := range optionals {
-				if input, ok := old.InputMap[k]; ok {
-					input.Optional = true
-				} else {
-					cp := *v
-					cp.Optional = true
-					old.Inputs = append(old.Inputs, cp)
-					old.InputMap[v.Name] = &old.Inputs[len(old.Inputs)-1]
+				input, ok := old.InputMap[k]
+				if !ok {
+					input = v
+					old.Inputs = append(old.Inputs, input)
+					old.InputMap[k] = input
 				}
+				input.Optional = true
 			}
 			continue
 		}
 		spec.Methods = append(spec.Methods, method)
-		spec.MethodMap[method.Name] = &spec.Methods[len(spec.Methods)-1]
+		spec.MethodMap[method.Name] = method
 	}
 	for _, e := range out.Events {
-		event := contract.EventSpec{
+		event := &contract.EventSpec{
 			Name:        e.RawName,
 			Indexed:     0,
-			Inputs:      make([]contract.NameAndTypeSpec, 0),
+			Inputs:      make([]*contract.NameAndTypeSpec, 0),
 			InputMap:    make(map[string]*contract.NameAndTypeSpec),
 			Signature:   "",
 			NameToIndex: make(map[string]int),
@@ -120,7 +119,7 @@ func SpecFromABI(out abi.ABI) (*contract.Spec, error) {
 			if err != nil {
 				return nil, errors.Wrapf(err, "event:%s input:%s err:%s", event.Name, i.Name, err.Error())
 			}
-			input := contract.NameAndTypeSpec{
+			input := &contract.NameAndTypeSpec{
 				Name: i.Name,
 				Type: it,
 			}
@@ -129,7 +128,7 @@ func SpecFromABI(out abi.ABI) (*contract.Spec, error) {
 				event.NameToIndex[input.Name] = idx
 			}
 			event.Inputs = append(event.Inputs, input)
-			event.InputMap[input.Name] = &event.Inputs[len(event.Inputs)-1]
+			event.InputMap[input.Name] = input
 		}
 
 		if old, exists := spec.EventMap[event.Name]; exists {
@@ -138,19 +137,18 @@ func SpecFromABI(out abi.ABI) (*contract.Spec, error) {
 				return nil, errors.Wrapf(err, "event:%s overload err:%s", event.Name, err.Error())
 			}
 			for k, v := range optionals {
-				if input, ok := old.InputMap[k]; ok {
-					input.Optional = true
-				} else {
-					cp := *v
-					cp.Optional = true
-					old.Inputs = append(old.Inputs, cp)
-					old.InputMap[v.Name] = &old.Inputs[len(old.Inputs)-1]
+				input, ok := old.InputMap[k]
+				if !ok {
+					input = v
+					old.Inputs = append(old.Inputs, input)
+					old.InputMap[k] = input
 				}
+				input.Optional = true
 			}
 			continue
 		}
 		spec.Events = append(spec.Events, event)
-		spec.EventMap[event.Name] = &spec.Events[len(spec.Events)-1]
+		spec.EventMap[event.Name] = event
 	}
 	b, err := json.Marshal(spec)
 	if err != nil {
@@ -198,32 +196,37 @@ func newPrimitiveTypeSpec(t abi.Type) (contract.TypeSpec, error) {
 }
 
 func newStructTypeSpec(t abi.Type, spec *contract.Spec) (contract.TypeSpec, error) {
-	s := contract.StructSpec{
-		Name:   t.TupleRawName,
-		Fields: make([]contract.NameAndTypeSpec, 0),
+	s := &contract.StructSpec{
+		Name:     t.TupleRawName,
+		Fields:   make([]*contract.NameAndTypeSpec, 0),
+		FieldMap: make(map[string]*contract.NameAndTypeSpec),
 	}
 	for i, n := range t.TupleRawNames {
 		ft, err := newTypeSpec(*t.TupleElems[i], spec)
 		if err != nil {
 			return contract.TypeSpec{}, err
 		}
-		field := contract.NameAndTypeSpec{
+		field := &contract.NameAndTypeSpec{
 			Name: n,
 			Type: ft,
 		}
 		s.Fields = append(s.Fields, field)
+		s.FieldMap[n] = field
 	}
 	if old, ok := spec.StructMap[s.Name]; ok {
 		if !contract.EqualsNameAndTypes(old.FieldMap, s.FieldMap) {
 			return contract.TypeSpec{}, errors.Errorf("duplicated struct type:%s", s.Name)
 		}
+		return contract.TypeSpec{
+			Name:     s.Name,
+			Resolved: old,
+		}, nil
 	}
 	spec.Structs = append(spec.Structs, s)
-	ptr := &spec.Structs[len(spec.Structs)-1]
-	spec.StructMap[s.Name] = ptr
+	spec.StructMap[s.Name] = s
 	return contract.TypeSpec{
 		Name:     s.Name,
-		Resolved: ptr,
+		Resolved: s,
 	}, nil
 }
 
