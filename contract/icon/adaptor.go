@@ -374,6 +374,7 @@ func (a *Adaptor) monitorHeight(height int64) (client.HexInt, error) {
 		}
 		height = blk.Height
 	}
+	a.l.Debugf("monitorHeight height:%v", height)
 	return client.NewHexInt(height), nil
 }
 

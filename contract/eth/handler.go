@@ -369,6 +369,9 @@ func (h *Handler) Call(method string, params contract.Params, options contract.O
 	if bs, err = h.a.CallContract(context.Background(), p, nil); err != nil {
 		return nil, errors.Wrapf(err, "fail to CallContract err:%s", err.Error())
 	}
+	if in.Output.TypeID == contract.TVoid {
+		return nil, nil
+	}
 	var ret []interface{}
 	if ret, err = h.out.Unpack(method, bs); err != nil {
 		return nil, errors.Wrapf(err, "fail to Unpack err:%s", err.Error())

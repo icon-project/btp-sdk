@@ -249,12 +249,16 @@ func (a *Adaptor) MonitorEvent(
 	if len(efs) == 0 {
 		return errors.New("EventFilter required")
 	}
+	sigToTopic := make(map[string]string, 0)
 	for i, f := range efs {
 		if _, ok := f.(*EventFilter); !ok {
 			return errors.Errorf("not support EventFilter idx:%d %T", i, f)
 		}
+		sigToTopic[f.Spec().Name] = crypto.Keccak256Hash([]byte(f.Signature())).String()
 	}
 	fq := newFilterQuery(newTopicToAddressesMap(contract.NewSignatureToAddressesMap(efs)))
+	a.l.Debugf("MonitorEvent topics:{len:%d, nameToHash:%v} height:%d",
+		len(fq.Topics), sigToTopic, height)
 	if height > 0 {
 		fq.FromBlock = big.NewInt(height)
 	}
@@ -290,6 +294,7 @@ func (a *Adaptor) MonitorEvent(
 			fq.FromBlock = nil
 			h = big.NewInt(height)
 			for ; h.Cmp(bh.Number) < 0; h = h.Add(h, common.Big1) {
+				a.l.Tracef("onBlockHeader catchup height:%v to:%v", h, bh.Number)
 				if tbh, err := a.Client.HeaderByNumber(context.Background(), h); err != nil {
 					a.l.Errorf("failure HeaderByNumber(%v) err:%+v", h, err)
 					return err
@@ -298,6 +303,7 @@ func (a *Adaptor) MonitorEvent(
 				}
 			}
 		}
+		a.l.Tracef("onBlockHeader height:%v", bh.Number)
 		return filterLogsByHeader(bh)
 	}
 	if err := a.MonitorBySubscribeFilterLogs(ctx, onBaseEvent, fq); err != nil {
@@ -325,12 +331,13 @@ func (a *Adaptor) monitorByPollBlock(
 	} else {
 		current = new(big.Int).SetUint64(uint64(height))
 	}
+	a.l.Debugf("monitorByPollBlock height:%v", current)
 	for {
 		blk, err := a.Client.BlockByNumber(ctx, current)
 		if err != nil {
 			if ethereum.NotFound == err {
 				a.l.Trace("Block not ready, will retry ", current)
-			} else if ctx.Err() == err {
+			} else if ctx.Err() == context.Canceled {
 				a.l.Debug("Context error ", current, err)
 				return err
 			} else {
@@ -377,6 +384,7 @@ func monitorByPollHead(c *ethclient.Client, l log.Logger, ctx context.Context, c
 		return err
 	}
 	current := new(big.Int).SetUint64(n)
+	l.Debugf("monitorByPollHead height:%v", current)
 	for {
 		select {
 		case <-ctx.Done():
@@ -388,6 +396,8 @@ func monitorByPollHead(c *ethclient.Client, l log.Logger, ctx context.Context, c
 		if bh, err = c.HeaderByNumber(ctx, current); err != nil {
 			if ethereum.NotFound == err {
 				l.Trace("Block not ready, will retry ", current)
+			} else if ctx.Err() == context.Canceled {
+				l.Trace("MonitorByPollHead context done ", current)
 			} else {
 				l.Warn("Unable to get block ", current, err)
 			}
