@@ -21,12 +21,14 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
+	"github.com/icon-project/btp-sdk/service/dappsample"
 	"github.com/icon-project/btp-sdk/service/xcall"
 )
 
 func init() {
 	_ = bmc.ServiceName
 	_ = xcall.ServiceName
+	_ = dappsample.ServiceName
 }
 
 const (

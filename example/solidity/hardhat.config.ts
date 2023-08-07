@@ -2,6 +2,7 @@ import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
 import "solidity-coverage";
 import "hardhat-contract-sizer";
+import '@openzeppelin/hardhat-upgrades';
 
 const config: HardhatUserConfig = {
   defaultNetwork: "hardhat",

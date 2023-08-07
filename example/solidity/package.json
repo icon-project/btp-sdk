@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "license": "Apache-2.0",
   "dependencies": {
+    "@iconfoundation/btp2-solidity-library": "^0.2.0",
+    "@openzeppelin/contracts-upgradeable": "^4.9.3"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^1.0.4",
@@ -10,6 +12,7 @@
     "@nomicfoundation/hardhat-toolbox": "^2.0.0",
     "@nomiclabs/hardhat-ethers": "^2.2.1",
     "@nomiclabs/hardhat-etherscan": "^3.1.2",
+    "@openzeppelin/hardhat-upgrades": "^1.28.0",
     "@typechain/ethers-v5": "^10.1.1",
     "@typechain/hardhat": "^6.1.4",
     "@types/chai": "^4.3.4",
@@ -33,6 +36,8 @@
     "size": "npx hardhat size-contracts",
     "test": "npx hardhat test",
     "deploy": "npx hardhat run --network localhost scripts/deploy.ts",
-    "abi": "jq .abi artifacts/contracts/HelloWorld.sol/HelloWorld.json > artifacts/contracts/HelloWorld.sol/HelloWorld.abi.json",
+    "deploy-dapp": "npx hardhat run --network localhost scripts/deploy-dapp.ts",
+    "abi": "jq -c .abi artifacts/contracts/HelloWorld.sol/HelloWorld.json > artifacts/contracts/HelloWorld.sol/HelloWorld.abi.json",
+    "abi-dapp": "jq -c .abi artifacts/contracts/DAppSample.sol/DAppSample.json > artifacts/contracts/DAppSample.sol/DAppSample.abi.json"
   }
 }

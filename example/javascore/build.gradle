@@ -1,3 +1,6 @@
+import foundation.icon.gradle.plugins.btp.task.GenerateContractSpecTask
+import foundation.icon.gradle.plugins.javaee.task.OptimizedJar
+
 buildscript {
     repositories {
         mavenLocal()
@@ -33,9 +36,13 @@ dependencies {
     implementation "foundation.icon:javaee-api:$javaeeVersion"
     implementation("foundation.icon:javaee-scorex:0.5.3")
 
+    implementation 'foundation.icon:btp2-xcall:0.6.2'
+
     compileOnly 'org.projectlombok:lombok:1.18.26'
     annotationProcessor 'org.projectlombok:lombok:1.18.26'
 
+    compileOnly "foundation.icon:javaee-score-client:$scoreClientVersion"
+    annotationProcessor "foundation.icon:javaee-score-client:$scoreClientVersion"
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.0'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.0'
 
@@ -58,6 +65,20 @@ jar {
     from {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     } { exclude "score/*" }
+    archiveName("hello-world-" + archiveVersion.get() + "." + archiveExtension.get());
+}
+
+task jarDAppSample(type: Jar) {
+    manifest {
+        attributes(
+            'Main-Class' : 'foundation.icon.btp.example.DAppSample'
+        )
+    }
+    from { sourceSets.main.output }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    } { exclude "score/*" }
+    archiveName("dapp-sample-" + archiveVersion.get() + "." + archiveExtension.get());
 }
 
 optimizedJar {
@@ -65,6 +86,17 @@ optimizedJar {
     from {
         configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
     } { exclude "score/*" }
+    archiveName("hello-world-" + archiveVersion.get() + "." + archiveExtension.get());
+    enableDebug = true
+}
+
+task optimizedJarDAppSample(type: OptimizedJar) {
+    mainClassName = 'foundation.icon.btp.example.DAppSample'
+    from { sourceSets.main.output }
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    } { exclude "score/*" }
+    archiveName("dapp-sample-" + archiveVersion.get() + "." + archiveExtension.get());
     enableDebug = true
 }
 
@@ -83,6 +115,17 @@ deployJar {
 }
 
 generateContractSpec {
+}
+
+task generateContractSpecDAppSample(type: GenerateContractSpecTask) {
+    dependsOn jarDAppSample
+    jarFile = jarDAppSample.archiveFile
+    contractSpecFile = file("$buildDir/generated/contractSpecDAppSample.json")
+    doLast {
+        def specFile = "$buildDir/generated/contractSpecDAppSample.json"
+        def compactFile = specFile.replace(".json", ".compact.json")
+        file(compactFile).text = "jq -c . $specFile".execute().text.trim()
+    }
 }
 
 test {
