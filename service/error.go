@@ -19,9 +19,5 @@ package service
 import "github.com/icon-project/btp2/common/errors"
 
 const (
-	MismatchSignerErrorCode errors.Code = errors.CodeService + iota
-)
-
-var (
-	errMismatchSigner = errors.NewBase(MismatchSignerErrorCode, "MismatchSignerError")
+	ErrorCodeMismatchSigner errors.Code = errors.CodeService + iota
 )

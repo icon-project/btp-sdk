@@ -84,7 +84,7 @@ func Sign(data []byte, options contract.Options, s Signer) (contract.Options, er
 			return nil, err
 		}
 		if opt.From != contract.Address(s.Address()) {
-			return nil, MismatchSignerErrorCode.Errorf("mismatch from expected:%s, actual:%s", s.Address(), opt.From)
+			return nil, ErrorCodeMismatchSigner.Errorf("mismatch from expected:%s, actual:%s", s.Address(), opt.From)
 		}
 		opt.Signature = sig
 		return contract.EncodeOptions(opt)
@@ -94,7 +94,7 @@ func Sign(data []byte, options contract.Options, s Signer) (contract.Options, er
 			return nil, err
 		}
 		if opt.From != contract.Address(s.Address()) {
-			return nil, MismatchSignerErrorCode.Errorf("mismatch from expected:%s, actual:%s", s.Address(), opt.From)
+			return nil, ErrorCodeMismatchSigner.Errorf("mismatch from expected:%s, actual:%s", s.Address(), opt.From)
 		}
 		opt.Signature = sig
 		return contract.EncodeOptions(opt)
@@ -116,7 +116,7 @@ func (s *SignerService) Invoke(network, method string, params contract.Params, o
 	if err != nil {
 		if rse, ok := err.(contract.RequireSignatureError); ok {
 			if opt, err = Sign(rse.Data(), rse.Options(), signer); err != nil {
-				if MismatchSignerErrorCode.Equals(err) {
+				if ErrorCodeMismatchSigner.Equals(err) {
 					return nil, rse
 				}
 				return nil, err
@@ -126,10 +126,6 @@ func (s *SignerService) Invoke(network, method string, params contract.Params, o
 		return nil, err
 	}
 	return txId, err
-}
-
-func (s *SignerService) Call(network, method string, params contract.Params, options contract.Options) (contract.ReturnValue, error) {
-	return s.Service.Call(network, method, params, options)
 }
 
 func NewSignerService(s Service, signers map[string]Signer, l log.Logger) (*SignerService, error) {

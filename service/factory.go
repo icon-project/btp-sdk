@@ -49,9 +49,10 @@ var (
 
 func RegisterFactory(serviceName string, sf Factory) {
 	if _, ok := fMap[serviceName]; ok {
-		log.Panicln("already registered serviceName:" + serviceName)
+		log.Panicln("already registered service:" + serviceName)
 	}
 	fMap[serviceName] = sf
+	log.Tracef("RegisterFactory service:%s", serviceName)
 }
 
 func NewService(name string, networks map[string]Network, l log.Logger) (Service, error) {

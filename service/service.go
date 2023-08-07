@@ -206,7 +206,6 @@ func NewMultiContractService(name string, networks map[string]Network, optToType
 		}
 		addrToSpec := make(map[contract.Address][]byte)
 		for optionName, addr := range opt {
-			log.Infof("networkType:%s optionName:%s addr:%s", n.NetworkType, optionName, addr)
 			spec, err := getSpec(optToTypeToSpec, optionName, n.NetworkType)
 			if err != nil {
 				return nil, err
@@ -308,35 +307,4 @@ func (s *MultiContractService) MonitorEvent(ctx context.Context, network string,
 		return err
 	}
 	return n.Adaptor.MonitorEvent(ctx, cb, efs, height)
-}
-
-func FilterNetworksByTypes(networks map[string]Network, types [][]string) (ret []map[string]Network, rest map[string]Network) {
-	ret = make([]map[string]Network, len(types))
-	rest = make(map[string]Network)
-	for i, l := range types {
-		m := make(map[string]Network)
-	netLoop:
-		for netName, n := range networks {
-			for _, nt := range l {
-				if nt == n.NetworkType {
-					m[netName] = n
-					break netLoop
-				}
-			}
-		}
-		ret[i] = m
-	}
-	for netName, n := range networks {
-		filtered := false
-		for _, m := range ret {
-			if _, ok := m[netName]; ok {
-				filtered = true
-				break
-			}
-		}
-		if !filtered {
-			rest[netName] = n
-		}
-	}
-	return
 }
