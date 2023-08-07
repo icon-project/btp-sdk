@@ -88,6 +88,7 @@ type InvokeOptions struct {
 	StepLimit contract.Integer
 	Timestamp contract.Integer
 	Signature contract.Bytes
+	Estimate  contract.Boolean
 }
 
 func (h *Handler) Invoke(method string, params contract.Params, options contract.Options) (contract.TxID, error) {
@@ -123,6 +124,15 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 	}
 	//generated fields
 	p.Timestamp = client.HexInt(opt.Timestamp)
+	if opt.Estimate {
+		stepLimit, err := h.a.EstimateStep(client.NewTransactionParamForEstimate(p))
+		if err != nil {
+			return nil, err
+		}
+		if len(opt.StepLimit) == 0 {
+			p.StepLimit = client.NewHexInt(stepLimit)
+		}
+	}
 	if len(opt.Signature) == 0 {
 		if len(p.Timestamp) == 0 {
 			p.Timestamp = client.NewHexInt(time.Now().UnixNano() / int64(time.Microsecond))

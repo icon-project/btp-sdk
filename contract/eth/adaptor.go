@@ -128,13 +128,14 @@ func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "fail to TransactionReceipt err:%s", err.Error())
 	}
-	var failure *TxFailure
+	var txf *TxFailure
 	if !IsSuccess(txr) {
-		if failure, err = a.TransactionFailure(context.Background(), txr.TxHash, txr.BlockNumber); err != nil {
-			failure.Error = err.Error()
+		if txf, err = a.TransactionFailureReason(context.Background(), txr.TxHash, txr.BlockNumber); err != nil {
+			//FIXME if TxFailure is not mandatory, ignore err
+			return nil, errors.Wrapf(err, "fail to TransactionFailureReason err:%s", err.Error())
 		}
 	}
-	return NewTxResult(txr, failure), nil
+	return NewTxResult(txr, txf), nil
 }
 
 func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handler, error) {
@@ -161,7 +162,7 @@ func (a *Adaptor) TransactionReceipt(ctx context.Context, txHash common.Hash) (*
 	}
 }
 
-func (a *Adaptor) TransactionFailure(ctx context.Context, txHash common.Hash, blockNumber *big.Int) (*TxFailure, error) {
+func (a *Adaptor) TransactionFailureReason(ctx context.Context, txHash common.Hash, blockNumber *big.Int) (*TxFailure, error) {
 	tx, pending, err := a.Client.TransactionByHash(ctx, txHash)
 	if err != nil {
 		return nil, err
@@ -182,7 +183,23 @@ func (a *Adaptor) TransactionFailure(ctx context.Context, txHash common.Hash, bl
 		Data:     tx.Data(),
 	}
 	_, err = a.Client.CallContract(ctx, p, blockNumber)
-	return NewTxFailure(err)
+	f := NewTxFailure(err)
+	if f == nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+func (a *Adaptor) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64, error) {
+	r, err := a.Client.EstimateGas(ctx, msg)
+	if err != nil {
+		txf := NewTxFailure(err)
+		if txf == nil {
+			return r, err
+		}
+		return r, txf
+	}
+	return r, nil
 }
 
 func newTopicToAddressesMap(sigToAddrs map[string][]contract.Address) map[common.Hash][]common.Address {

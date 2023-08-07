@@ -45,24 +45,43 @@ func NewBlockID(bh common.Hash) contract.BlockID {
 }
 
 type TxFailure struct {
-	Error string      `json:"error"`
-	Code  int         `json:"code"`
-	Data  interface{} `json:"data,omitempty"`
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
 }
 
-func NewTxFailure(err error) (*TxFailure, error) {
-	txf := &TxFailure{}
+func (f *TxFailure) Error() string {
+	return f.Message
+}
+
+func (f *TxFailure) ErrorCode() int {
+	return f.Code
+}
+
+func (f *TxFailure) ErrorData() interface{} {
+	return f.Data
+}
+
+func (f *TxFailure) Reason() string {
+	if ed, ok := f.Data.(string); ok {
+		if r, err := abi.UnpackRevert(common.FromHex(ed)); err == nil {
+			return r
+		}
+	}
+	return ""
+}
+
+func NewTxFailure(err error) *TxFailure {
 	if e, ok := err.(rpc.Error); ok {
-		txf.Code = e.ErrorCode()
-	} else {
-		return nil, err
+		if de, ok := err.(rpc.DataError); ok {
+			return &TxFailure{
+				Code:    e.ErrorCode(),
+				Message: e.Error(),
+				Data:    de.ErrorData(),
+			}
+		}
 	}
-	if de, ok := err.(rpc.DataError); ok {
-		txf.Data = de.ErrorData()
-	} else {
-		return nil, err
-	}
-	return txf, nil
+	return nil
 }
 
 type TxResult struct {

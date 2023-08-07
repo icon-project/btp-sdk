@@ -103,7 +103,32 @@ func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
 	}
 	blk, _ := a.GetBlockByHeight(bp)
 	bh, _ := hex.DecodeString(blk.BlockHash)
-	return NewTxResult(txr, blk.Height, bh)
+	var txf *TxFailure
+	if !IsSuccess(txr) {
+		if txf, err = a.TransactionFailureReason(id); err != nil {
+			//FIXME if TxFailure is not mandatory, ignore err
+			return nil, errors.Wrapf(err, "fail to TransactionFailureReason err:%s", err.Error())
+		}
+	}
+	return NewTxResult(txr, blk.Height, bh, txf)
+}
+
+func (a *Adaptor) TransactionFailureReason(id contract.TxID) (*TxFailure, error) {
+	txh, err := contract.BytesOf(id)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fail to BytesOf, invalid id err:%s", err.Error())
+	}
+	p := &client.TransactionHashParam{Hash: client.NewHexBytes(txh)}
+	tp := &client.TransactionParamForEstimate{}
+	if _, err = a.Client.Do("icx_getTransactionByHash", p, tp); err != nil {
+		return nil, err
+	}
+	_, err = a.Client.EstimateStep(tp)
+	f := NewTxFailure(err)
+	if f == nil {
+		return nil, err
+	}
+	return f, nil
 }
 
 func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handler, error) {
@@ -129,6 +154,18 @@ func (a *Adaptor) GetTransactionResult(p *client.TransactionHashParam) (*client.
 		}
 		return txr, nil
 	}
+}
+
+func (a *Adaptor) EstimateStep(p *client.TransactionParamForEstimate) (int64, error) {
+	r, err := a.Client.EstimateStep(p)
+	if err != nil {
+		txf := NewTxFailure(err)
+		if txf == nil {
+			return r, err
+		}
+		return r, txf
+	}
+	return r, nil
 }
 
 func (a *Adaptor) NewTransactionParam(to client.Address, data *client.CallData) *client.TransactionParam {

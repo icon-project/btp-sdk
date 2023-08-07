@@ -111,6 +111,7 @@ type InvokeOptions struct {
 	GasTipCap contract.Integer
 	Nonce     contract.Integer
 	Signature contract.Bytes
+	Estimate  contract.Boolean
 }
 
 type baseTx struct {
@@ -188,6 +189,20 @@ func (h *Handler) newBaseTx(opt *InvokeOptions, data []byte) (p *baseTx, err err
 	}
 	if p.GasPrice != nil && (p.GasFeeCap != nil || p.GasTipCap != nil) {
 		return nil, contract.ErrorCodeInvalidOption.Errorf("both GasPrice and (GasFeeCap or GasTipCap) specified")
+	}
+	if opt.Estimate {
+		gasLimit, err := h.a.EstimateGas(context.Background(), ethereum.CallMsg{
+			To:    &h.address,
+			Data:  p.Data,
+			Value: p.Value,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(opt.GasLimit) == 0 {
+			p.GasLimit = gasLimit
+			opt.GasLimit, _ = contract.IntegerOf(gasLimit)
+		}
 	}
 	return p, nil
 }

@@ -57,3 +57,10 @@ func NewRequireSignatureError(data []byte, options Options) RequireSignatureErro
 		options:    options,
 	}
 }
+
+type EstimateError interface {
+	error
+	ErrorCode() int
+	ErrorData() interface{}
+	Reason() string
+}

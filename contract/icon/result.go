@@ -24,6 +24,7 @@ import (
 
 	"github.com/icon-project/btp2/chain/icon/client"
 	"github.com/icon-project/btp2/common/errors"
+	"github.com/icon-project/btp2/common/jsonrpc"
 	"github.com/icon-project/btp2/common/log"
 
 	"github.com/icon-project/btp-sdk/contract"
@@ -61,15 +62,67 @@ func (h *HexBytes) UnmarshalJSON(input []byte) error {
 	return nil
 }
 
+type TxFailure struct {
+	Code    int         `json:"code"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+func (f *TxFailure) Error() string {
+	return f.Message
+}
+
+func (f *TxFailure) ErrorCode() int {
+	return f.Code
+}
+
+func (f *TxFailure) ErrorData() interface{} {
+	return f.Data
+}
+
+func (f *TxFailure) Reason() string {
+	//parse "SCOREError(%d): E%04d:%s"
+	if !strings.HasPrefix(f.Message, "SCOREError") {
+		return ""
+	}
+	idx := strings.Index(f.Message, ":")
+	if idx < 0 {
+		return ""
+	}
+	s := f.Message[idx+1:]
+	if idx = strings.Index(s, ":"); idx >= 0 {
+		return s[idx+1:]
+	}
+	return s
+}
+
+func NewTxFailure(err error) *TxFailure {
+	if je, ok := err.(*jsonrpc.Error); ok {
+		if je.Code <= client.JsonrpcErrorCodeScore && je.Code > client.JsonrpcErrorCodeSystem {
+			return &TxFailure{
+				Code:    int((je.Code * -1) + client.JsonrpcErrorCodeScore),
+				Message: je.Message,
+				Data:    je.Data,
+			}
+		}
+	}
+	return nil
+}
+
 type TxResult struct {
 	*client.TransactionResult
 	events      []contract.BaseEvent
 	blockHeight int64
 	blockHash   HexBytes
+	failure     *TxFailure
+}
+
+func IsSuccess(txr *client.TransactionResult) bool {
+	return txr.Status == client.ResultStatusSuccess
 }
 
 func (r *TxResult) Success() bool {
-	return r.Status == client.ResultStatusSuccess
+	return IsSuccess(r.TransactionResult)
 }
 
 func (r *TxResult) Events() []contract.BaseEvent {
@@ -77,7 +130,7 @@ func (r *TxResult) Events() []contract.BaseEvent {
 }
 
 func (r *TxResult) Failure() interface{} {
-	return r.TransactionResult.Failure
+	return r.failure
 }
 
 func (r *TxResult) BlockID() contract.BlockID {
@@ -104,8 +157,8 @@ func (r *TxResult) Format(f fmt.State, c rune) {
 			for i, e := range r.events {
 				events[i] = fmt.Sprintf("%+v", e)
 			}
-			fmt.Fprintf(f, "TxResult{TransactionResult{%+v},numOfEvents:%d,events:{%s},blockHash:%s,blockHeight:%d}",
-				r.TransactionResult, len(r.events), strings.Join(events, ","), hex.EncodeToString(r.blockHash), r.blockHeight)
+			fmt.Fprintf(f, "TxResult{TransactionResult{%+v},numOfEvents:%d,events:{%s},failure:%+v,blockHash:%s,blockHeight:%d}",
+				r.TransactionResult, len(r.events), strings.Join(events, ","), r.failure, hex.EncodeToString(r.blockHash), r.blockHeight)
 		} else {
 			events := make([]string, len(r.events))
 			for i, e := range r.events {
@@ -118,12 +171,21 @@ func (r *TxResult) Format(f fmt.State, c rune) {
 	}
 }
 
-func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []byte) (contract.TxResult, error) {
+func NewTxResult(txr *client.TransactionResult, blockHeight int64, blockHash []byte, failure *TxFailure) (contract.TxResult, error) {
+	if failure == nil && txr.Failure != nil {
+		f := txr.Failure
+		code, _ := f.CodeValue.Int()
+		failure = &TxFailure{
+			Code:    code,
+			Message: f.MessageValue,
+		}
+	}
 	r := &TxResult{
 		TransactionResult: txr,
 		events:            make([]contract.BaseEvent, len(txr.EventLogs)),
 		blockHeight:       blockHeight,
 		blockHash:         blockHash,
+		failure:           failure,
 	}
 	txh, err := txr.TxHash.Value()
 	if err != nil {
@@ -143,6 +205,7 @@ type TxResultJson struct {
 	Raw         *client.TransactionResult
 	BlockHeight int64
 	BlockHash   HexBytes
+	Failure     *TxFailure
 }
 
 func (r *TxResult) UnmarshalJSON(b []byte) error {
@@ -150,7 +213,7 @@ func (r *TxResult) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, v); err != nil {
 		return err
 	}
-	txr, err := NewTxResult(v.Raw, v.BlockHeight, v.BlockHash)
+	txr, err := NewTxResult(v.Raw, v.BlockHeight, v.BlockHash, v.Failure)
 	if err != nil {
 		return err
 	}

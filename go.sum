@@ -479,8 +479,8 @@ github.com/hydrogen18/memlistener v0.0.0-20141126152155-54553eb933fb/go.mod h1:q
 github.com/hydrogen18/memlistener v0.0.0-20200120041712-dcc25e7acd91/go.mod h1:qEIFzExnS6016fRpRfxrExeVn2gbClQA99gQhnIcdhE=
 github.com/ianlancetaylor/demangle v0.0.0-20181102032728-5e5cf60278f6/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
 github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639/go.mod h1:aSSvb/t6k1mPoxDqO4vJh6VOCGPwU4O0C2/Eqndh1Sc=
-github.com/icon-project/btp2 v1.0.3-0.20230630013949-c7658937ba02 h1:awwhKrVh5yHEV65URylqtZHUAT95titR2WQy9TuNh6w=
-github.com/icon-project/btp2 v1.0.3-0.20230630013949-c7658937ba02/go.mod h1:b7DySqhjd/RxPmP0bxOvm5yAjjxNvBGK7KFLqxoh4KY=
+github.com/icon-project/btp2 v1.0.3-0.20230807084255-f407cff7c4cc h1:vt1k3iz5Dl6RbooKnHr0VuxsyuJ+g4ki5AbTLMZhWho=
+github.com/icon-project/btp2 v1.0.3-0.20230807084255-f407cff7c4cc/go.mod h1:b7DySqhjd/RxPmP0bxOvm5yAjjxNvBGK7KFLqxoh4KY=
 github.com/icon-project/btp2-eth2 v0.2.2-0.20230609060553-ded7f4c5094b h1:2WS3QQ6YebJjeoYmoVTFxGgBAVHZUlOOUOSrvP/QCk4=
 github.com/icon-project/btp2-eth2 v0.2.2-0.20230609060553-ded7f4c5094b/go.mod h1:+kItKfdcSOHOE3jf9Z39wk4JIvJuaLlhZ7I4egnJf+0=
 github.com/imkira/go-interpol v1.1.0/go.mod h1:z0h2/2T3XF8kyEPpRgJ3kmNv+C43p+I/CoI+jC3w2iA=
