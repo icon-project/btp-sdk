@@ -230,6 +230,7 @@ func (m *BlockMonitor) Stop() error {
 		return errors.Errorf("already stopped")
 	}
 	m.runCancel()
+	m.runCancel = nil
 	m.ch = nil
 	return nil
 }
