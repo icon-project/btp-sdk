@@ -113,7 +113,7 @@ func Test_MonitorEvents(t *testing.T) {
 		assert.FailNow(t, "fail to SendTransaction", err)
 	}
 	txr, err := a.GetTransactionResult(&client.TransactionHashParam{
-		Hash: *txh,
+		Hash: client.NewHexBytes(txh),
 	})
 	assert.NoError(t, err)
 	t.Logf("%+v", txr)

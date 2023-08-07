@@ -149,15 +149,11 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 		return nil, contract.NewRequireSignatureError(hash, options)
 	}
 	p.Signature = base64.StdEncoding.EncodeToString(opt.Signature)
-	var txh *client.HexBytes
-	if txh, err = h.a.SendTransaction(p); err != nil {
+	txh, err := h.a.SendTransaction(p)
+	if err != nil {
 		return nil, errors.Wrapf(err, "fail to SendTransaction err:%s", err.Error())
 	}
-	b, err := txh.Value()
-	if err != nil {
-		return nil, errors.Wrapf(err, "invalid txHash err:%s", err.Error())
-	}
-	return NewTxID(b), nil
+	return NewTxID(txh), nil
 }
 
 type CallOption struct {

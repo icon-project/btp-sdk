@@ -87,6 +87,14 @@ func (a *Adaptor) NetworkType() string {
 	return a.networkType
 }
 
+func (a *Adaptor) SendTransaction(p *client.TransactionParam) (HexBytes, error) {
+	var result HexBytes
+	if _, err := a.Client.Do("icx_sendTransaction", p, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
 	txh, err := contract.BytesOf(id)
 	if err != nil {
