@@ -275,13 +275,9 @@ func (a *Adaptor) MonitorEvent(
 		if err != nil {
 			return err
 		}
-		if len(logs) > 0 {
-			for _, el := range logs {
-				if be := matchAndToBaseEvent(fq, el); be != nil {
-					if err = onBaseEvent(be); err != nil {
-						return err
-					}
-				}
+		for _, el := range logs {
+			if err = onBaseEvent(NewBaseEvent(el)); err != nil {
+				return err
 			}
 		}
 		return nil
@@ -361,7 +357,7 @@ func (a *Adaptor) monitorByPollBlock(
 				topicLoop:
 					for topic, addrs := range topicToAddrs {
 						if matchLog(topic, addrs, l) {
-							be := NewBaseEvent(l)
+							be := NewBaseEvent(*l)
 							if err = cb(be); err != nil {
 								return err
 							}
@@ -438,24 +434,11 @@ func (a *Adaptor) MonitorBySubscribeFilterLogs(ctx context.Context, cb contract.
 			return err
 		case el := <-ch:
 			a.l.Logf(a.opt.TransportLogLevel.Level(), "SubscribeFilterLogs:%+v", el)
-			if e := matchAndToBaseEvent(fq, el); e != nil {
-				if err = cb(e); err != nil {
-					return err
-				}
+			if err = cb(NewBaseEvent(el)); err != nil {
+				return err
 			}
 		}
 	}
-}
-
-func matchAndToBaseEvent(fq *ethereum.FilterQuery, el types.Log) *BaseEvent {
-	if matchLog(fq.Topics[0][0], fq.Addresses, &el) {
-		return &BaseEvent{
-			Log:        &el,
-			sigMatcher: SignatureMatcher(el.Topics[0].String()),
-			indexed:    len(el.Topics) - 1,
-		}
-	}
-	return nil
 }
 
 func matchLog(signature common.Hash, addresses []common.Address, l *types.Log) bool {

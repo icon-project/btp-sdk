@@ -147,7 +147,7 @@ func NewTxResult(txr *types.Receipt, failure *TxFailure) contract.TxResult {
 		failure: failure,
 	}
 	for i, l := range txr.Logs {
-		r.events[i] = NewBaseEvent(l)
+		r.events[i] = NewBaseEvent(*l)
 	}
 	return r
 }
@@ -176,7 +176,7 @@ func (r *TxResult) MarshalJSON() ([]byte, error) {
 }
 
 type BaseEvent struct {
-	*types.Log
+	types.Log
 	sigMatcher SignatureMatcher
 	indexed    int
 }
@@ -234,7 +234,7 @@ func (e *BaseEvent) Format(f fmt.State, c rune) {
 	}
 }
 
-func NewBaseEvent(l *types.Log) *BaseEvent {
+func NewBaseEvent(l types.Log) *BaseEvent {
 	return &BaseEvent{
 		Log:        l,
 		sigMatcher: SignatureMatcher(l.Topics[0].String()),
@@ -243,7 +243,7 @@ func NewBaseEvent(l *types.Log) *BaseEvent {
 }
 
 type BaseEventJson struct {
-	Raw *types.Log
+	Raw types.Log
 }
 
 func (e *BaseEvent) MarshalJSON() ([]byte, error) {
