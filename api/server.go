@@ -18,6 +18,8 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
+	"github.com/icon-project/btp-sdk/autocaller"
+	_ "github.com/icon-project/btp-sdk/autocaller/xcall"
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
@@ -36,6 +38,7 @@ const (
 	PathParamTxID             = "txID"
 	PathParamServiceOrAddress = "serviceOrAddress"
 	PathParamMethod           = "method"
+	PathParamService          = "service"
 
 	QueryParamService = "service"
 
@@ -43,9 +46,10 @@ const (
 	ContextService = "service"
 	ContextRequest = "request"
 
-	GroupUrlApi     = "/api"
-	GroupUrlMonitor = "/monitor"
-	GroupUrlApiDocs = "/api-docs"
+	GroupUrlApi        = "/api"
+	GroupUrlMonitor    = "/monitor"
+	GroupUrlApiDocs    = "/api-docs"
+	GroupUrlAutoCaller = "/autocaller"
 
 	UrlGetResult = "/result"
 
@@ -61,6 +65,7 @@ type Server struct {
 	addr string
 	aMap map[string]contract.Adaptor
 	sMap map[string]service.Service
+	cMap map[string]autocaller.AutoCaller
 	mtx  sync.RWMutex
 	oasp *OpenAPISpecProvider
 	u    websocket.Upgrader
@@ -82,6 +87,7 @@ func NewServer(addr string, transportLogLevel log.Level, l log.Logger) *Server {
 		addr:    addr,
 		aMap:    make(map[string]contract.Adaptor),
 		sMap:    make(map[string]service.Service),
+		cMap:    make(map[string]autocaller.AutoCaller),
 		oasp:    NewOpenAPISpecProvider(sl),
 		lv:      contract.EnsureTransportLogLevel(transportLogLevel),
 		l:       sl,
@@ -121,6 +127,19 @@ func (s *Server) GetService(name string) service.Service {
 	return s.sMap[name]
 }
 
+func (s *Server) SetAutoCaller(c autocaller.AutoCaller) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	s.cMap[c.Name()] = c
+	s.l.Debugf("SetAutoCaller %s", c.Name())
+}
+
+func (s *Server) GetAutoCaller(name string) autocaller.AutoCaller {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	return s.cMap[name]
+}
+
 func (s *Server) Start() error {
 	s.l.Infoln("starting the server")
 	// CORS middleware
@@ -132,6 +151,7 @@ func (s *Server) Start() error {
 	s.RegisterAPIHandler(s.e.Group(GroupUrlApi))
 	s.RegisterAPIDocHandler(s.e.Group(GroupUrlApiDocs))
 	s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
+	s.RegisterAutoCallerHandler(s.e.Group(GroupUrlAutoCaller))
 	return s.e.Start(s.addr)
 }
 
@@ -624,6 +644,47 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 			return nil
 		}
 		return nil
+	})
+}
+
+type AutoCallerInfo struct {
+	Name string `json:"name"`
+}
+type AutoCallerInfos []AutoCallerInfo
+
+func (s *Server) RegisterAutoCallerHandler(g *echo.Group) {
+	g.GET("", func(c echo.Context) error {
+		s.mtx.RLock()
+		defer s.mtx.RUnlock()
+		r := make(AutoCallerInfos, 0)
+		for _, v := range s.cMap {
+			r = append(r, AutoCallerInfo{v.Name()})
+		}
+		return c.JSON(http.StatusOK, r)
+	})
+	g.GET("/:"+PathParamService, func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		ac := s.GetAutoCaller(p)
+		if ac == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("AutoCaller(%s) not found", p))
+		}
+		fp := autocaller.FindParam{}
+		if err := BindQueryParamsAndUnmarshalBody(c, &fp); err != nil {
+			s.l.Debugf("fail to BindQueryParamsAndUnmarshalBody err:%+v", err)
+			return echo.ErrBadRequest
+		}
+		s.l.Debugln("fp.Task:", fp.Task)
+		if len(fp.Task) > 0 && !service.StringSetContains(ac.Tasks(), fp.Task) {
+			return echo.NewHTTPError(http.StatusBadRequest,
+				fmt.Sprintf("invalid task(%s), must be empty or one of {%s}", fp.Task, strings.Join(ac.Tasks(), ",")))
+		}
+
+		ret, err := ac.Find(fp)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
 	})
 }
 

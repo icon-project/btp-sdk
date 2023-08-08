@@ -28,6 +28,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3gen"
 	"github.com/icon-project/btp2/common/log"
 
+	"github.com/icon-project/btp-sdk/autocaller"
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/service"
 )
@@ -40,6 +41,7 @@ const (
 	tagReadonly           = "Readonly"
 	tagWritable           = "Writable"
 	tagGeneral            = "General"
+	tagAutoCaller         = "AutoCaller"
 	schemaRefPrefix       = "#/components/schemas/"
 	schemaTxID            = "TxID"
 	schemaRequest         = "Request"
@@ -207,6 +209,18 @@ func NewParameters(ps ...*openapi3.Parameter) openapi3.Parameters {
 		parameters = append(parameters, pr)
 	}
 	return parameters
+}
+
+func NewQueryParametersByObjectSchema(s *openapi3.Schema) []*openapi3.Parameter {
+	l := make([]*openapi3.Parameter, 0)
+	for k, v := range s.Properties {
+		p := openapi3.NewQueryParameter(k).WithSchema(v.Value)
+		if service.StringSetContains(s.Required, k) {
+			p = p.WithRequired(true)
+		}
+		l = append(l, p)
+	}
+	return l
 }
 
 func NewSuccessResponse() *openapi3.Response {
@@ -421,6 +435,30 @@ func NewOpenAPISpecProvider(l log.Logger) *OpenAPISpecProvider {
 
 	for k, v := range gpi {
 		oas.Paths[k] = v
+	}
+
+	oas.Tags = append(openapi3.Tags{NewTag(tagAutoCaller, "Auto Caller status")}, oas.Tags...)
+	oas.Paths[GroupUrlAutoCaller] = &openapi3.PathItem{
+		Get: &openapi3.Operation{
+			Tags:        []string{tagAutoCaller},
+			Summary:     "Retrieve Auto Callers",
+			Description: "",
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(MustGenerateSchema(AutoCallerInfos{}))),
+		},
+	}
+	acu := fmt.Sprintf("%s/{%s}", GroupUrlAutoCaller, PathParamService)
+	oas.Paths[acu] = &openapi3.PathItem{
+		Get: &openapi3.Operation{
+			Tags:        []string{tagAutoCaller},
+			Summary:     "Retrieve Auto Caller status",
+			Description: "",
+			OperationID: "",
+			Parameters: NewParameters(append([]*openapi3.Parameter{NewPathParameterWithSchema(PathParamService, openapi3.NewStringSchema())},
+				NewQueryParametersByObjectSchema(MustGenerateSchema(autocaller.FindParam{}))...)...),
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(openapi3.NewArraySchema().WithItems(openapi3.NewObjectSchema()))),
+		},
 	}
 	return &OpenAPISpecProvider{
 		n2nt:  make(map[string]string),
