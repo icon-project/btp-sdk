@@ -13,6 +13,8 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/icon-project/btp-sdk/api"
+	"github.com/icon-project/btp-sdk/autocaller"
+	_xcall "github.com/icon-project/btp-sdk/autocaller/xcall"
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/contract/eth"
 	"github.com/icon-project/btp-sdk/contract/icon"
@@ -43,11 +45,17 @@ type NetworkConfig struct {
 	Options     contract.Options            `json:"options,omitempty"`
 	Services    map[string]contract.Options `json:"services,omitempty"`
 	Signer      *SignerConfig               `json:"signer,omitempty"`
+	AutoCallers map[string]AutoCallerConfig `json:"auto_callers,omitempty"`
 }
 
 type SignerConfig struct {
 	Keystore string `json:"keystore"`
 	Secret   string `json:"secret"`
+}
+
+type AutoCallerConfig struct {
+	Signer  SignerConfig     `json:"signer,omitempty"`
+	Options contract.Options `json:"options,omitempty"`
 }
 
 func ReadConfig(filePath string, cfg *Config, vc *viper.Viper) error {
@@ -160,6 +168,21 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 								Keystore: "/path/to/keystore",
 								Secret:   "/path/to/secret",
 							},
+							AutoCallers: map[string]AutoCallerConfig{
+								xcall.ServiceName: {
+									Signer: SignerConfig{
+										Keystore: "/path/to/keystore",
+										Secret:   "/path/to/secret",
+									},
+									Options: MustEncodeOptions(_xcall.AutoCallerOptions{
+										InitHeight:     0,
+										NetworkAddress: "0x3.icon",
+										Contracts: []contract.Address{
+											"cx0000000000000000000000000000000000000000",
+										},
+									}),
+								},
+							},
 						},
 						eth.NetworkTypeEth2 + "Network": {
 							NetworkType: eth.NetworkTypeEth2,
@@ -182,6 +205,21 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 							Signer: &SignerConfig{
 								Keystore: "/path/to/keystore",
 								Secret:   "/path/to/secret",
+							},
+							AutoCallers: map[string]AutoCallerConfig{
+								xcall.ServiceName: {
+									Signer: SignerConfig{
+										Keystore: "/path/to/keystore",
+										Secret:   "/path/to/secret",
+									},
+									Options: MustEncodeOptions(_xcall.AutoCallerOptions{
+										InitHeight:     0,
+										NetworkAddress: "0x0.eth2",
+										Contracts: []contract.Address{
+											"0x0000000000000000000000000000000000000000",
+										},
+									}),
+								},
 							},
 						},
 					}
@@ -253,6 +291,7 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 			}
 			s := api.NewServer(cfg.Server.Address, serverDumpLogLevel, l)
 			svcToNetworks := make(map[string]map[string]service.Network)
+			acToNetworks := make(map[string]map[string]autocaller.Network)
 			for network, n := range cfg.Networks {
 				opt, err := contract.EncodeOptions(n.Options)
 				if err != nil {
@@ -276,18 +315,30 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 					}
 				}
 				if n.Signer != nil {
-					var sCfg SignerConfig
-					sCfg = *n.Signer
-					sCfg.Keystore = cfg.ResolveAbsolute(sCfg.Keystore)
-					sCfg.Secret = cfg.ResolveAbsolute(sCfg.Secret)
-					l.Debugf("signer network:%s keystore:[config:%s,resolved:%s] secret:[config:%s,resolved:%s]",
-						n.Signer.Keystore, sCfg.Keystore, n.Signer.Secret, sCfg.Secret)
-					signer, err := NewDefaultSigner(n.NetworkType, sCfg.Keystore, sCfg.Secret)
+					signer, err := NewDefaultSigner(n.NetworkType, cfg.ResolveAbsolute(n.Signer.Keystore), cfg.ResolveAbsolute(n.Signer.Secret))
 					if err != nil {
 						return err
 					}
 					s.Signers[network] = signer
 					l.Debugf("NewDefaultSigner network:%s signer:%s", network, signer.Address())
+				}
+				for name, co := range n.AutoCallers {
+					networks, ok := acToNetworks[name]
+					if !ok {
+						networks = make(map[string]autocaller.Network)
+						acToNetworks[name] = networks
+					}
+					signer, err := NewDefaultSigner(n.NetworkType, cfg.ResolveAbsolute(co.Signer.Keystore), cfg.ResolveAbsolute(co.Signer.Secret))
+					if err != nil {
+						return err
+					}
+					l.Debugf("NewDefaultSigner for AutoCaller:%s network:%s signer:%s", name, network, signer.Address())
+					networks[network] = autocaller.Network{
+						NetworkType: n.NetworkType,
+						Adaptor:     a,
+						Signer:      signer,
+						Options:     co.Options,
+					}
 				}
 			}
 
@@ -302,6 +353,16 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 					}
 				}
 				s.SetService(svc)
+			}
+			for name, networks := range acToNetworks {
+				ac, err := autocaller.NewAutoCaller(name, s.GetService(name), networks, l)
+				if err != nil {
+					return err
+				}
+				if err = ac.Start(); err != nil {
+					return err
+				}
+				s.SetAutoCaller(ac)
 			}
 			return s.Start()
 		},
