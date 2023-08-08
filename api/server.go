@@ -205,6 +205,8 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		s.l.Logf(s.lv, "response=%s", resBody)
 	}))
 	g.GET("", func(c echo.Context) error {
+		s.mtx.RLock()
+		defer s.mtx.RUnlock()
 		r := make(NetworkInfos, 0)
 		for n, a := range s.aMap {
 			r = append(r, NetworkInfo{Network: n, NetworkType: a.NetworkType()})
@@ -225,6 +227,8 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		}
 	})
 	networkApi.GET("", func(c echo.Context) error {
+		s.mtx.RLock()
+		defer s.mtx.RUnlock()
 		r := make(ServiceInfos, 0)
 		for _, v := range s.sMap {
 			si := ServiceInfo{v.Name()}
