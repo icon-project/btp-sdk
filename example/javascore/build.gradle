@@ -103,7 +103,7 @@ task optimizedJarDAppSample(type: OptimizedJar) {
 deployJar {
     endpoints {
         local {
-            uri = 'http://localhost:19080/api/v3/icon'
+            uri = 'http://localhost:9080/api/v3/icon_dex'
             nid = 0x3
         }
     }

@@ -38,8 +38,7 @@ import (
 )
 
 const (
-	endpoint = "http://localhost:8545"
-	//cd ../../example/solidity; npx hardhat --network ether2_test run ./scripts/deploy.ts
+	endpoint       = "http://localhost:8545"
 	addr           = "0x09635F643e140090A9A8Dcd712eD6285858ceBef"
 	keystoreFile   = "../../example/solidity/test/keystore.json"
 	keystoreSecret = "../../example/solidity/test/keysecret"

@@ -76,6 +76,10 @@ var (
 	}
 )
 
+func init() {
+	RegisterFactory(serviceName, NewTestService)
+}
+
 type TestConfig struct {
 	NetworkType   string
 	Endpoint      string
@@ -255,7 +259,6 @@ func service(t *testing.T, withSignerService bool) (Service, map[string]Network)
 			Options:     MustEncodeOptions(config.ServiceOption),
 		}
 	}
-	RegisterFactory(serviceName, NewTestService)
 	l := log.GlobalLogger()
 	s, err := NewService(serviceName, networks, l)
 	if err != nil {

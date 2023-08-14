@@ -17,10 +17,8 @@
 package xcall
 
 import (
-	"context"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/wallet"
@@ -132,77 +130,4 @@ func Test_Service(t *testing.T) {
 		assert.FailNow(t, "fail to NewService", err)
 	}
 	assert.Equal(t, ServiceName, s.Name())
-	//s.Invoke()
-}
-
-func handler(t *testing.T, a contract.Adaptor, config TestConfig) contract.Handler {
-	spec := typeToSpec[config.NetworkType]
-	addr := config.ServiceOption.ContractAddress
-	h, err := a.Handler(spec, addr)
-	if err != nil {
-		assert.FailNow(t, "fail to NewHandler", err)
-	}
-	return h
-}
-
-func eventFilters(h contract.Handler) ([]contract.EventFilter, error) {
-	efs := make([]contract.EventFilter, 0)
-	for _, s := range h.Spec().Events {
-		ef, err := h.EventFilter(s.Name, nil)
-		if err != nil {
-			return nil, err
-		}
-		efs = append(efs, ef)
-	}
-	return efs, nil
-}
-
-func Test_AdaptorMonitorEvents(t *testing.T) {
-	args := []struct {
-		networkType string
-		height      int64
-	}{
-		{
-			networkType: icon.NetworkTypeIcon,
-			height:      968789,
-		},
-		{
-			networkType: eth.NetworkTypeEth,
-			height:      113534,
-		},
-	}
-	for _, arg := range args {
-		config := configs[arg.networkType]
-		a := adaptor(t, arg.networkType)
-		h := handler(t, a, config)
-		efs, err := eventFilters(h)
-		if err != nil {
-			assert.FailNow(t, "fail to get EventFilter err:%s", err.Error())
-		}
-		go func(nt string, height int64) {
-			logger := log.GlobalLogger().WithFields(log.Fields{log.FieldKeyChain: nt})
-			err = a.MonitorEvent(context.Background(), func(e contract.Event) error {
-				logger.Infof("%s: %+v", nt, e)
-				return nil
-			}, efs, height)
-		}(arg.networkType, arg.height)
-	}
-	<-time.After(1 * time.Minute)
-}
-
-func Test_HandlerMonitorEvent(t *testing.T) {
-	networkTypes := []string{
-		icon.NetworkTypeIcon,
-		eth.NetworkTypeEth,
-	}
-	for _, nt := range networkTypes {
-		config := configs[nt]
-		a := adaptor(t, nt)
-		h := handler(t, a, config)
-		err := h.MonitorEvent(context.Background(), func(e contract.Event) error {
-			t.Logf("%+v", e)
-			return nil
-		}, map[string][]contract.Params{"CallMessageSent": nil}, 798513)
-		assert.NoError(t, err)
-	}
 }

@@ -17,10 +17,8 @@
 package bmc
 
 import (
-	"context"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/wallet"
@@ -67,13 +65,6 @@ var (
 				service.MultiContractServiceOptionNameDefault: "0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9",
 				MultiContractServiceOptionNameBMCM:            "0x5FbDB2315678afecb367f032d93F642f64180aa3",
 			},
-		},
-	}
-
-	nameAndParams = map[string][]contract.Params{
-		"BTPEvent": {
-			{"_src": contract.String("0x3.icon")},
-			{"_src": contract.String("0x25d6efd.eth2")},
 		},
 	}
 )
@@ -159,105 +150,4 @@ func Test_Service(t *testing.T) {
 		assert.NoError(t, err)
 		t.Logf("%T %+v", r, r)
 	}
-}
-
-func handler(t *testing.T, a contract.Adaptor, config TestConfig) contract.Handler {
-	spec := optToTypeToSpec[service.MultiContractServiceOptionNameDefault][config.NetworkType]
-	addr := config.ServiceOption[service.MultiContractServiceOptionNameDefault]
-	h, err := a.Handler(spec, addr)
-	if err != nil {
-		assert.FailNow(t, "fail to NewHandler", err)
-	}
-	return h
-}
-
-func eventFilters(h contract.Handler, nameAndParams map[string][]contract.Params) ([]contract.EventFilter, error) {
-	efs := make([]contract.EventFilter, 0)
-	for _, s := range h.Spec().Events {
-		if ps, ok := nameAndParams[s.Name]; len(nameAndParams) == 0 || ok {
-			if len(ps) == 0 {
-				ps = []contract.Params{nil}
-			}
-			for _, p := range ps {
-				ef, err := h.EventFilter(s.Name, p)
-				if err != nil {
-					return nil, err
-				}
-				efs = append(efs, ef)
-			}
-		}
-	}
-	return efs, nil
-}
-
-func Test_AdaptorMonitorEvents(t *testing.T) {
-	args := []struct {
-		networkType string
-		height      int64
-	}{
-		{
-			networkType: icon.NetworkTypeIcon,
-			height:      1050779,
-		},
-		{
-			networkType: eth.NetworkTypeEth,
-			height:      168136,
-		},
-	}
-	for _, arg := range args {
-		config := configs[arg.networkType]
-		a := adaptor(t, arg.networkType)
-		h := handler(t, a, config)
-		efs, err := eventFilters(h, nameAndParams)
-		if err != nil {
-			assert.FailNow(t, "fail to get EventFilter err:%s", err.Error())
-		}
-		go func(nt string, height int64) {
-			logger := log.GlobalLogger().WithFields(log.Fields{log.FieldKeyChain: nt})
-			err = a.MonitorEvent(context.Background(), func(e contract.Event) error {
-				logger.Infof("%s: %+v, src:%v", nt, e, TryActualParam(e, "_src"))
-				return nil
-			}, efs, height)
-			assert.NoError(t, err)
-		}(arg.networkType, arg.height)
-	}
-	<-time.After(10 * time.Minute)
-}
-
-func TryActualParam(e contract.Event, name string) interface{} {
-	p := e.Params()[name]
-	if eivp, ok := p.(contract.EventIndexedValueWithParam); ok {
-		return eivp.Param()
-	}
-	return p
-}
-
-func Test_HandlerMonitorEvent(t *testing.T) {
-	args := []struct {
-		networkType string
-		height      int64
-	}{
-		{
-			networkType: icon.NetworkTypeIcon,
-			height:      1050779,
-		},
-		{
-			networkType: eth.NetworkTypeEth,
-			height:      168136,
-		},
-	}
-	for _, arg := range args {
-		config := configs[arg.networkType]
-		a := adaptor(t, arg.networkType)
-		h := handler(t, a, config)
-		go func(nt string, height int64) {
-			logger := log.GlobalLogger().WithFields(log.Fields{log.FieldKeyChain: nt})
-			err := h.MonitorEvent(context.Background(), func(e contract.Event) error {
-				logger.Infof("%s: %+v", nt, e)
-				return nil
-			}, nameAndParams, height)
-			assert.NoError(t, err)
-		}(arg.networkType, arg.height)
-	}
-	<-time.After(10 * time.Minute)
 }

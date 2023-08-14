@@ -19,6 +19,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -61,7 +62,6 @@ var (
 	addressVal    = map[string]contract.Address{
 		icon.NetworkTypeIcon: "hx0000000000000000000000000000000000000000",
 		eth.NetworkTypeEth:   "0x0000000000000000000000000000000000000000",
-		eth.NetworkTypeEth2:  "0x0000000000000000000000000000000000000000",
 	}
 	structVal = struct {
 		BooleanVal contract.Boolean `json:"booleanVal"`
@@ -131,6 +131,16 @@ var (
 		},
 	}
 )
+
+func init() {
+	typeToSpec := make(map[string][]byte)
+	for network, config := range configs {
+		typeToSpec[config.NetworkType] = contracts[network].Spec
+	}
+	service.RegisterFactory(serviceTest, func(networks map[string]service.Network, l log.Logger) (service.Service, error) {
+		return service.NewDefaultService(serviceTest, networks, typeToSpec, l)
+	})
+}
 
 type TestConfig struct {
 	NetworkType    string
@@ -206,15 +216,6 @@ func services(t *testing.T, adaptors map[string]contract.Adaptor, withSigner boo
 	l := log.GlobalLogger()
 	sMap := make(map[string]service.Service)
 	for name, networks := range networksMap {
-		if name == serviceTest {
-			typeToSpec := make(map[string][]byte)
-			for network, n := range networks {
-				typeToSpec[n.NetworkType] = contracts[network].Spec
-			}
-			service.RegisterFactory(name, func(networks map[string]service.Network, l log.Logger) (service.Service, error) {
-				return service.NewDefaultService(name, networks, typeToSpec, l)
-			})
-		}
 		svc, err := service.NewService(name, networks, l)
 		if err != nil {
 			assert.FailNow(t, "fail to NewService", err)
@@ -232,7 +233,6 @@ func services(t *testing.T, adaptors map[string]contract.Adaptor, withSigner boo
 
 func server(t *testing.T, withSignerService bool) *Server {
 	l := log.GlobalLogger()
-	//s := NewServer("localhost:8081", serverLogLevel, l)
 	s := NewServer(serverAddress, serverLogLevel, l)
 	if withSignerService {
 		s.Signers = signers
@@ -245,6 +245,13 @@ func server(t *testing.T, withSignerService bool) *Server {
 	for _, svc := range sMap {
 		s.SetService(svc)
 	}
+	go func() {
+		err := s.Start()
+		if err != nil && err != http.ErrServerClosed {
+			t.Logf("Start returns error:%+v", err)
+			assert.FailNow(t, "fail to Server.Start", err)
+		}
+	}()
 	return s
 }
 
@@ -258,11 +265,7 @@ func client() *Client {
 
 func Test_ServerCall(t *testing.T) {
 	s := server(t, false)
-	go func() {
-		err := s.Start()
-		defer s.Stop()
-		assert.FailNow(t, "fail to Server.Start", err)
-	}()
+	defer s.Stop()
 
 	args := []struct {
 		Networks []string
@@ -311,7 +314,7 @@ func Test_ServerCall(t *testing.T) {
 					"arg2": booleanVal,
 					"arg3": stringVal,
 					"arg4": bytesVal,
-					"arg5": addressVal[eth.NetworkTypeEth2],
+					"arg5": addressVal[eth.NetworkTypeEth],
 				},
 			},
 			Response: contract.Struct{},
@@ -364,11 +367,7 @@ func Test_ServerCall(t *testing.T) {
 
 func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 	s := server(t, false)
-	go func() {
-		err := s.Start()
-		defer s.Stop()
-		assert.FailNow(t, "fail to Server.Start", err)
-	}()
+	defer s.Stop()
 
 	args := []struct {
 		Networks []string
@@ -417,7 +416,7 @@ func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 					"arg2": booleanVal,
 					"arg3": stringVal,
 					"arg4": bytesVal,
-					"arg5": addressVal[eth.NetworkTypeEth2],
+					"arg5": addressVal[eth.NetworkTypeEth],
 				},
 			},
 		},
@@ -466,11 +465,7 @@ func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 
 func Test_ServerInvokeWithSignerService(t *testing.T) {
 	s := server(t, true)
-	go func() {
-		err := s.Start()
-		defer s.Stop()
-		assert.FailNow(t, "fail to Server.Start", err)
-	}()
+	defer s.Stop()
 
 	args := []struct {
 		Networks []string
@@ -519,7 +514,7 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 					"arg2": booleanVal,
 					"arg3": stringVal,
 					"arg4": bytesVal,
-					"arg5": addressVal[eth.NetworkTypeEth2],
+					"arg5": addressVal[eth.NetworkTypeEth],
 				},
 			},
 		},
@@ -568,11 +563,7 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 
 func Test_ServerMonitorEvent(t *testing.T) {
 	s := server(t, true)
-	go func() {
-		err := s.Start()
-		defer s.Stop()
-		assert.FailNow(t, "fail to Server.Start", err)
-	}()
+	defer s.Stop()
 	args := []struct {
 		Networks       []string
 		Service        string

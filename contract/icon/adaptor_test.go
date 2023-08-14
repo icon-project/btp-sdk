@@ -31,7 +31,7 @@ import (
 )
 
 const (
-	endpoint = "http://localhost:19080/api/v3/icon"
+	endpoint = "http://localhost:9080/api/v3/icon_dex"
 	nid      = "0x3"
 	//cd ../../example/javascore; ./gradlew deployToTest
 	addr           = "cxbdb2fac53eaf445f9f0d0c33306d6b2a1a25353d"

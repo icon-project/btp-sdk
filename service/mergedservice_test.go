@@ -27,13 +27,21 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 )
 
+const (
+	mergedServiceName = "mergedTest"
+)
+
+func init() {
+	RegisterFactory(mergedServiceName, NewTestMergedService)
+}
+
 type TestMergedService struct {
 	*MergedService
 	l log.Logger
 }
 
 func NewTestMergedService(networks map[string]Network, l log.Logger) (Service, error) {
-	s, err := NewDefaultService(serviceName, networks, typeToSpec, l)
+	s, err := NewDefaultService(mergedServiceName, networks, typeToSpec, l)
 	if err != nil {
 		return nil, err
 	}
@@ -122,9 +130,8 @@ func mergedService(t *testing.T, withSignerService bool) (Service, map[string]Ne
 			Options:     MustEncodeOptions(config.ServiceOption),
 		}
 	}
-	RegisterFactory(serviceName, NewTestMergedService)
 	l := log.GlobalLogger()
-	s, err := NewService(serviceName, networks, l)
+	s, err := NewService(mergedServiceName, networks, l)
 	if err != nil {
 		assert.FailNow(t, "fail to NewService", err)
 	}
