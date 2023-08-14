@@ -188,8 +188,8 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 							NetworkType: eth.NetworkTypeEth2,
 							Endpoint:    "http://localhost:8545",
 							Options: MustEncodeOptions(eth.AdaptorOption{
-								BlockMonitor: MustEncodeOptions(eth.Eth2BlockMonitorOptions{
-									Endpoint: "http://localhost:9596",
+								FinalityMonitor: MustEncodeOptions(eth.FinalityMonitorOptions{
+									PollingPeriodSec: 3,
 								}),
 								TransportLogLevel: contract.LogLevel(log.TraceLevel),
 							}),

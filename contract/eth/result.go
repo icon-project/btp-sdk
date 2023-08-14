@@ -44,6 +44,17 @@ func NewBlockID(bh common.Hash) contract.BlockID {
 	return bh.Hex()
 }
 
+func CommonHashOf(v interface{}) (common.Hash, error) {
+	if h, ok := v.(common.Hash); ok {
+		return h, nil
+	}
+	b, err := contract.BytesOf(v)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return common.BytesToHash(b), nil
+}
+
 type TxFailure struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`

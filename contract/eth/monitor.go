@@ -25,7 +25,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -37,133 +36,185 @@ import (
 )
 
 const (
-	DefaultPollHeadInterval = 2 * time.Second
+	DefaultBlockInfoPoolSize            = 1
+	DefaultMonitorRetryInterval         = time.Second
+	DefaultBlockInfoNotifyRetryInterval = time.Second
+)
+
+var (
+	rpcFinalizedBlockNumber = big.NewInt(int64(rpc.FinalizedBlockNumber))
 )
 
 type BlockInfo struct {
-	id     []byte
+	id     common.Hash
 	height int64
-	status contract.BlockStatus
-	parent []byte
 }
 
-func (b *BlockInfo) ID() []byte {
-	return b.id[:]
+func (b *BlockInfo) ID() contract.BlockID {
+	return NewBlockID(b.id)
 }
 
 func (b *BlockInfo) Height() int64 {
 	return b.height
 }
 
-func (b *BlockInfo) Status() contract.BlockStatus {
-	return b.status
-}
-
-func (b *BlockInfo) Parent() []byte {
-	return b.parent
-}
-
 func (b *BlockInfo) String() string {
-	return fmt.Sprintf("BlockInfo{ID:%s,Height:%d,Status:%s,Parent:%s}",
-		hex.EncodeToString(b.id[:]), b.height, b.status, hex.EncodeToString(b.parent[:]))
+	return fmt.Sprintf("BlockInfo{ID:%s,Height:%d}",
+		hex.EncodeToString(b.id[:]), b.height)
 }
 
-type BlockMonitor struct {
+type FinalityMonitor struct {
 	*ethclient.Client
-	biMap         map[int64]*BlockInfo
-	biFirst       *BlockInfo
-	biLast        *BlockInfo
-	biMtx         sync.RWMutex
-	runCancel     context.CancelFunc
-	runMtx        sync.RWMutex
-	ch            chan contract.BlockInfo
-	finalizedOnly bool
-	opt           BlockMonitorOptions
-	l             log.Logger
+	runCancel context.CancelFunc
+	runMtx    sync.RWMutex
+	bi        *BlockInfo
+	biMtx     sync.RWMutex
+	ch        chan contract.BlockInfo
+	opt       FinalityMonitorOptions
+	l         log.Logger
 }
 
-type BlockMonitorOptions struct {
-	FinalizeBlockCount uint `json:"finalize_block_count"`
+type FinalityMonitorOptions struct {
+	PollingPeriodSec uint `json:"polling_period_sec"`
 }
 
-func NewBlockMonitor(options contract.Options, c *ethclient.Client, l log.Logger) (*BlockMonitor, error) {
-	opt := &BlockMonitorOptions{}
+func NewFinalityMonitor(options contract.Options, c *ethclient.Client, l log.Logger) (*FinalityMonitor, error) {
+	opt := &FinalityMonitorOptions{}
 	if err := contract.DecodeOptions(options, opt); err != nil {
 		return nil, err
 	}
-	return &BlockMonitor{
+	return &FinalityMonitor{
 		Client: c,
-		biMap:  make(map[int64]*BlockInfo),
 		opt:    *opt,
 		l:      l,
 	}, nil
 }
 
-func (m *BlockMonitor) addBlockInfo(ctx context.Context, bi *BlockInfo) {
+func (m *FinalityMonitor) setLast(bi *BlockInfo) {
 	m.biMtx.Lock()
 	defer m.biMtx.Unlock()
-
-	if len(m.biMap) == 0 {
-		m.biFirst = bi
-	} else {
-		if m.biFirst.height > bi.height {
-			m.biFirst = bi
-		}
-	}
-
-	m.biMap[bi.height] = bi
-	m.l.Tracef("add BlockInfo %s", bi.String())
-	if !m.finalizedOnly {
-		m._notify(ctx, bi)
-	}
+	m.bi = bi
 }
 
-func (m *BlockMonitor) finalizeBlockInfo(ctx context.Context, height int64) {
-	m.biMtx.Lock()
-	defer m.biMtx.Unlock()
-
-	if m.biFirst.height > height {
-		m.l.Debugf("finalize out of range BlockInfo height:%d, first:%d", height, m.biFirst.height)
-		return
-	}
-
-	bi, ok := m.biMap[height]
-	if !ok {
-		m.l.Panicf("not exists BlockInfo height:%d", height)
-	}
-
-	if parent, ok := m.biMap[height-1]; m.biFirst.height == bi.height || (ok && bytes.Equal(parent.id, bi.parent)) {
-		bi.status = contract.BlockStatusFinalized
-		m.biLast = bi
-		m._notify(ctx, bi)
-	} else {
-		m.l.Panicf("not exists parent BlockInfo %s", bi.String())
-	}
+func (m *FinalityMonitor) getLast() *BlockInfo {
+	m.biMtx.RLock()
+	defer m.biMtx.RUnlock()
+	return m.bi
 }
 
-func (m *BlockMonitor) _notify(ctx context.Context, bi *BlockInfo) {
+func (m *FinalityMonitor) notify(ctx context.Context) {
+	bi := &BlockInfo{
+		height: 0,
+	}
 	for {
+		last := m.getLast()
+		if last == nil || bi.height >= last.height {
+			<-time.After(DefaultBlockInfoNotifyRetryInterval)
+			continue
+		}
+		bi = last
 		select {
 		case m.ch <- bi:
-			m.l.Tracef("_notify success BlockInfo %s", bi.String())
-			return
+			m.l.Tracef("notify success BlockInfo %s", bi.String())
 		case <-ctx.Done():
-			m.l.Infof("_notify stopped BlockInfo %s", bi.String())
+			m.l.Infof("notify stopped BlockInfo %s", bi.String())
 			return
 		default:
-			m.l.Tracef("_notify failure BlockInfo %s", bi.String())
+			m.l.Tracef("notify failure BlockInfo %s", bi.String())
 			<-time.After(DefaultBlockInfoNotifyRetryInterval)
 		}
 	}
 }
 
-func (m *BlockMonitor) BlockInfo(height int64) contract.BlockInfo {
-	m.biMtx.RLock()
-	defer m.biMtx.RUnlock()
-	return m.biMap[height]
+func (m *FinalityMonitor) monitor(ctx context.Context) {
+	for {
+		select {
+		case <-time.After(DefaultMonitorRetryInterval):
+			m.l.Debugln("try to MonitorBlock last:%v", m.getLast())
+			if err := m.pollFinalizedBlock(ctx, func(h *types.Header) error {
+				m.setLast(&BlockInfo{
+					id:     h.Hash(),
+					height: h.Number.Int64(),
+				})
+				return nil
+			}); err != nil {
+				m.l.Debugf("fail to MonitorBlock err:%+v", err)
+			}
+			m.l.Debugln("MonitorBlock stopped")
+		case <-ctx.Done():
+			m.l.Debugln("MonitorBlock context done")
+			return
+		}
+	}
 }
 
-func (m *BlockMonitor) Start(height int64, finalizedOnly bool) (<-chan contract.BlockInfo, error) {
+func (m *FinalityMonitor) pollFinalizedBlock(ctx context.Context, cb func(h *types.Header) error) error {
+	var current *big.Int
+
+	period := time.Duration(m.opt.PollingPeriodSec) * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			m.l.Debugf("pollFinalizedBlock context done")
+			return ctx.Err()
+		default:
+		}
+		bh, err := m.HeaderByNumber(ctx, rpcFinalizedBlockNumber)
+		if err != nil {
+			if ctx.Err() == context.Canceled {
+				m.l.Trace("pollFinalizedBlock context done ", current)
+			} else {
+				m.l.Warn("Unable to get finalized block ", current, err)
+			}
+			<-time.After(period)
+			continue
+		}
+		if current == nil || current.Cmp(bh.Number) < 0 {
+			if current == nil {
+				m.l.Debugf("pollFinalizedBlock height:%v", bh.Number)
+			}
+			if err = cb(bh); err != nil {
+				m.l.Errorf("pollFinalizedBlock height:%v callback return err:%+v", current, err)
+				return err
+			}
+			current = bh.Number
+		}
+	}
+}
+
+func (m *FinalityMonitor) IsFinalized(height int64, id contract.BlockID) (bool, error) {
+	if height < 1 {
+		return false, errors.Errorf("invalid height:%d", height)
+	}
+
+	h, err := CommonHashOf(id)
+	if err != nil {
+		return false, errors.Wrapf(err, "invalid BlockID err:%v", err.Error())
+	}
+	last := m.getLast()
+	if last == nil {
+		return false, errors.Errorf("not started")
+	}
+	if height > last.height {
+		return false, nil
+	}
+	var th common.Hash
+	if height == last.height {
+		th = last.id
+	} else {
+		var bh *types.Header
+		if bh, err = m.Client.HeaderByNumber(context.Background(), big.NewInt(height)); err != nil {
+			return false, err
+		}
+		th = bh.Hash()
+	}
+	if !bytes.Equal(h[:], th[:]) {
+		return false, contract.ErrMismatchBlockID
+	}
+	return true, nil
+}
+
+func (m *FinalityMonitor) Start() (<-chan contract.BlockInfo, error) {
 	m.runMtx.Lock()
 	defer m.runMtx.Unlock()
 	if m.runCancel != nil {
@@ -172,58 +223,12 @@ func (m *BlockMonitor) Start(height int64, finalizedOnly bool) (<-chan contract.
 	ctx, cancel := context.WithCancel(context.Background())
 	m.runCancel = cancel
 	m.ch = make(chan contract.BlockInfo, DefaultBlockInfoPoolSize)
-	m.finalizedOnly = finalizedOnly
-	bhHandleFunc := func(bh *types.Header) {
-		bi := &BlockInfo{
-			id:     bh.Hash().Bytes(),
-			height: bh.Number.Int64(),
-			status: contract.BlockStatusProposed,
-			parent: bh.ParentHash.Bytes(),
-		}
-		m.addBlockInfo(ctx, bi)
-		m.finalizeBlockInfo(ctx, bi.height-int64(m.opt.FinalizeBlockCount))
-	}
-	go func() {
-		var h *big.Int
-		for {
-			select {
-			case <-time.After(time.Second):
-				m.l.Debugln("try to MonitorBlock")
-				onBlockHeader := func(bh *types.Header) error {
-					if h == nil && height > 0 {
-						h = big.NewInt(height)
-						for ; h.Cmp(bh.Number) < 0; h = h.Add(h, common.Big1) {
-							m.l.Debugf("catchup Client.HeaderByNumber %v", h.Int64())
-							if tbh, err := m.Client.HeaderByNumber(context.Background(), h); err != nil {
-								m.l.Errorf("fail to HeaderByNumber(%v) err:%+v", h, err)
-								return err
-							} else {
-								bhHandleFunc(tbh)
-							}
-						}
-					}
-					bhHandleFunc(bh)
-					return nil
-				}
-				err := m.MonitorBySubscribeNewHead(ctx, onBlockHeader)
-				if err != nil {
-					if err == rpc.ErrNotificationsUnsupported {
-						m.l.Debugf("fail to MonitorBySubscribeNewHead, try MonitorByPollHead")
-						err = monitorByPollHead(m.Client, m.l, ctx, onBlockHeader)
-					}
-					m.l.Debugf("fail to MonitorBlock err:%+v", err)
-				}
-				m.l.Debugln("MonitorBlock stopped")
-			case <-ctx.Done():
-				m.l.Debugln("MonitorBlock context done")
-				return
-			}
-		}
-	}()
+	go m.notify(ctx)
+	go m.monitor(ctx)
 	return m.ch, nil
 }
 
-func (m *BlockMonitor) Stop() error {
+func (m *FinalityMonitor) Stop() error {
 	m.runMtx.Lock()
 	defer m.runMtx.Unlock()
 	if m.runCancel == nil {
@@ -233,54 +238,4 @@ func (m *BlockMonitor) Stop() error {
 	m.runCancel = nil
 	m.ch = nil
 	return nil
-}
-
-func (m *BlockMonitor) MonitorBySubscribeNewHead(ctx context.Context, cb func(bh *types.Header) error) error {
-	ch := make(chan *types.Header)
-	s, err := m.Client.SubscribeNewHead(ctx, ch)
-	if err != nil {
-		return err
-	}
-	for {
-		select {
-		case err = <-s.Err():
-			return err
-		case bh := <-ch:
-			if err = cb(bh); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func (m *BlockMonitor) MonitorByPollHead(ctx context.Context, cb func(bh *types.Header) error) error {
-	n, err := m.Client.BlockNumber(ctx)
-	if err != nil {
-		return err
-	}
-	current := new(big.Int).SetUint64(n)
-	for {
-		select {
-		case <-ctx.Done():
-			m.l.Debugf("MonitorByPollHead context done")
-			return ctx.Err()
-		default:
-		}
-		var bh *types.Header
-		if bh, err = m.Client.HeaderByNumber(ctx, current); err != nil {
-			if ethereum.NotFound == err {
-				m.l.Trace("Block not ready, will retry ", current)
-			} else {
-				m.l.Warn("Unable to get block ", current, err)
-			}
-			<-time.After(DefaultPollHeadInterval)
-			continue
-		}
-
-		if err = cb(bh); err != nil {
-			m.l.Errorf("Poll callback return err:%+v", err)
-			return err
-		}
-		current.Add(current, big.NewInt(1))
-	}
 }

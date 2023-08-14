@@ -20,35 +20,27 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/icon-project/btp-sdk/contract"
 )
 
-func ethBlockMonitor(t *testing.T) *BlockMonitor {
-	a := adaptor(t, NetworkTypeEth)
-	return a.BlockMonitor().(*BlockMonitor)
+func finalityMonitor(t *testing.T, networkType string) *FinalityMonitor {
+	a := adaptor(t, networkType)
+	return a.FinalityMonitor().(*FinalityMonitor)
 }
 
-func Test_EthBlockMonitor(t *testing.T) {
-	m := ethBlockMonitor(t)
-	h := int64(0)
-	ch, err := m.Start(h, false)
+func Test_FinalityMonitor(t *testing.T) {
+	m := finalityMonitor(t, NetworkTypeEth)
+	ch, err := m.Start()
 	if err != nil {
 		assert.FailNow(t, "fail to Start", err)
 	}
-	var first contract.BlockInfo
 loop:
 	for {
 		select {
 		case bi := <-ch:
 			t.Logf("bi:%s", bi)
-			if first == nil {
-				first = bi
-			} else if bi.Status() == contract.BlockStatusFinalized && bi.Height() == first.Height() {
-				err = m.Stop()
-				assert.NoError(t, err)
-				break loop
-			}
+			err = m.Stop()
+			assert.NoError(t, err)
+			break loop
 		}
 	}
 }

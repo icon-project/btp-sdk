@@ -57,16 +57,10 @@ var (
 			Endpoint: "http://localhost:8545",
 			NetworkType: eth.NetworkTypeEth,
 			AdaptorOption: eth.AdaptorOption{
-				BlockMonitor: MustEncodeOptions(eth.BlockMonitorOptions{
-					FinalizeBlockCount: 3,
+				FinalityMonitor: MustEncodeOptions(eth.FinalityMonitorOptions{
+					PollingPeriodSec: 3,
 				}),
 			},
-			//NetworkType: eth.NetworkTypeEth2,
-			//AdaptorOption: eth.AdaptorOption{
-			//	BlockMonitor: MustEncodeOptions(eth.Eth2BlockMonitorOptions{
-			//		Endpoint: "http://localhost:9596",
-			//	}),
-			//},
 			ServiceOption: DefaultServiceOptions{
 				ContractAddress: "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
 			},

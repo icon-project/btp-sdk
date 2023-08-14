@@ -53,7 +53,7 @@ func init() {
 
 type Adaptor struct {
 	*client.Client
-	bm          contract.BlockMonitor
+	fm          contract.FinalityMonitor
 	networkType string
 	opt         AdaptorOption
 	l           log.Logger
@@ -73,10 +73,10 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 	c := client.NewClient(endpoint, l)
 	c.Client = jsonrpc.NewJsonRpcClient(contract.NewHttpClient(opt.TransportLogLevel.Level(), l), endpoint)
 
-	bm := NewBlockMonitor(c, l)
+	fm := NewFinalityMonitor(c, l)
 	return &Adaptor{
 		Client:      c,
-		bm:          bm,
+		fm:          fm,
 		networkType: networkType,
 		opt:         *opt,
 		l:           l,
@@ -143,8 +143,8 @@ func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handl
 	return NewHandler(spec, client.Address(address), a, a.l)
 }
 
-func (a *Adaptor) BlockMonitor() contract.BlockMonitor {
-	return a.bm
+func (a *Adaptor) FinalityMonitor() contract.FinalityMonitor {
+	return a.fm
 }
 
 func (a *Adaptor) GetTransactionResult(p *client.TransactionHashParam) (*client.TransactionResult, error) {

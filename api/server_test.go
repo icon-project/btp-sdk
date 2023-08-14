@@ -91,16 +91,10 @@ var (
 		},
 		networkEth2Test: {
 			Endpoint: "http://localhost:8545",
-			//NetworkType: eth.NetworkTypeEth,
-			//AdaptorOption: eth.AdaptorOption{
-			//	BlockMonitor: MustEncodeOptions(eth.BlockMonitorOptions{
-			//		FinalizeBlockCount: 3,
-			//	}),
-			//},
 			NetworkType: eth.NetworkTypeEth2,
 			AdaptorOption: eth.AdaptorOption{
-				BlockMonitor: MustEncodeOptions(eth.Eth2BlockMonitorOptions{
-					Endpoint: "http://localhost:9596",
+				FinalityMonitor: MustEncodeOptions(eth.FinalityMonitorOptions{
+					PollingPeriodSec: 3,
 				}),
 				TransportLogLevel: contract.LogLevel(transportLogLevel),
 			},

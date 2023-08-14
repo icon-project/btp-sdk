@@ -18,37 +18,29 @@ package icon
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func blockMonitor(t *testing.T, networkType string) *BlockMonitor {
+func finalityMonitor(t *testing.T, networkType string) *FinalityMonitor {
 	a := adaptor(t, networkType)
-	return a.BlockMonitor().(*BlockMonitor)
+	return a.FinalityMonitor().(*FinalityMonitor)
 }
 
-func Test_BlockMonitor(t *testing.T) {
-	m := blockMonitor(t, NetworkTypeIcon)
-	h := int64(0)
-	ch, err := m.Start(h, false)
+func Test_FinalityMonitor(t *testing.T) {
+	m := finalityMonitor(t, NetworkTypeIcon)
+	ch, err := m.Start()
 	if err != nil {
 		assert.FailNow(t, "fail to Start", err)
 	}
-	for {
-		<-time.After(time.Second)
-		if m.biFirst != nil {
-			t.Logf("biFirst:%s", m.biFirst.String())
-			break
-		}
-	}
-	first := <-ch
-	t.Logf("first:%s", first)
-	<-time.After(time.Second * 10)
+loop:
 	for {
 		select {
 		case bi := <-ch:
 			t.Logf("bi:%s", bi)
+			err = m.Stop()
+			assert.NoError(t, err)
+			break loop
 		}
 	}
 }

@@ -57,16 +57,10 @@ var (
 			Wallet: MustLoadWallet(
 				"../../example/solidity/test/keystore.json",
 				"../../example/solidity/test/keysecret"),
-			//NetworkType: eth.NetworkTypeEth,
-			//AdaptorOption: eth.AdaptorOption{
-			//	BlockMonitor: MustEncodeOptions(eth.BlockMonitorOptions{
-			//		FinalizeBlockCount: 3,
-			//	}),
-			//},
 			NetworkType: eth.NetworkTypeEth2,
 			AdaptorOption: eth.AdaptorOption{
-				BlockMonitor: MustEncodeOptions(eth.Eth2BlockMonitorOptions{
-					Endpoint: "http://localhost:9596",
+				FinalityMonitor: MustEncodeOptions(eth.FinalityMonitorOptions{
+					PollingPeriodSec: 3,
 				}),
 			},
 			ServiceOption: service.DefaultServiceOptions{

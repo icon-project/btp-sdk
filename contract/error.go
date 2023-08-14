@@ -25,10 +25,12 @@ const (
 	ErrorCodeInvalidParam
 	ErrorCodeInvalidOption
 	ErrorCodeRequireSignature
+	ErrorCodeMismatchBlockID
 )
 
 var (
 	errRequireSignature = errors.NewBase(ErrorCodeRequireSignature, "RequireSignatureError")
+	ErrMismatchBlockID  = errors.NewBase(ErrorCodeMismatchBlockID, "MismatchBlockID")
 )
 
 type RequireSignatureError interface {

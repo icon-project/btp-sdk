@@ -40,6 +40,7 @@ const (
 	NetworkTypeEth           = "eth"
 	NetworkTypeEth2          = "eth2"
 	DefaultGetResultInterval = 2 * time.Second
+	DefaultPollHeadInterval  = 2 * time.Second
 )
 
 var (
@@ -57,7 +58,7 @@ func init() {
 
 type Adaptor struct {
 	*ethclient.Client
-	bm          contract.BlockMonitor
+	fm          contract.FinalityMonitor
 	chainID     *big.Int
 	networkType string
 	opt         AdaptorOption
@@ -65,7 +66,7 @@ type Adaptor struct {
 }
 
 type AdaptorOption struct {
-	BlockMonitor      contract.Options  `json:"block_monitor"`
+	FinalityMonitor   contract.Options  `json:"finality_monitor"`
 	TransportLogLevel contract.LogLevel `json:"transport_log_level,omitempty"`
 }
 
@@ -92,14 +93,10 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 		return nil, errors.Wrapf(err, "fail to ChainID err:%s", err.Error())
 	}
 
-	var bm contract.BlockMonitor
+	var fm contract.FinalityMonitor
 	switch networkType {
-	case NetworkTypeEth:
-		if bm, err = NewBlockMonitor(opt.BlockMonitor, c, l); err != nil {
-			return nil, err
-		}
-	case NetworkTypeEth2:
-		if bm, err = NewEth2BlockMonitor(opt.BlockMonitor, l); err != nil {
+	case NetworkTypeEth, NetworkTypeEth2:
+		if fm, err = NewFinalityMonitor(opt.FinalityMonitor, c, l); err != nil {
 			return nil, err
 		}
 	default:
@@ -107,7 +104,7 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 	}
 	return &Adaptor{
 		Client:      c,
-		bm:          bm,
+		fm:          fm,
 		chainID:     chainID,
 		networkType: networkType,
 		opt:         *opt,
@@ -144,8 +141,8 @@ func (a *Adaptor) Handler(spec []byte, address contract.Address) (contract.Handl
 	return NewHandler(spec, addr, a, a.l)
 }
 
-func (a *Adaptor) BlockMonitor() contract.BlockMonitor {
-	return a.bm
+func (a *Adaptor) FinalityMonitor() contract.FinalityMonitor {
+	return a.fm
 }
 
 func (a *Adaptor) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
@@ -333,13 +330,19 @@ func (a *Adaptor) monitorByPollBlock(
 	}
 	a.l.Debugf("monitorByPollBlock height:%v", current)
 	for {
+		select {
+		case <-ctx.Done():
+			a.l.Debugf("monitorByPollBlock context done current:%v", current)
+			return ctx.Err()
+		default:
+		}
 		blk, err := a.Client.BlockByNumber(ctx, current)
 		if err != nil {
+			if ctx.Err() == context.Canceled {
+				continue
+			}
 			if ethereum.NotFound == err {
 				a.l.Trace("Block not ready, will retry ", current)
-			} else if ctx.Err() == context.Canceled {
-				a.l.Debug("Context error ", current, err)
-				return err
 			} else {
 				a.l.Error("Unable to get block ", current, err)
 			}
@@ -388,16 +391,17 @@ func monitorByPollHead(c *ethclient.Client, l log.Logger, ctx context.Context, c
 	for {
 		select {
 		case <-ctx.Done():
-			l.Debugf("MonitorByPollHead context done")
+			l.Debugf("monitorByPollHead context done current:%v", current)
 			return ctx.Err()
 		default:
 		}
 		var bh *types.Header
 		if bh, err = c.HeaderByNumber(ctx, current); err != nil {
+			if ctx.Err() == context.Canceled {
+				continue
+			}
 			if ethereum.NotFound == err {
 				l.Trace("Block not ready, will retry ", current)
-			} else if ctx.Err() == context.Canceled {
-				l.Trace("MonitorByPollHead context done ", current)
 			} else {
 				l.Warn("Unable to get block ", current, err)
 			}

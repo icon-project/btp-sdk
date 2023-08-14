@@ -40,23 +40,21 @@ import (
 const (
 	endpoint = "http://localhost:8545"
 	//cd ../../example/solidity; npx hardhat --network ether2_test run ./scripts/deploy.ts
-	addr                              = "0x09635F643e140090A9A8Dcd712eD6285858ceBef"
-	keystoreFile                      = "../../example/solidity/test/keystore.json"
-	keystoreSecret                    = "../../example/solidity/test/keysecret"
-	ethBlockMonitorFinalizeBlockCount = 3
-	eth2BlockMonitorEndpoint          = "http://localhost:9596"
+	addr           = "0x09635F643e140090A9A8Dcd712eD6285858ceBef"
+	keystoreFile   = "../../example/solidity/test/keystore.json"
+	keystoreSecret = "../../example/solidity/test/keysecret"
 )
 
 var (
 	adaptorOpts = map[string]AdaptorOption{
 		NetworkTypeEth: {
-			BlockMonitor: MustEncodeOptions(BlockMonitorOptions{
-				FinalizeBlockCount: ethBlockMonitorFinalizeBlockCount,
+			FinalityMonitor: MustEncodeOptions(FinalityMonitorOptions{
+				PollingPeriodSec: 2,
 			}),
 		},
 		NetworkTypeEth2: {
-			BlockMonitor: MustEncodeOptions(Eth2BlockMonitorOptions{
-				Endpoint: eth2BlockMonitorEndpoint,
+			FinalityMonitor: MustEncodeOptions(FinalityMonitorOptions{
+				PollingPeriodSec: 3,
 			}),
 		},
 	}

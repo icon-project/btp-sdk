@@ -19,7 +19,6 @@ package contract
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
@@ -88,44 +87,22 @@ type Handler interface {
 
 type BaseEventCallback func(e BaseEvent) error
 
-const (
-	BlockStatusFinalized BlockStatus = iota
-	BlockStatusDropped
-	BlockStatusProposed
-)
-
-type BlockStatus int
-
-func (b BlockStatus) String() string {
-	switch b {
-	case BlockStatusFinalized:
-		return "Finalized"
-	case BlockStatusDropped:
-		return "Dropped"
-	case BlockStatusProposed:
-		return "Proposed"
-	default:
-		return fmt.Sprintf("Unknown %d", b)
-	}
-}
-
 type BlockInfo interface {
-	ID() []byte
+	ID() BlockID
 	Height() int64
-	Status() BlockStatus
 }
 
-type BlockMonitor interface {
-	Start(height int64, finalizedOnly bool) (<-chan BlockInfo, error)
+type FinalityMonitor interface {
+	Start() (<-chan BlockInfo, error)
 	Stop() error
-	BlockInfo(height int64) BlockInfo
+	IsFinalized(height int64, id BlockID) (bool, error)
 }
 
 type Adaptor interface {
 	NetworkType() string
 	GetResult(id TxID) (TxResult, error)
 	Handler(spec []byte, address Address) (Handler, error)
-	BlockMonitor() BlockMonitor
+	FinalityMonitor() FinalityMonitor
 	MonitorEvent(ctx context.Context, cb EventCallback, efs []EventFilter, height int64) error
 	MonitorBaseEvent(ctx context.Context, cb BaseEventCallback, sigToAddrs map[string][]Address, height int64) error
 }

@@ -38,6 +38,22 @@ func NewBlockID(bh HexBytes) contract.BlockID {
 	return bh.String()
 }
 
+func HexBytesOf(v interface{}) (HexBytes, error) {
+	if hb, ok := v.(HexBytes); ok {
+		return hb, nil
+	}
+	b, err := contract.BytesOf(v)
+	if err != nil {
+		if tv, ok := v.(client.HexBytes); ok {
+			b, err = tv.Value()
+		}
+		if err != nil {
+			return HexBytes{}, err
+		}
+	}
+	return HexBytes(b), nil
+}
+
 type HexBytes []byte
 
 func (h HexBytes) String() string {
