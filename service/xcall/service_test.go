@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/icon-project/btp2/common/log"
+	"github.com/icon-project/btp2/common/types"
 	"github.com/icon-project/btp2/common/wallet"
 	"github.com/stretchr/testify/assert"
 
@@ -71,7 +72,7 @@ var (
 type TestConfig struct {
 	NetworkType   string
 	Endpoint      string
-	Wallet        wallet.Wallet
+	Wallet        types.Wallet
 	AdaptorOption interface{}
 	ServiceOption service.DefaultServiceOptions
 }
@@ -84,7 +85,7 @@ func MustReadFile(f string) []byte {
 	return b
 }
 
-func MustLoadWallet(keyStoreFile, keyStoreSecret string) wallet.Wallet {
+func MustLoadWallet(keyStoreFile, keyStoreSecret string) types.Wallet {
 	w, err := wallet.DecryptKeyStore(MustReadFile(keyStoreFile), MustReadFile(keyStoreSecret))
 	if err != nil {
 		log.Panicf("keyStoreFile:%s, keyStoreSecret:%s, %+v",

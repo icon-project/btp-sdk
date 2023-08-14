@@ -19,7 +19,7 @@ package service
 import (
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
-	"github.com/icon-project/btp2/common/wallet"
+	"github.com/icon-project/btp2/common/types"
 
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/contract/eth"
@@ -27,7 +27,7 @@ import (
 )
 
 type Signer interface {
-	wallet.Wallet
+	types.Wallet
 	NetworkType() string
 }
 
@@ -150,7 +150,7 @@ func NewSignerService(s Service, signers map[string]Signer, l log.Logger) (*Sign
 }
 
 type DefaultSigner struct {
-	wallet.Wallet
+	types.Wallet
 	networkType string
 }
 
@@ -158,7 +158,7 @@ func (s *DefaultSigner) NetworkType() string {
 	return s.networkType
 }
 
-func NewDefaultSigner(w wallet.Wallet, networkType string) Signer {
+func NewDefaultSigner(w types.Wallet, networkType string) Signer {
 	return &DefaultSigner{
 		Wallet:      w,
 		networkType: networkType,

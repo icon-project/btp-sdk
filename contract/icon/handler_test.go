@@ -27,7 +27,7 @@ import (
 	"github.com/icon-project/btp2/chain/icon/client"
 	"github.com/icon-project/btp2/common/codec"
 	"github.com/icon-project/btp2/common/errors"
-	"github.com/icon-project/btp2/common/wallet"
+	"github.com/icon-project/btp2/common/types"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/icon-project/btp-sdk/contract"
@@ -205,7 +205,7 @@ func Test_callOptional(t *testing.T) {
 	t.Log(r)
 }
 
-func autoSign(w wallet.Wallet, h *Handler, method string, params contract.Params) (contract.TxID, error) {
+func autoSign(w types.Wallet, h *Handler, method string, params contract.Params) (contract.TxID, error) {
 	opt := &InvokeOptions{
 		From: contract.Address(w.Address()),
 	}

@@ -18,19 +18,17 @@ package eth
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"fmt"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
+	ethTypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
+	"github.com/icon-project/btp2/common/types"
 	"github.com/icon-project/btp2/common/wallet"
 	"github.com/stretchr/testify/assert"
 
@@ -73,37 +71,13 @@ func MustEncodeOptions(v interface{}) contract.Options {
 	return opt
 }
 
-type Wallet struct {
-	*keystore.Key
-	PubKey *ecdsa.PublicKey
-}
-
-func (w *Wallet) Address() string {
-	return w.Key.Address.String()
-}
-
-func (w *Wallet) Sign(data []byte) ([]byte, error) {
-	return crypto.Sign(data, w.PrivateKey)
-}
-
-func (w *Wallet) PublicKey() []byte {
-	return crypto.FromECDSAPub(w.PubKey)
-}
-
-func (w *Wallet) ECDH(pubKey []byte) ([]byte, error) {
-	return nil, errors.New("not implemented")
-}
-
-func MustLoadWallet(keyStoreFile, keyStoreSecret string) wallet.Wallet {
-	key, err := keystore.DecryptKey(MustReadFile(keyStoreFile), string(MustReadFile(keyStoreSecret)))
+func MustLoadWallet(keyStoreFile, keyStoreSecret string) types.Wallet {
+	w, err := wallet.DecryptKeyStore(MustReadFile(keyStoreFile), MustReadFile(keyStoreSecret))
 	if err != nil {
 		log.Panicf("keyStoreFile:%s, keyStoreSecret:%s, %+v",
 			keyStoreFile, keyStoreSecret, err)
 	}
-	return &Wallet{
-		Key:    key,
-		PubKey: &key.PrivateKey.PublicKey,
-	}
+	return w
 }
 
 func MustReadFile(f string) []byte {
@@ -160,7 +134,7 @@ func Test_MonitorEvents(t *testing.T) {
 	sig := fmt.Sprintf("%v(%v)", "setName", arg.Type.String())
 	id := crypto.Keccak256([]byte(sig))[:4]
 	to := common.HexToAddress(addr)
-	p := &types.LegacyTx{
+	p := &ethTypes.LegacyTx{
 		Gas:  DefaultGasLimit,
 		To:   &to,
 		Data: append(id, b...),
@@ -174,9 +148,9 @@ func Test_MonitorEvents(t *testing.T) {
 		assert.FailNow(t, "fail to SuggestGasPrice", err)
 	}
 
-	tx := types.NewTx(p)
-	signer := types.LatestSignerForChainID(a.chainID)
-	b, err = crypto.Sign(signer.Hash(tx).Bytes(), w.(*Wallet).Key.PrivateKey)
+	tx := ethTypes.NewTx(p)
+	signer := ethTypes.LatestSignerForChainID(a.chainID)
+	b, err = w.Sign(signer.Hash(tx).Bytes())
 	if err != nil {
 		assert.FailNow(t, "fail to Sign", err)
 	}
