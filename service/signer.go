@@ -55,7 +55,7 @@ func PrepareToSign(options contract.Options, s Signer, force bool) (contract.Opt
 			opt.Signature = opt.Signature[:0]
 		}
 		return contract.EncodeOptions(opt)
-	case eth.NetworkTypeEth, eth.NetworkTypeEth2:
+	case eth.NetworkTypeEth, eth.NetworkTypeEth2, eth.NetworkTypeBSC:
 		opt := &eth.InvokeOptions{}
 		if err := contract.DecodeOptions(options, opt); err != nil {
 			return nil, err
@@ -88,7 +88,7 @@ func Sign(data []byte, options contract.Options, s Signer) (contract.Options, er
 		}
 		opt.Signature = sig
 		return contract.EncodeOptions(opt)
-	case eth.NetworkTypeEth, eth.NetworkTypeEth2:
+	case eth.NetworkTypeEth, eth.NetworkTypeEth2, eth.NetworkTypeBSC:
 		opt := &eth.InvokeOptions{}
 		if err = contract.DecodeOptions(options, opt); err != nil {
 			return nil, err

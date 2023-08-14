@@ -33,6 +33,7 @@ var (
 		icon.NetworkTypeIcon: []byte(iconContractSpec),
 		eth.NetworkTypeEth:   []byte(ethContractSpec),
 		eth.NetworkTypeEth2:  []byte(ethContractSpec),
+		eth.NetworkTypeBSC:   []byte(ethContractSpec),
 	}
 )
 

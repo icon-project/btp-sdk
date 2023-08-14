@@ -57,6 +57,11 @@ var (
 				PollingPeriodSec: 3,
 			}),
 		},
+		NetworkTypeBSC: {
+			FinalityMonitor: MustEncodeOptions(FinalityMonitorOptions{
+				PollingPeriodSec: 3,
+			}),
+		},
 	}
 	w = MustLoadWallet(keystoreFile, keystoreSecret)
 )

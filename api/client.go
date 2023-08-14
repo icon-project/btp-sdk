@@ -113,7 +113,7 @@ func (c *Client) GetResult(network string, id contract.TxID) (interface{}, error
 		switch nt {
 		case icon.NetworkTypeIcon:
 			txr = &icon.TxResult{}
-		case eth.NetworkTypeEth, eth.NetworkTypeEth2:
+		case eth.NetworkTypeEth, eth.NetworkTypeEth2, eth.NetworkTypeBSC:
 			txr = &eth.TxResult{}
 		default:
 			txr = new(interface{})
@@ -347,7 +347,7 @@ func (c *Client) monitorEvent(ctx context.Context, network, url string, req *Mon
 		switch nt {
 		case icon.NetworkTypeIcon:
 			supplier = func() contract.Event { return &icon.Event{} }
-		case eth.NetworkTypeEth, eth.NetworkTypeEth2:
+		case eth.NetworkTypeEth, eth.NetworkTypeEth2, eth.NetworkTypeBSC:
 			supplier = func() contract.Event { return &eth.Event{} }
 		default:
 			c.wsClose(conn)

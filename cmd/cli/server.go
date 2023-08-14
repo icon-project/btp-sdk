@@ -222,6 +222,44 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 								},
 							},
 						},
+						eth.NetworkTypeBSC + "Network": {
+							NetworkType: eth.NetworkTypeBSC,
+							Endpoint:    "http://localhost:8545",
+							Options: MustEncodeOptions(eth.AdaptorOption{
+								FinalityMonitor: MustEncodeOptions(eth.FinalityMonitorOptions{
+									PollingPeriodSec: 3,
+								}),
+								TransportLogLevel: contract.LogLevel(log.TraceLevel),
+							}),
+							Services: map[string]contract.Options{
+								bmc.ServiceName: MustEncodeOptions(service.MultiContractServiceOption{
+									service.MultiContractServiceOptionNameDefault: "0x0000000000000000000000000000000000000000",
+									bmc.MultiContractServiceOptionNameBMCM:        "0x0000000000000000000000000000000000000000",
+								}),
+								xcall.ServiceName: MustEncodeOptions(service.DefaultServiceOptions{
+									ContractAddress: "0x0000000000000000000000000000000000000000",
+								}),
+							},
+							Signer: &SignerConfig{
+								Keystore: "/path/to/keystore",
+								Secret:   "/path/to/secret",
+							},
+							AutoCallers: map[string]AutoCallerConfig{
+								xcall.ServiceName: {
+									Signer: SignerConfig{
+										Keystore: "/path/to/keystore",
+										Secret:   "/path/to/secret",
+									},
+									Options: MustEncodeOptions(_xcall.AutoCallerOptions{
+										InitHeight:     0,
+										NetworkAddress: "0x0.eth2",
+										Contracts: []contract.Address{
+											"0x0000000000000000000000000000000000000000",
+										},
+									}),
+								},
+							},
+						},
 					}
 				}
 			}

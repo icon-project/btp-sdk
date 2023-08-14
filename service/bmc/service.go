@@ -38,10 +38,12 @@ var (
 			icon.NetworkTypeIcon: []byte(iconContractSpec),
 			eth.NetworkTypeEth:   []byte(ethContractSpec),
 			eth.NetworkTypeEth2:  []byte(ethContractSpec),
+			eth.NetworkTypeBSC:   []byte(ethContractSpec),
 		},
 		MultiContractServiceOptionNameBMCM: {
 			eth.NetworkTypeEth:  []byte(ethBMCMContractSpec),
 			eth.NetworkTypeEth2: []byte(ethBMCMContractSpec),
+			eth.NetworkTypeBSC:  []byte(ethBMCMContractSpec),
 		},
 	}
 

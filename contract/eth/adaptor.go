@@ -39,6 +39,7 @@ import (
 const (
 	NetworkTypeEth           = "eth"
 	NetworkTypeEth2          = "eth2"
+	NetworkTypeBSC           = "bsc"
 	DefaultGetResultInterval = 2 * time.Second
 	DefaultPollHeadInterval  = 2 * time.Second
 )
@@ -48,6 +49,7 @@ var (
 	NetworkTypes    = []string{
 		NetworkTypeEth,
 		NetworkTypeEth2,
+		NetworkTypeBSC,
 	}
 	emptyAddr common.Address
 )
@@ -95,7 +97,7 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 
 	var fm contract.FinalityMonitor
 	switch networkType {
-	case NetworkTypeEth, NetworkTypeEth2:
+	case NetworkTypeEth, NetworkTypeEth2, NetworkTypeBSC:
 		if fm, err = NewFinalityMonitor(opt.FinalityMonitor, c, l); err != nil {
 			return nil, err
 		}

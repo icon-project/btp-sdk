@@ -133,6 +133,7 @@ var (
 		icon.NetworkTypeIcon: MustReadFile(iconSpecFile),
 		eth.NetworkTypeEth:   MustReadFile(ethSpecFile),
 		eth.NetworkTypeEth2:  MustReadFile(ethSpecFile),
+		eth.NetworkTypeBSC:   MustReadFile(ethSpecFile),
 	}
 
 	iconSpec = contract.MustNewSpec(icon.NetworkTypeIcon, typeToSpec[icon.NetworkTypeIcon])
