@@ -16,6 +16,7 @@
 
 package foundation.icon.btp.example;
 
+import foundation.icon.btp.lib.BTPAddress;
 import foundation.icon.btp.xcall.CallServiceReceiver;
 import lombok.AllArgsConstructor;
 import lombok.NoArgsConstructor;
@@ -63,12 +64,24 @@ public class DAppSample implements CallServiceReceiver {
         xCallVarDB.set(_addr);
         if (_addr != null) {
             xCallBTPAddressVarDB.set(new XCallScoreInterface(_addr).getBtpAddress());
+        } else {
+            xCallBTPAddressVarDB.set(null);
         }
     }
 
     @External(readonly = true)
     public Address getXCall() {
         return xCallVarDB.get();
+    }
+
+    @External(readonly = true)
+    public String getBTPAddress() {
+        String xCallBTPAddress = xCallBTPAddressVarDB.get();
+        if (xCallBTPAddress == null) {
+            return null;
+        }
+        return new BTPAddress(BTPAddress.parse(xCallBTPAddressVarDB.get()).net(),
+                Context.getAddress().toString()).toString();
     }
 
     @External(readonly = true)

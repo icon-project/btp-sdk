@@ -6,6 +6,8 @@ import "@iconfoundation/btp2-solidity-library/contracts/interfaces/ICallServiceR
 import "@iconfoundation/btp2-solidity-library/contracts/utils/RLPEncode.sol";
 import "@iconfoundation/btp2-solidity-library/contracts/utils/RLPDecode.sol";
 import "@iconfoundation/btp2-solidity-library/contracts/utils/Strings.sol";
+import "@iconfoundation/btp2-solidity-library/contracts/utils/BTPAddress.sol";
+import "@iconfoundation/btp2-solidity-library/contracts/utils/ParseAddress.sol";
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
@@ -19,6 +21,8 @@ contract DAppSample is ICallServiceReceiver, Initializable {
     using RLPDecode for RLPDecode.RLPItem;
     using RLPDecode for RLPDecode.Iterator;
     using RLPDecode for bytes;
+    using BTPAddress for string;
+    using ParseAddress for address;
 
     address private xCall;
     string private xCallBTPAddress;
@@ -51,12 +55,22 @@ contract DAppSample is ICallServiceReceiver, Initializable {
         xCall = _addr;
         if (_addr != address(0)) {
             xCallBTPAddress = ICallService(_addr).getBtpAddress();
+        } else {
+            xCallBTPAddress = "";
         }
     }
 
     function getXCall(
     ) external view returns (address) {
         return xCall;
+    }
+
+    function getBTPAddress(
+    ) external view returns (string memory) {
+        if (bytes(xCallBTPAddress).length == 0) {
+            return "";
+        }
+        return xCallBTPAddress.networkAddress().btpAddress(address(this).toString());
     }
 
     function getLastSn(

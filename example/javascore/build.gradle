@@ -36,6 +36,7 @@ dependencies {
     implementation "foundation.icon:javaee-api:$javaeeVersion"
     implementation("foundation.icon:javaee-scorex:0.5.3")
 
+    implementation 'foundation.icon:btp2-lib:0.8.0'
     implementation 'foundation.icon:btp2-xcall:0.6.2'
 
     compileOnly 'org.projectlombok:lombok:1.18.26'
