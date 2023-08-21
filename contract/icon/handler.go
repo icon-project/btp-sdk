@@ -83,12 +83,12 @@ func (h *Handler) callData(m *contract.MethodSpec, params contract.Params) (*cli
 }
 
 type InvokeOptions struct {
-	From      contract.Address
-	Value     contract.Integer
-	StepLimit contract.Integer
-	Timestamp contract.Integer
-	Signature contract.Bytes
-	Estimate  contract.Boolean
+	From      contract.Address `json:"from,omitempty"`
+	Value     contract.Integer `json:"value,omitempty"`
+	StepLimit contract.Integer `json:"stepLimit,omitempty"`
+	Timestamp contract.Integer `json:"timestamp,omitempty"`
+	Signature contract.Bytes   `json:"signature,omitempty"`
+	Estimate  contract.Boolean `json:"estimate,omitempty"`
 }
 
 func (h *Handler) Invoke(method string, params contract.Params, options contract.Options) (contract.TxID, error) {
@@ -157,7 +157,7 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 }
 
 type CallOption struct {
-	From contract.Address
+	From contract.Address `json:"from,omitempty"`
 }
 
 func (h *Handler) Call(method string, params contract.Params, options contract.Options) (contract.ReturnValue, error) {

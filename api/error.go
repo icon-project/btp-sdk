@@ -55,8 +55,8 @@ func (e *ErrorResponse) UnmarshalData(v interface{}) error {
 }
 
 type RequireSignatureError struct {
-	Data    []byte
-	Options contract.Options
+	Data    []byte           `json:"data"`
+	Options contract.Options `json:"options"`
 }
 
 func HttpErrorHandler(err error, c echo.Context) {

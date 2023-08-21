@@ -103,15 +103,15 @@ func (h *Handler) callData(m *abi.Method, params contract.Params) (b []byte, err
 }
 
 type InvokeOptions struct {
-	From      contract.Address
-	Value     contract.Integer
-	GasPrice  contract.Integer
-	GasLimit  contract.Integer
-	GasFeeCap contract.Integer
-	GasTipCap contract.Integer
-	Nonce     contract.Integer
-	Signature contract.Bytes
-	Estimate  contract.Boolean
+	From      contract.Address `json:"from,omitempty"`
+	Value     contract.Integer `json:"value,omitempty"`
+	GasPrice  contract.Integer `json:"gasPrice,omitempty"`
+	GasLimit  contract.Integer `json:"gasLimit,omitempty"`
+	GasFeeCap contract.Integer `json:"gasFeeCap,omitempty"`
+	GasTipCap contract.Integer `json:"gasTipCap,omitempty"`
+	Nonce     contract.Integer `json:"nonce,omitempty"`
+	Signature contract.Bytes   `json:"signature,omitempty"`
+	Estimate  contract.Boolean `json:"estimate,omitempty"`
 }
 
 type baseTx struct {
@@ -340,7 +340,7 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 }
 
 type CallOption struct {
-	From contract.Address
+	From contract.Address `json:"from,omitempty"`
 }
 
 func (h *Handler) Call(method string, params contract.Params, options contract.Options) (contract.ReturnValue, error) {
