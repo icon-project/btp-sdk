@@ -1,0 +1,137 @@
+<!--
+  ~ Copyright 2023 ICON Foundation
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+
+<html>
+    <head>
+        <script src="https://c0f4f41c-2f55-4863-921b-sdk-docs.github.io/cdn/metamask-sdk.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/qs/6.11.2/qs.js" integrity="sha512-xjPY2pO1GsrSGApvDELRMdGhJt/kTYnBbfR7VPLh/xgyJdN1gCZkz8Ru93f/rFN6Es48vhLU2RiZPylvRrieXg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+        <meta charset="UTF-8" />
+        <title>BTPSDK Test</title>
+        <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css?family=Roboto:300,400,500,700&display=swap"
+        />
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.4.1/css/bootstrap.min.css"
+            rel="stylesheet"
+        />
+        <link
+            href="https://cdnjs.cloudflare.com/ajax/libs/mdbootstrap/4.14.1/css/mdb.min.css"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="index.css" type="text/css" />
+    </head>
+<body>
+<section>
+    <h3 class="card-title">
+        Config
+    </h3>
+    <div class="col-xl-4 col-lg-6 col-md-12 col-sm-12 col-12">
+        <div class="form-group">
+            <label>BaseURL</label>
+            <input
+                class="form-control"
+                type="text"
+                placeholder="/api"
+                id="baseUrlInput"
+            />
+        </div>
+        <div class="form-group">
+            <label>Network</label>
+            <select class="browser-default custom-select" id="networkInput">
+            </select>
+            <p class="info-text alert alert-warning" hidden><span id="networkError"></span></p>
+        </div>
+        <div class="form-group">
+            <label>EthereumProvider</label>
+            <select class="browser-default custom-select" id="ethereumProviderInput">
+            </select>
+            <p class="info-text alert alert-warning" hidden><span id="ethereumProviderError"></span></p>
+        </div>
+    </div>
+</section>
+<section>
+    <h3 class="card-title">
+        GetBTPAddress
+    </h3>
+    <div class="col-xl-4 col-lg-6 col-md-12 col-sm-12 col-12">
+        <button
+            class="btn btn-primary btn-lg btn-block mb-3"
+            id="getBTPAddressButton"
+        >
+            GetBTPAddress
+        </button>
+        <p class="info-text alert alert-warning">
+            Result: <span id="getBTPAddressResult"></span>
+        </p>
+    </div>
+</section>
+<section>
+    <h3 class="card-title">
+        SendMessage
+    </h3>
+    <div class="col-xl-4 col-lg-6 col-md-12 col-sm-12 col-12">
+        <div class="form-group">
+            <label>To (BTPAddress) </label>
+            <input
+                class="form-control"
+                type="text"
+                placeholder="btp://0x3.icon/cx5ae6a222e82136f9dedec54b76047e7e62faf9a6"
+                id="toInput"
+            />
+        </div>
+        <div class="form-group">
+            <label>Data (Hex or base64), for rollback=0x73686f756c64526576657274</label>
+            <input
+                class="form-control"
+                type="text"
+                placeholder="0x73686f756c64526576657274"
+                id="dataInput"
+            />
+        </div>
+        <div class="form-group">
+            <label>Rollback Data (Hex or base64)</label>
+            <input
+                class="form-control"
+                type="text"
+                placeholder="0x..."
+                id="rollbackInput"
+            />
+        </div>
+        <button
+            class="btn btn-primary btn-lg btn-block mb-3"
+            id="sendMessageButton"
+        >
+            SendMessage
+        </button>
+        <p class="info-text alert alert-warning">
+            Result: <span id="sendMessageResult"></span>
+        </p>
+        <button
+            class="btn btn-primary btn-lg btn-block mb-3"
+            id="getResultButton"
+        >
+            GetResult
+        </button>
+        <p class="info-text alert alert-warning">
+            Result: <span id="txResult"></span>
+        </p>
+    </div>
+</section>
+<script src="main.js" defer></script>
+<script src="dappsample.js" defer></script>
+</body>
+</html>

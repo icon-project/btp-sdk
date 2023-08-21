@@ -25,6 +25,7 @@ import (
 	"github.com/icon-project/btp-sdk/service/bmc"
 	"github.com/icon-project/btp-sdk/service/dappsample"
 	"github.com/icon-project/btp-sdk/service/xcall"
+	"github.com/icon-project/btp-sdk/web"
 )
 
 func init() {
@@ -50,6 +51,7 @@ const (
 	GroupUrlMonitor    = "/monitor"
 	GroupUrlApiDocs    = "/api-docs"
 	GroupUrlAutoCaller = "/autocaller"
+	GroupUrlWeb        = "/web"
 
 	UrlGetResult = "/result"
 
@@ -152,6 +154,7 @@ func (s *Server) Start() error {
 	s.RegisterAPIDocHandler(s.e.Group(GroupUrlApiDocs))
 	s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
 	s.RegisterAutoCallerHandler(s.e.Group(GroupUrlAutoCaller))
+	web.RegisterWebHandler(s.e.Group(GroupUrlWeb))
 	return s.e.Start(s.addr)
 }
 
