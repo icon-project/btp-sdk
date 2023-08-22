@@ -43,7 +43,8 @@ getResultButton.addEventListener('click', async function (event) {
     try {
         getResultButton.disabled = true;
         const network = networkInput.value;
-        const getResultUrl = `${baseUrl}/${network}/result/${sendMessageResult.innerHTML}`
+        const txId = JSON.parse(sendMessageResult.innerHTML);
+        const getResultUrl = `${baseUrl}/${network}/result/${txId}`
         const resp = await fetch(getResultUrl, {method:'GET'});
         txResult.innerHTML = await resp.text();
     } catch (err) {

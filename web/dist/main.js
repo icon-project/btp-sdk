@@ -213,7 +213,7 @@ async function invoke(service, method, params, account) {
     }
     let data = {
         "options": {
-            "From": account,
+            "from": account,
         },
         "params": params
     }
@@ -227,7 +227,7 @@ async function invoke(service, method, params, account) {
         console.log(`data:${errResp.data.data}, ${hexData}`)
         const hexSignature = await sign(network, hexData, account);
         data.options = errResp.data.options;
-        data.options.Signature = hexToB64(hexSignature);
+        data.options.signature = hexToB64(hexSignature);
         resp = await fetch(url, postData(data));
     }
     return resp.json()
