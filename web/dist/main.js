@@ -149,13 +149,14 @@ async function ensureAccount(network) {
             });
             const r = window.dispatchEvent(iconRequestAddress);
             console.log(`ensureAccount dispatchEvent ${r}`);
-            return new Promise(resolve => {
+            return new Promise((resolve, reject) => {
                 const handler = evt => {
                     console.log(evt.detail);
-                    if (evt.detail.type !== 'RESPONSE_ADDRESS') {
-                        throw new Error(`not expected event:${evt.detail.type}`);
-                    }
                     window.removeEventListener('ICONEX_RELAY_RESPONSE', handler);
+                    if (evt.detail.type !== 'RESPONSE_ADDRESS') {
+                        reject(new Error(`not expected event:${evt.detail.type}`));
+                        return
+                    }
                     const account = evt.detail.payload;
                     updateAccount(network, account);
                     resolve(account)
@@ -257,13 +258,15 @@ async function sign(network, hexData, account) {
             return new Promise((resolve, reject) => {
                 const handler = evt => {
                     console.log(evt.detail);
+                    window.removeEventListener('ICONEX_RELAY_RESPONSE', handler);
                     if (evt.detail.type === 'CANCEL_SIGNING') {
                         reject(new Error(`user canceled signing request`));
+                        return
                     }
                     if (evt.detail.type !== 'RESPONSE_SIGNING') {
                         reject(new Error(`not expected event:${evt.detail.type}`));
+                        return
                     }
-                    window.removeEventListener('ICONEX_RELAY_RESPONSE', handler);
                     const signature = evt.detail.payload;
                     const hexSignature = b64ToHex(signature);
                     console.log(`icon signature: ${signature} hexSignature: ${hexSignature}`);
