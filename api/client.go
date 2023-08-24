@@ -230,7 +230,17 @@ func (c *Client) wsConnect(ctx context.Context, url string) (*websocket.Conn, er
 		c.l.Debugf("fail to Dial url:%s err:%+v", url, err)
 		return nil, err
 	}
-	c.l.Debugf("[%s]wsConnect", c.wsID(conn))
+	id := c.wsID(conn)
+	pingHandler := conn.PingHandler()
+	conn.SetPingHandler(func(appData string) error {
+		c.l.Logf(c.lv, "[%s]wsPing=%s", id, appData)
+		return pingHandler(appData)
+	})
+	conn.SetPongHandler(func(appData string) error {
+		c.l.Logf(c.lv, "[%s]unexpected wsPong %s", id, appData)
+		return nil
+	})
+	c.l.Debugf("[%s]wsConnect", id)
 	return conn, nil
 }
 

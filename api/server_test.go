@@ -45,12 +45,14 @@ const (
 	transportLogLevel = log.DebugLevel
 	serverLogLevel    = log.DebugLevel
 	clientLogLevel    = log.DebugLevel
+	pingIntervalSec   = 30
 )
 
 var (
 	serverCfg = ServerConfig{
 		Address:           serverAddress,
 		TransportLogLevel: contract.LogLevel(serverLogLevel),
+		PingIntervalSec:   pingIntervalSec,
 	}
 )
 

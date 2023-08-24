@@ -56,7 +56,8 @@ const (
 	UrlGetResult    = "/result"
 	UrlMonitorEvent = "/event"
 
-	WsHandshakeTimeout = time.Second * 3
+	WsHandshakeTimeout       = time.Second * 3
+	DefaultWsPingIntervalSec = 30
 )
 
 func Logger(l log.Logger) log.Logger {
@@ -66,6 +67,7 @@ func Logger(l log.Logger) log.Logger {
 type ServerConfig struct {
 	Address           string            `json:"address"`
 	TransportLogLevel contract.LogLevel `json:"transport_log_level,omitempty"`
+	PingIntervalSec   int               `json:"ping_interval_sec,omitempty"`
 }
 
 type Server struct {
@@ -87,6 +89,8 @@ func NewServer(cfg ServerConfig, l log.Logger) (*Server, error) {
 		return nil, errors.Errorf("require address")
 	}
 	cfg.TransportLogLevel = contract.LogLevel(contract.EnsureTransportLogLevel(cfg.TransportLogLevel.Level()))
+	if cfg.PingIntervalSec == 0 {
+		cfg.PingIntervalSec = DefaultWsPingIntervalSec
 	}
 
 	e := echo.New()
@@ -491,7 +495,17 @@ func (s *Server) wsConnect(c echo.Context) (*websocket.Conn, error) {
 		s.l.Debugf("fail to Upgrade err:%+v", err)
 		return nil, err
 	}
-	s.l.Debugf("[%s]wsConnect", s.wsID(conn))
+	id := s.wsID(conn)
+	pingHandler := conn.PingHandler()
+	conn.SetPingHandler(func(appData string) error {
+		s.l.Logf(s.cfg.TransportLogLevel.Level(), "[%s]wsPing received %s", id, appData)
+		return pingHandler(appData)
+	})
+	conn.SetPongHandler(func(appData string) error {
+		s.l.Logf(s.cfg.TransportLogLevel.Level(), "[%s]wsPong=%s", id, appData)
+		return nil
+	})
+	s.l.Debugf("[%s]wsConnect", id)
 	return conn, nil
 }
 
@@ -599,6 +613,26 @@ func (s *Server) wsReadLoop(ctx context.Context, conn *websocket.Conn, cb func(b
 	}
 }
 
+func (s *Server) wsPingLoop(ctx context.Context, conn *websocket.Conn) {
+	if s.cfg.PingIntervalSec <= 0 {
+		return
+	}
+	ticker := time.NewTicker(time.Duration(s.cfg.PingIntervalSec) * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.l.Logf(s.cfg.TransportLogLevel.Level(), "[%s]wsPing", s.wsID(conn))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				s.wsClose(conn)
+				return
+			}
+		}
+	}
+}
+
 func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 	monitorApi := g.Group("/:"+PathParamNetwork+"/:"+PathParamServiceOrAddress,
 		func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -649,6 +683,7 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 				return nil
 			})
 		}()
+		go s.wsPingLoop(ctx, conn)
 		onEvent := func(e contract.Event) error {
 			return s.wsWrite(conn, e)
 		}
