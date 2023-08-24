@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"github.com/icon-project/btp2/common/cli"
 	"github.com/icon-project/btp2/common/config"
 	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/wallet"
+	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -26,17 +28,12 @@ import (
 type Config struct {
 	config.FileConfig `json:",squash"`
 
-	Server   ServerConfig             `json:"server"`
+	Server   api.ServerConfig         `json:"server"`
 	Networks map[string]NetworkConfig `json:"networks"`
 
 	LogLevel     string            `json:"log_level"`
 	ConsoleLevel string            `json:"console_level"`
 	LogWriter    *log.WriterConfig `json:"log_writer,omitempty"`
-}
-
-type ServerConfig struct {
-	Address      string `json:"address"`
-	DumpLogLevel string `json:"dump_log_level,omitempty"`
 }
 
 type NetworkConfig struct {
@@ -68,7 +65,7 @@ func ReadConfig(filePath string, cfg *Config, vc *viper.Viper) error {
 	if err != nil {
 		return fmt.Errorf("fail to read config file=%s err=%+v", filePath, err)
 	}
-	if err = vc.Unmarshal(cfg, cli.ViperDecodeOptJson); err != nil {
+	if err = vc.Unmarshal(cfg, cli.ViperDecodeOptJson, ViperDecodeOptJson); err != nil {
 		return fmt.Errorf("fail to unmarshall config from env err=%+v", err)
 	}
 	cfg.FilePath, _ = filepath.Abs(filePath)
@@ -99,6 +96,22 @@ func NewDefaultSigner(networkType, keystore, secret string) (service.Signer, err
 	return service.NewDefaultSigner(w, networkType), nil
 }
 
+var (
+	logLevelType = reflect.TypeOf(contract.LogLevel(log.TraceLevel))
+)
+
+func ViperDecodeOptJson(c *mapstructure.DecoderConfig) {
+	c.DecodeHook = mapstructure.ComposeDecodeHookFunc(
+		func(inputValType reflect.Type, outValType reflect.Type, input interface{}) (interface{}, error) {
+			if inputValType.Kind() == reflect.String && logLevelType == outValType {
+				lv, err := log.ParseLevel(input.(string))
+				return contract.LogLevel(lv), err
+			}
+			return input, nil
+		},
+		c.DecodeHook)
+}
+
 func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, build string, logoLines []string) (*cobra.Command, *viper.Viper) {
 	rootCmd, rootVc := cli.NewCommand(parentCmd, parentVc, "server", "Server management")
 	cfg := &Config{}
@@ -108,7 +121,7 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 				return err
 			}
 		}
-		if err := rootVc.Unmarshal(&cfg, cli.ViperDecodeOptJson); err != nil {
+		if err := rootVc.Unmarshal(&cfg, cli.ViperDecodeOptJson, ViperDecodeOptJson); err != nil {
 			return fmt.Errorf("fail to unmarshall config from env err=%+v", err)
 		}
 		return nil
@@ -125,7 +138,7 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 	rootPFlags.Bool("log_writer.compress", false, "Use gzip on rotated log file")
 	//ServerConfig
 	rootPFlags.String("server.address", "localhost:8080", "server address")
-	rootPFlags.String("server.dump_log_level", "trace", "server dump log level (trace,debug,info)")
+	rootPFlags.String("server.transport_log_level", "trace", "server dump log level (trace,debug,info)")
 	cli.BindPFlags(rootVc, rootPFlags)
 
 	saveCmd := &cobra.Command{
@@ -321,13 +334,11 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 					l.SetModuleLevel(mod, lv)
 				}
 			}
-			serverDumpLogLevel, err := log.ParseLevel(cfg.Server.DumpLogLevel)
+
+			s, err := api.NewServer(cfg.Server, l)
 			if err != nil {
 				return err
-			} else {
-				serverDumpLogLevel = contract.EnsureTransportLogLevel(serverDumpLogLevel)
 			}
-			s := api.NewServer(cfg.Server.Address, serverDumpLogLevel, l)
 			svcToNetworks := make(map[string]map[string]service.Network)
 			acToNetworks := make(map[string]map[string]autocaller.Network)
 			for network, n := range cfg.Networks {

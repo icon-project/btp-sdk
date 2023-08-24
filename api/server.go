@@ -63,22 +63,32 @@ func Logger(l log.Logger) log.Logger {
 	return l.WithFields(log.Fields{log.FieldKeyModule: "api"})
 }
 
+type ServerConfig struct {
+	Address           string            `json:"address"`
+	TransportLogLevel contract.LogLevel `json:"transport_log_level,omitempty"`
+}
+
 type Server struct {
 	e    *echo.Echo
-	addr string
+	cfg  ServerConfig
 	aMap map[string]contract.Adaptor
 	sMap map[string]service.Service
 	cMap map[string]autocaller.AutoCaller
 	mtx  sync.RWMutex
 	oasp *OpenAPISpecProvider
 	u    websocket.Upgrader
-	lv   log.Level
 	l    log.Logger
 
 	Signers map[string]service.Signer //FIXME [TBD] signer management
 }
 
-func NewServer(addr string, transportLogLevel log.Level, l log.Logger) *Server {
+func NewServer(cfg ServerConfig, l log.Logger) (*Server, error) {
+	if len(cfg.Address) == 0 {
+		return nil, errors.Errorf("require address")
+	}
+	cfg.TransportLogLevel = contract.LogLevel(contract.EnsureTransportLogLevel(cfg.TransportLogLevel.Level()))
+	}
+
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
@@ -87,15 +97,14 @@ func NewServer(addr string, transportLogLevel log.Level, l log.Logger) *Server {
 	sl := Logger(l)
 	return &Server{
 		e:       e,
-		addr:    addr,
+		cfg:     cfg,
 		aMap:    make(map[string]contract.Adaptor),
 		sMap:    make(map[string]service.Service),
 		cMap:    make(map[string]autocaller.AutoCaller),
 		oasp:    NewOpenAPISpecProvider(sl),
-		lv:      contract.EnsureTransportLogLevel(transportLogLevel),
 		l:       sl,
 		Signers: make(map[string]service.Signer),
-	}
+	}, nil
 }
 
 func (s *Server) SetAdaptor(network string, a contract.Adaptor) {
@@ -156,7 +165,7 @@ func (s *Server) Start() error {
 	s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
 	s.RegisterAutoCallerHandler(s.e.Group(GroupUrlAutoCaller))
 	web.RegisterWebHandler(s.e.Group(GroupUrlWeb))
-	return s.e.Start(s.addr)
+	return s.e.Start(s.cfg.Address)
 }
 
 type NetworkInfo struct {
@@ -225,8 +234,8 @@ type ContractRequest struct {
 func (s *Server) RegisterAPIHandler(g *echo.Group) {
 	g.Use(middleware.BodyDump(func(c echo.Context, reqBody []byte, resBody []byte) {
 		s.l.Debugf("url=%s", c.Request().RequestURI)
-		s.l.Logf(s.lv, "request=%s", reqBody)
-		s.l.Logf(s.lv, "response=%s", resBody)
+		s.l.Logf(s.cfg.TransportLogLevel.Level(), "request=%s", reqBody)
+		s.l.Logf(s.cfg.TransportLogLevel.Level(), "response=%s", resBody)
 	}))
 	g.GET("", func(c echo.Context) error {
 		s.mtx.RLock()
@@ -541,7 +550,7 @@ func (s *Server) wsRead(ctx context.Context, conn *websocket.Conn, v interface{}
 			if err := json.Unmarshal(t, v); err != nil {
 				return err
 			}
-			s.l.Logf(s.lv, "[%s]wsRead=%s", id, t)
+			s.l.Logf(s.cfg.TransportLogLevel.Level(), "[%s]wsRead=%s", id, t)
 			return nil
 		default:
 			s.l.Panicln("unreachable code")
@@ -555,7 +564,7 @@ func (s *Server) wsWrite(conn *websocket.Conn, v interface{}) error {
 	if err != nil {
 		return err
 	}
-	s.l.Logf(s.lv, "[%s]wsWrite=%s", s.wsID(conn), b)
+	s.l.Logf(s.cfg.TransportLogLevel.Level(), "[%s]wsWrite=%s", s.wsID(conn), b)
 	return conn.WriteMessage(websocket.TextMessage, b)
 }
 
@@ -572,7 +581,7 @@ func (s *Server) wsReadLoop(ctx context.Context, conn *websocket.Conn, cb func(b
 				ech <- err
 				break
 			}
-			s.l.Logf(s.lv, "[%s]wsReadLoop=%s", id, b)
+			s.l.Logf(s.cfg.TransportLogLevel.Level(), "[%s]wsReadLoop=%s", id, b)
 			if err = cb(b); err != nil {
 				ech <- err
 				break

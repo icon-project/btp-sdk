@@ -48,6 +48,13 @@ const (
 )
 
 var (
+	serverCfg = ServerConfig{
+		Address:           serverAddress,
+		TransportLogLevel: contract.LogLevel(serverLogLevel),
+	}
+)
+
+var (
 	byteVal       = contract.Integer("0x7f")
 	shortVal      = contract.Integer("0x7fff")
 	intVal        = contract.Integer("0x7fffffff")
@@ -234,7 +241,10 @@ func services(t *testing.T, adaptors map[string]contract.Adaptor, withSigner boo
 
 func server(t *testing.T, withSignerService bool) *Server {
 	l := log.GlobalLogger()
-	s := NewServer(serverAddress, serverLogLevel, l)
+	s, err := NewServer(serverCfg, l)
+	if err != nil {
+		assert.FailNow(t, "fail to NewServer", err)
+	}
 	if withSignerService {
 		s.Signers = signers
 	}
