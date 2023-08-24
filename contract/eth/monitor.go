@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"sync"
@@ -61,6 +62,29 @@ func (b *BlockInfo) Height() int64 {
 func (b *BlockInfo) String() string {
 	return fmt.Sprintf("BlockInfo{ID:%s,Height:%d}",
 		hex.EncodeToString(b.id[:]), b.height)
+}
+
+type BlockInfoJson struct {
+	ID     common.Hash
+	Height int64
+}
+
+func (b *BlockInfo) UnmarshalJSON(bytes []byte) error {
+	v := &BlockInfoJson{}
+	if err := json.Unmarshal(bytes, v); err != nil {
+		return err
+	}
+	b.id = v.ID
+	b.height = v.Height
+	return nil
+}
+
+func (b *BlockInfo) MarshalJSON() ([]byte, error) {
+	v := BlockInfoJson{
+		ID:     b.id,
+		Height: b.height,
+	}
+	return json.Marshal(v)
 }
 
 type FinalityMonitor struct {
