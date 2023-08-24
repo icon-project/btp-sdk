@@ -179,6 +179,7 @@ func (m *FinalityMonitor) pollFinalizedBlock(ctx context.Context, cb func(h *typ
 			}
 			current = bh.Number
 		}
+		<-time.After(period)
 	}
 }
 
