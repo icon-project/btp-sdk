@@ -119,7 +119,7 @@ func (c *Client) GetResult(network string, id contract.TxID) (interface{}, error
 			txr = new(interface{})
 		}
 	}
-	_, err := c.do(http.MethodGet, c.apiUrl("/%s/result/%s", network, id), nil, txr)
+	_, err := c.do(http.MethodGet, c.apiUrl("/%s%s/%s", network, UrlGetResult, id), nil, txr)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +331,7 @@ func (c *Client) wsReadLoop(ctx context.Context, conn *websocket.Conn, cb func(b
 	}
 }
 
-func (c *Client) monitorEvent(ctx context.Context, network, url string, req *MonitorRequest, cb contract.EventCallback) error {
+func (c *Client) monitorEvent(ctx context.Context, network, url string, req *EventMonitorRequest, cb contract.EventCallback) error {
 	conn, err := c.wsConnect(ctx, url)
 	if err != nil {
 		return err
@@ -363,10 +363,10 @@ func (c *Client) monitorEvent(ctx context.Context, network, url string, req *Mon
 	})
 }
 
-func (c *Client) MonitorEvent(ctx context.Context, network string, addr contract.Address, req *MonitorRequest, cb contract.EventCallback) error {
-	return c.monitorEvent(ctx, network, c.monitorUrl("/%s/%s/event", network, addr), req, cb)
+func (c *Client) MonitorEvent(ctx context.Context, network string, addr contract.Address, req *EventMonitorRequest, cb contract.EventCallback) error {
+	return c.monitorEvent(ctx, network, c.monitorUrl("/%s/%s%s", network, addr, UrlMonitorEvent), req, cb)
 }
 
-func (c *Client) ServiceMonitorEvent(ctx context.Context, network string, svc string, req *MonitorRequest, cb contract.EventCallback) error {
-	return c.monitorEvent(ctx, network, c.monitorUrl("/%s/%s/event", network, svc), req, cb)
+func (c *Client) ServiceMonitorEvent(ctx context.Context, network string, svc string, req *EventMonitorRequest, cb contract.EventCallback) error {
+	return c.monitorEvent(ctx, network, c.monitorUrl("/%s/%s%s", network, svc, UrlMonitorEvent), req, cb)
 }

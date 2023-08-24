@@ -71,7 +71,7 @@ func NewMonitorCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.
 			if err != nil {
 				return err
 			}
-			req := &api.MonitorRequest{
+			req := &api.EventMonitorRequest{
 				Height:       height,
 				NameToParams: make(map[string][]contract.Params),
 			}

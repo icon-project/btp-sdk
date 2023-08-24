@@ -570,7 +570,7 @@ func Test_ServerMonitorEvent(t *testing.T) {
 		Service        string
 		Method         string
 		Request        Request
-		MonitorRequest MonitorRequest
+		MonitorRequest EventMonitorRequest
 	}{
 		{
 			Networks: []string{networkIconTest, networkEth2Test},
@@ -581,7 +581,7 @@ func Test_ServerMonitorEvent(t *testing.T) {
 					"name": "testName",
 				},
 			},
-			MonitorRequest: MonitorRequest{
+			MonitorRequest: EventMonitorRequest{
 				NameToParams: map[string][]contract.Params{
 					"HelloEvent": nil,
 				},

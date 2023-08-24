@@ -45,7 +45,7 @@ $(LINUX_BIN_DIR)/$(1) $(1)-linux :
 	echo "[#] go build ./cmd/$(1)"
 	$$(GOBUILD_ENVS_LINUX) \
 	go build $$(GOBUILD_FLAGS) \
-	    -o $(LINUX_BIN_DIR)/$(1) ./cmd/$(1)
+	    -o $(LINUX_BIN_DIR)/btp-sdk-$(1) ./cmd/$(1)
 endef
 $(foreach M,$(CMDS),$(eval $(call CMD_template,$(M))))
 

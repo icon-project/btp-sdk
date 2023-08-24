@@ -53,7 +53,8 @@ const (
 	GroupUrlAutoCaller = "/autocaller"
 	GroupUrlWeb        = "/web"
 
-	UrlGetResult = "/result"
+	UrlGetResult    = "/result"
+	UrlMonitorEvent = "/event"
 
 	WsHandshakeTimeout = time.Second * 3
 )
@@ -466,7 +467,7 @@ func (s *Server) RegisterAPIDocHandler(g *echo.Group) {
 	})
 }
 
-type MonitorRequest struct {
+type EventMonitorRequest struct {
 	NameToParams map[string][]contract.Params `json:"nameToParams"`
 	Height       int64                        `json:"height"`
 }
@@ -606,7 +607,7 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 				return next(c)
 			}
 		})
-	monitorApi.GET("/event", func(c echo.Context) error {
+	monitorApi.GET(UrlMonitorEvent, func(c echo.Context) error {
 		conn, err := s.wsConnect(c)
 		if err != nil {
 			return err
@@ -616,7 +617,7 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 		svc := c.Get(ContextService).(service.Service)
 		network := c.Param(PathParamNetwork)
 		var efs []contract.EventFilter
-		req := &MonitorRequest{}
+		req := &EventMonitorRequest{}
 		onSuccessHandshake := func() error {
 			if err = c.Validate(req); err != nil {
 				s.l.Debugf("[%s]fail to Validate err:%+v", id, err)
