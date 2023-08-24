@@ -193,7 +193,14 @@ func (m *FinalityMonitor) IsFinalized(height int64, id contract.BlockID) (bool, 
 	}
 	last := m.getLast()
 	if last == nil {
-		return false, errors.Errorf("not started")
+		var blk *client.Block
+		if blk, err = m.Client.GetLastBlock(); err != nil {
+			return false, err
+		}
+		last = &BlockInfo{
+			height: blk.Height,
+		}
+		last.id, _ = blk.BlockHash.Value()
 	}
 	if height > last.height {
 		return false, nil

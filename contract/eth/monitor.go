@@ -172,6 +172,10 @@ func (m *FinalityMonitor) monitor(ctx context.Context) {
 	}
 }
 
+func (m *FinalityMonitor) LatestFinalizedBlock(ctx context.Context) (*types.Header, error) {
+	return m.HeaderByNumber(ctx, rpcFinalizedBlockNumber)
+}
+
 func (m *FinalityMonitor) pollFinalizedBlock(ctx context.Context, cb func(h *types.Header) error) error {
 	var current *big.Int
 
@@ -183,7 +187,7 @@ func (m *FinalityMonitor) pollFinalizedBlock(ctx context.Context, cb func(h *typ
 			return ctx.Err()
 		default:
 		}
-		bh, err := m.HeaderByNumber(ctx, rpcFinalizedBlockNumber)
+		bh, err := m.LatestFinalizedBlock(ctx)
 		if err != nil {
 			if ctx.Err() == context.Canceled {
 				m.l.Trace("pollFinalizedBlock context done ", current)
@@ -218,7 +222,14 @@ func (m *FinalityMonitor) IsFinalized(height int64, id contract.BlockID) (bool, 
 	}
 	last := m.getLast()
 	if last == nil {
-		return false, errors.Errorf("not started")
+		var bh *types.Header
+		if bh, err = m.LatestFinalizedBlock(context.Background()); err != nil {
+			return false, err
+		}
+		last = &BlockInfo{
+			id:     bh.Hash(),
+			height: bh.Number.Int64(),
+		}
 	}
 	if height > last.height {
 		return false, nil
