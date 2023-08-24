@@ -91,6 +91,42 @@ type InvokeOptions struct {
 	Estimate  contract.Boolean `json:"estimate,omitempty"`
 }
 
+func (h *Handler) newTransactionParam(opt *InvokeOptions, data *client.CallData) (*client.TransactionParam, error) {
+	p := h.a.NewTransactionParam(h.address, data)
+	if len(opt.From) == 0 {
+		return nil, contract.ErrorCodeInvalidOption.Errorf("required 'from'")
+	}
+	p.FromAddress = client.Address(opt.From)
+	if _, err := p.FromAddress.Value(); err != nil {
+		return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'from' err:%s", err.Error())
+	}
+	if len(opt.StepLimit) > 0 {
+		p.StepLimit = client.HexInt(opt.StepLimit)
+	} else {
+		if opt.Estimate {
+			stepLimit, err := h.a.EstimateStep(client.NewTransactionParamForEstimate(p))
+			if err != nil {
+				return nil, err
+			}
+			p.StepLimit = client.NewHexInt(stepLimit)
+		} else {
+			p.StepLimit = DefaultStepLimit
+		}
+		opt.StepLimit = contract.Integer(p.StepLimit)
+	}
+	if len(opt.Timestamp) > 0 {
+		p.Timestamp = client.HexInt(opt.Timestamp)
+	} else {
+		p.Timestamp = client.NewHexInt(time.Now().UnixNano() / int64(time.Microsecond))
+		opt.Timestamp = contract.Integer(p.Timestamp)
+	}
+	//optional fields
+	if len(opt.Value) > 0 {
+		p.Value = client.HexInt(opt.Value)
+	}
+	return p, nil
+}
+
 func (h *Handler) Invoke(method string, params contract.Params, options contract.Options) (contract.TxID, error) {
 	m, err := h.method(method, false)
 	if err != nil {
@@ -100,50 +136,21 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 	if err != nil {
 		return nil, err
 	}
-	p := h.a.NewTransactionParam(h.address, data)
-
-	//Options convert
 	opt := &InvokeOptions{}
 	if err = contract.DecodeOptions(options, opt); err != nil {
 		return nil, err
 	}
-	//required fields
-	if len(opt.From) == 0 {
-		return nil, contract.ErrorCodeInvalidOption.Errorf("required 'from'")
+	p, err := h.newTransactionParam(opt, data)
+	if err != nil {
+		return nil, err
 	}
-	p.FromAddress = client.Address(opt.From)
-	if _, err = p.FromAddress.Value(); err != nil {
-		return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'from' err:%s", err.Error())
-	}
-	//optional fields
-	if len(opt.Value) > 0 {
-		p.Value = client.HexInt(opt.Value)
-	}
-	if len(opt.StepLimit) > 0 {
-		p.StepLimit = client.HexInt(opt.StepLimit)
-	}
-	//generated fields
-	p.Timestamp = client.HexInt(opt.Timestamp)
-	if opt.Estimate {
-		stepLimit, err := h.a.EstimateStep(client.NewTransactionParamForEstimate(p))
-		if err != nil {
-			return nil, err
-		}
-		if len(opt.StepLimit) == 0 {
-			p.StepLimit = client.NewHexInt(stepLimit)
-		}
-	}
+
 	if len(opt.Signature) == 0 {
-		if len(p.Timestamp) == 0 {
-			p.Timestamp = client.NewHexInt(time.Now().UnixNano() / int64(time.Microsecond))
-			opt.Timestamp = contract.Integer(p.Timestamp)
-			h.l.Debugln("Timestamp generated", p.Timestamp)
-			if options, err = contract.EncodeOptions(opt); err != nil {
-				return nil, err
-			}
-		}
 		var hash []byte
 		if hash, err = h.a.HashForSignature(p); err != nil {
+			return nil, err
+		}
+		if options, err = contract.EncodeOptions(opt); err != nil {
 			return nil, err
 		}
 		return nil, contract.NewRequireSignatureError(hash, options)

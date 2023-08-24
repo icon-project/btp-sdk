@@ -166,12 +166,39 @@ func (h *Handler) newBaseTx(opt *InvokeOptions, data []byte) (p *baseTx, err err
 		if p.GasLimit, err = opt.GasLimit.AsUint64(); err != nil {
 			return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'GasLimit' err:%s", err.Error())
 		}
+	} else {
+		if opt.Estimate {
+			p.GasLimit, err = h.a.EstimateGas(context.Background(), ethereum.CallMsg{
+				To:    &h.address,
+				Data:  p.Data,
+				Value: p.Value,
+			})
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			p.GasLimit = DefaultGasLimit
+		}
+		opt.GasLimit = contract.MustIntegerOf(p.GasLimit)
 	}
 	if len(opt.Nonce) > 0 {
 		if p.Nonce, err = opt.Nonce.AsUint64(); err != nil {
 			return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'Nonce' err:%s", err.Error())
 		}
+	} else {
+		if len(opt.From) == 0 {
+			return nil, contract.ErrorCodeInvalidOption.Errorf("required 'from'")
+		}
+		if !common.IsHexAddress(string(opt.From)) {
+			return nil, contract.ErrorCodeInvalidOption.Errorf("invalid 'from'")
+		}
+		from := common.HexToAddress(string(opt.From))
+		if p.Nonce, err = h.a.PendingNonceAt(context.Background(), from); err != nil {
+			return nil, errors.Wrapf(err, "fail to PendingNonceAt err:%s", err.Error())
+		}
+		opt.Nonce = contract.MustIntegerOf(p.Nonce)
 	}
+
 	if len(opt.GasPrice) > 0 {
 		if p.GasPrice, err = opt.GasPrice.AsBigInt(); err != nil {
 			return nil, contract.ErrorCodeInvalidOption.Wrapf(err, "invalid 'GasPrice' err:%s", err.Error())
@@ -190,86 +217,39 @@ func (h *Handler) newBaseTx(opt *InvokeOptions, data []byte) (p *baseTx, err err
 	if p.GasPrice != nil && (p.GasFeeCap != nil || p.GasTipCap != nil) {
 		return nil, contract.ErrorCodeInvalidOption.Errorf("both GasPrice and (GasFeeCap or GasTipCap) specified")
 	}
-	if opt.Estimate {
-		gasLimit, err := h.a.EstimateGas(context.Background(), ethereum.CallMsg{
-			To:    &h.address,
-			Data:  p.Data,
-			Value: p.Value,
-		})
-		if err != nil {
-			return nil, err
+	if p.GasPrice == nil && (p.GasFeeCap == nil || p.GasTipCap == nil) {
+		var head *types.Header
+		if head, err = h.a.HeaderByNumber(context.Background(), nil); err != nil {
+			return nil, errors.Wrapf(err, "fail to HeaderByNumber err:%s", err.Error())
 		}
-		if len(opt.GasLimit) == 0 {
-			p.GasLimit = gasLimit
-			opt.GasLimit, _ = contract.IntegerOf(gasLimit)
+		if head.BaseFee != nil {
+			if p.GasTipCap == nil {
+				if p.GasTipCap, err = h.a.SuggestGasTipCap(context.Background()); err != nil {
+					return nil, errors.Wrapf(err, "fail to SuggestGasTipCap err:%s", err.Error())
+				}
+				opt.GasTipCap = contract.MustIntegerOf(p.GasTipCap)
+			}
+			if p.GasFeeCap == nil {
+				p.GasFeeCap = new(big.Int).Add(
+					p.GasTipCap,
+					new(big.Int).Mul(head.BaseFee, big.NewInt(2)),
+				)
+				opt.GasFeeCap = contract.MustIntegerOf(p.GasFeeCap)
+			}
+		} else {
+			if p.GasPrice, err = h.a.SuggestGasPrice(context.Background()); err != nil {
+				return nil, errors.Wrapf(err, "fail to SuggestGasPrice err:%s", err.Error())
+			}
+			opt.GasPrice = contract.MustIntegerOf(p.GasPrice)
+			opt.GasTipCap = ""
+			opt.GasFeeCap = ""
 		}
+	}
+	if p.GasPrice == nil && p.GasFeeCap.Cmp(p.GasTipCap) < 0 {
+		return nil, contract.ErrorCodeInvalidOption.Errorf(
+			"GasFeeCap (%v) < GasTipCap (%v)", p.GasFeeCap, p.GasTipCap)
 	}
 	return p, nil
-}
-
-func (h *Handler) prepareSign(opt *InvokeOptions, p *baseTx) (optUpdated bool, err error) {
-	if len(opt.GasLimit) == 0 {
-		//if p.GasLimit, err = h.a.EstimateGas(context.Background(), ethereum.CallMsg{
-		//	To:    &h.address,
-		//	Data:  p.Data,
-		//	Value: p.Value,
-		//}); err != nil {
-		//	return false, errors.Wrapf(err, "fail to EstimateGas err:%s", err.Error())
-		//}
-		opt.GasLimit = contract.MustIntegerOf(p.GasLimit)
-		optUpdated = true
-	}
-	if len(opt.Nonce) == 0 {
-		if len(opt.From) == 0 {
-			return false, contract.ErrorCodeInvalidOption.Errorf("required 'from'")
-		}
-		if !common.IsHexAddress(string(opt.From)) {
-			return false, contract.ErrorCodeInvalidOption.Errorf("invalid 'from'")
-		}
-		from := common.HexToAddress(string(opt.From))
-		if p.Nonce, err = h.a.PendingNonceAt(context.Background(), from); err != nil {
-			return false, errors.Wrapf(err, "fail to PendingNonceAt err:%s", err.Error())
-		}
-		opt.Nonce = contract.MustIntegerOf(p.Nonce)
-		optUpdated = true
-	}
-
-	if p.GasPrice == nil {
-		if p.GasFeeCap == nil || p.GasTipCap == nil {
-			var head *types.Header
-			if head, err = h.a.HeaderByNumber(context.Background(), nil); err != nil {
-				return false, errors.Wrapf(err, "fail to HeaderByNumber err:%s", err.Error())
-			}
-			if head.BaseFee != nil {
-				if p.GasTipCap == nil {
-					if p.GasTipCap, err = h.a.SuggestGasTipCap(context.Background()); err != nil {
-						return false, errors.Wrapf(err, "fail to SuggestGasTipCap err:%s", err.Error())
-					}
-					opt.GasTipCap = contract.MustIntegerOf(p.GasTipCap)
-					optUpdated = true
-				}
-				if p.GasFeeCap == nil {
-					p.GasFeeCap = new(big.Int).Add(
-						p.GasTipCap,
-						new(big.Int).Mul(head.BaseFee, big.NewInt(2)),
-					)
-					opt.GasFeeCap = contract.MustIntegerOf(p.GasFeeCap)
-					optUpdated = true
-				}
-				if p.GasFeeCap.Cmp(p.GasTipCap) < 0 {
-					return false, contract.ErrorCodeInvalidOption.Errorf(
-						"GasFeeCap (%v) < GasTipCap (%v)", p.GasFeeCap, p.GasTipCap)
-				}
-			} else {
-				if p.GasPrice, err = h.a.SuggestGasPrice(context.Background()); err != nil {
-					return false, err
-				}
-				opt.GasPrice = contract.MustIntegerOf(p.GasPrice)
-				optUpdated = true
-			}
-		}
-	}
-	return optUpdated, nil
 }
 
 func (h *Handler) newTxData(p *baseTx) types.TxData {
@@ -305,8 +285,6 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 	if err != nil {
 		return nil, err
 	}
-
-	//options convert
 	opt := &InvokeOptions{}
 	if err = contract.DecodeOptions(options, opt); err != nil {
 		return nil, err
@@ -317,14 +295,8 @@ func (h *Handler) Invoke(method string, params contract.Params, options contract
 	}
 
 	if len(opt.Signature) == 0 {
-		optUpdated := false
-		if optUpdated, err = h.prepareSign(opt, p); err != nil {
+		if options, err = contract.EncodeOptions(opt); err != nil {
 			return nil, err
-		}
-		if optUpdated {
-			if options, err = contract.EncodeOptions(opt); err != nil {
-				return nil, err
-			}
 		}
 		return nil, contract.NewRequireSignatureError(h.signer.Hash(types.NewTx(p.TxData())).Bytes(), options)
 	}
