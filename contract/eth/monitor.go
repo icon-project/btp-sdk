@@ -250,6 +250,18 @@ func (m *FinalityMonitor) IsFinalized(height int64, id contract.BlockID) (bool, 
 	return true, nil
 }
 
+func (m *FinalityMonitor) HeightByID(id contract.BlockID) (int64, error) {
+	h, err := CommonHashOf(id)
+	if err != nil {
+		return 0, errors.Wrapf(err, "invalid BlockID err:%v", err.Error())
+	}
+	bh, err := m.Client.HeaderByHash(context.Background(), h)
+	if err != nil {
+		return 0, err
+	}
+	return bh.Number.Int64(), nil
+}
+
 func (m *FinalityMonitor) Start() (<-chan contract.BlockInfo, error) {
 	m.runMtx.Lock()
 	defer m.runMtx.Unlock()

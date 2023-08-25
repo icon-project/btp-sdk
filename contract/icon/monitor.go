@@ -227,10 +227,19 @@ func (m *FinalityMonitor) IsFinalized(height int64, id contract.BlockID) (bool, 
 	return true, nil
 }
 
-func (m *FinalityMonitor) BlockInfo(height int64) contract.BlockInfo {
-	m.biMtx.RLock()
-	defer m.biMtx.RUnlock()
-	return nil
+func (m *FinalityMonitor) HeightByID(id contract.BlockID) (int64, error) {
+	hb, err := HexBytesOf(id)
+	if err != nil {
+		return 0, errors.Wrapf(err, "invalid BlockID err:%v", err.Error())
+	}
+	p := &client.BlockHashParam{
+		Hash: client.NewHexBytes(hb),
+	}
+	blk, err := m.Client.GetBlockByHash(p)
+	if err != nil {
+		return 0, err
+	}
+	return blk.Height, nil
 }
 
 func (m *FinalityMonitor) Start() (<-chan contract.BlockInfo, error) {

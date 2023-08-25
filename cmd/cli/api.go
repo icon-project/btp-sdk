@@ -23,6 +23,7 @@ import (
 
 	"github.com/icon-project/btp2/common/cli"
 	"github.com/icon-project/btp2/common/errors"
+	"github.com/icon-project/btp2/common/intconv"
 	"github.com/icon-project/btp2/common/log"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -187,6 +188,25 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 		},
 	}
 	rootCmd.AddCommand(resultCmd)
+
+	finality := &cobra.Command{
+		Use:   "finality BLOCK_ID",
+		Short: "GetFinality",
+		Args:  cli.ArgsWithDefaultErrorFunc(cobra.ExactArgs(1)),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			height, err := intconv.ParseInt(cmd.Flag("height").Value.String(), 64)
+			if err != nil {
+				return err
+			}
+			ret, err := c.GetFinality(network, args[0], height)
+			if err != nil {
+				return err
+			}
+			return cli.JsonPrettyPrintln(os.Stdout, ret)
+		},
+	}
+	finality.Flags().String("height", "0", "height")
+	rootCmd.AddCommand(finality)
 
 	var (
 		svc  string

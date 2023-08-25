@@ -44,6 +44,7 @@ const (
 	tagAutoCaller         = "AutoCaller"
 	schemaRefPrefix       = "#/components/schemas/"
 	schemaTxID            = "TxID"
+	schemaBlockID         = "BlockID"
 	schemaRequest         = "Request"
 	schemaContractRequest = "ContractRequest"
 	schemaOptions         = "Options"
@@ -72,6 +73,9 @@ var (
 	addressSchema  = openapi3.NewStringSchema().WithFormat(contract.TAddress.String())
 	defaultSchemas = map[string]*openapi3.Schema{
 		schemaTxID: openapi3.NewOneOfSchema(
+			openapi3.NewStringSchema().WithPattern("^0x([0-9a-f][0-9a-f])*$"),
+			openapi3.NewBytesSchema()),
+		schemaBlockID: openapi3.NewOneOfSchema(
 			openapi3.NewStringSchema().WithPattern("^0x([0-9a-f][0-9a-f])*$"),
 			openapi3.NewBytesSchema()),
 		schemaRequest:              MustGenerateSchema(&Request{}),
@@ -423,6 +427,11 @@ func NewOpenAPISpecProvider(l log.Logger) *OpenAPISpecProvider {
 	gru, grpi := newGetResultPathItem(npr, tpr)
 	gpi[gru] = grpi
 
+	bpr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchemaRef(PathParamBlockID, DefaultSchemaRef(schemaBlockID)))
+	hpr := PutParameter(oas.Components.Parameters, openapi3.NewQueryParameter(QueryParamHeight).WithSchema(openapi3.NewInt64Schema()))
+	gfu, gfpi := newGetFinalityPathItem(npr, bpr, hpr)
+	gpi[gfu] = gfpi
+
 	as := openapi3.NewOneOfSchema(openapi3.NewStringSchema())
 	as.OneOf = append(as.OneOf, DefaultSchemaRef(contract.TAddress.String()))
 	apr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchema(PathParamServiceOrAddress, as))
@@ -507,6 +516,20 @@ func newGetResultPathItem(npr, tpr *openapi3.ParameterRef) (string, *openapi3.Pa
 		},
 	}
 	return fmt.Sprintf("%s/{%s}%s/{%s}", GroupUrlApi, npr.Value.Name, UrlGetResult, tpr.Value.Name), pi
+}
+
+func newGetFinalityPathItem(npr, bpr, hpr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
+	pi := &openapi3.PathItem{
+		Parameters: openapi3.Parameters{npr, bpr, hpr},
+		Get: &openapi3.Operation{
+			Tags:        []string{tagGeneral},
+			Summary:     "Get finality of block with given BlockID and height",
+			Description: "",
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(openapi3.NewBoolSchema())),
+		},
+	}
+	return fmt.Sprintf("%s/{%s}%s/{%s}", GroupUrlApi, npr.Value.Name, UrlGetFinality, bpr.Value.Name), pi
 }
 
 func newServiceAPIPathItem(npr, apr *openapi3.ParameterRef) (string, *openapi3.PathItem) {

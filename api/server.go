@@ -37,11 +37,13 @@ func init() {
 const (
 	PathParamNetwork          = "network"
 	PathParamTxID             = "txID"
+	PathParamBlockID          = "blockID"
 	PathParamServiceOrAddress = "serviceOrAddress"
 	PathParamMethod           = "method"
 	PathParamService          = "service"
 
 	QueryParamService = "service"
+	QueryParamHeight  = "height"
 
 	ContextAdaptor = "adaptor"
 	ContextService = "service"
@@ -54,6 +56,7 @@ const (
 	GroupUrlWeb        = "/web"
 
 	UrlGetResult    = "/result"
+	UrlGetFinality  = "/finality"
 	UrlMonitorEvent = "/event"
 
 	WsHandshakeTimeout       = time.Second * 3
@@ -302,6 +305,35 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		a := c.Get(ContextAdaptor).(contract.Adaptor)
 		p := c.Param(PathParamTxID)
 		ret, err := a.GetResult(p)
+		if err != nil {
+			s.l.Debugf("fail to GetResult err:%+v", err)
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+
+	networkApi.GET(UrlGetFinality+"/:"+PathParamBlockID, func(c echo.Context) error {
+		fm := c.Get(ContextAdaptor).(contract.Adaptor).FinalityMonitor()
+		id := c.Param(PathParamBlockID)
+		p := c.QueryParam(QueryParamHeight)
+		var (
+			height int64
+			err    error
+		)
+		if len(p) == 0 {
+			if height, err = fm.HeightByID(id); err != nil {
+				return err
+			}
+		} else {
+			var ci contract.Integer
+			if ci, err = contract.IntegerOf(p); err != nil {
+				return err
+			}
+			if height, err = ci.AsInt64(); err != nil {
+				return err
+			}
+		}
+		ret, err := fm.IsFinalized(height, id)
 		if err != nil {
 			s.l.Debugf("fail to GetResult err:%+v", err)
 			return err

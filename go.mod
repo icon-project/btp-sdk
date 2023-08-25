@@ -7,7 +7,7 @@ require (
 	github.com/getkin/kin-openapi v0.118.0
 	github.com/go-playground/validator/v10 v10.11.1
 	github.com/gorilla/websocket v1.5.0
-	github.com/icon-project/btp2 v1.0.7-0.20230814031638-ba563dff2a3f
+	github.com/icon-project/btp2 v1.0.7-0.20230825003125-1f6a5339faa8
 	github.com/invopop/yaml v0.1.0
 	github.com/labstack/echo/v4 v4.9.0
 	github.com/mitchellh/mapstructure v1.5.0

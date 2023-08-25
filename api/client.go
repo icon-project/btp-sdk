@@ -126,6 +126,24 @@ func (c *Client) GetResult(network string, id contract.TxID) (interface{}, error
 	return txr, nil
 }
 
+func (c *Client) GetFinality(network string, id contract.BlockID, height int64) (bool, error) {
+	if height < 0 {
+		return false, errors.Errorf("height must be positive")
+	}
+	query := ""
+	if height > 0 {
+		query = fmt.Sprintf("?height=%d", height)
+	}
+	var ret bool
+	_, err := c.do(http.MethodGet,
+		c.apiUrl("/%s%s/%s%s", network, UrlGetFinality, id, query),
+		nil, &ret)
+	if err != nil {
+		return ret, err
+	}
+	return ret, nil
+}
+
 func (c *Client) invoke(url string, req interface{}, s service.Signer) (contract.TxID, error) {
 	var (
 		p   *contract.Options

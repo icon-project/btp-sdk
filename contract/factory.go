@@ -96,6 +96,7 @@ type FinalityMonitor interface {
 	Start() (<-chan BlockInfo, error)
 	Stop() error
 	IsFinalized(height int64, id BlockID) (bool, error)
+	HeightByID(id BlockID) (int64, error)
 }
 
 type Adaptor interface {
