@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	"os"
 	"path/filepath"
 	"reflect"
@@ -23,6 +24,7 @@ import (
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
 	"github.com/icon-project/btp-sdk/service/xcall"
+	"github.com/icon-project/btp-sdk/utils"
 )
 
 type Config struct {
@@ -30,6 +32,7 @@ type Config struct {
 
 	Server   api.ServerConfig         `json:"server"`
 	Networks map[string]NetworkConfig `json:"networks"`
+	Storage  *utils.StorageConfig     `json:"storage"`
 
 	LogLevel     string            `json:"log_level"`
 	ConsoleLevel string            `json:"console_level"`
