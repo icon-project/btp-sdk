@@ -48,6 +48,9 @@ const (
 	schemaRequest       = "Request"
 	schemaOptions       = "Options"
 	schemaErrorResponse = "ErrorResponse"
+	schemaTypeInfo      = "TypeInfo"
+	schemaMethodInfo    = "MethodInfo"
+	schemaMethodInfos   = "MethodInfos"
 	parameterRefPrefix  = "#/components/parameters/"
 )
 
@@ -80,6 +83,9 @@ var (
 		schemaRequest:              MustGenerateSchema(&Request{}),
 		schemaOptions:              openapi3.NewObjectSchema(),
 		schemaErrorResponse:        MustGenerateSchema(&ErrorResponse{}),
+		schemaTypeInfo:             MustGenerateSchema(&TypeInfo{}),
+		schemaMethodInfo:           MustGenerateSchema(&MethodInfo{}),
+		schemaMethodInfos:          MustGenerateSchema(&MethodInfos{}),
 		contract.TInteger.String(): integerSchema,
 		contract.TBoolean.String(): booleanSchema,
 		contract.TString.String():  stringSchema,
@@ -538,7 +544,7 @@ func newServiceAPIPathItem(npr, apr *openapi3.ParameterRef) (string, *openapi3.P
 			Summary:     "Retrieve methods",
 			Description: "",
 			Responses: ResponsesWithResponse(nil, http.StatusOK,
-				NewSuccessResponseWithSchema(MustGenerateSchema(MethodInfos{}))),
+				NewSuccessResponseWithSchemaRef(DefaultSchemaRef(schemaMethodInfos))),
 		},
 	}
 	return fmt.Sprintf("%s/{%s}/{%s}", GroupUrlApi, npr.Value.Name, apr.Value.Name), pi
