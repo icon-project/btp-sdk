@@ -233,11 +233,6 @@ type Request struct {
 	Options contract.Options `json:"options" query:"options"`
 }
 
-type ContractRequest struct {
-	Request
-	Spec json.RawMessage `json:"spec,omitempty" query:"spec"`
-}
-
 func (s *Server) RegisterAPIHandler(g *echo.Group) {
 	g.Use(middleware.BodyDump(func(c echo.Context, reqBody []byte, resBody []byte) {
 		s.l.Debugf("url=%s", c.Request().RequestURI)
@@ -342,7 +337,7 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 	})
 
 	serviceApi := networkApi.Group("/:" + PathParamServiceOrAddress)
-	serviceInjection := func(next echo.HandlerFunc) echo.HandlerFunc {
+	serviceApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			p := c.Param(PathParamServiceOrAddress)
 			svc := s.GetService(p)
@@ -353,7 +348,7 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 			c.Set(ContextService, svc)
 			return next(c)
 		}
-	}
+	})
 	serviceApi.GET("", func(c echo.Context) error {
 		svc := c.Get(ContextService).(service.Service)
 		r := make(MethodInfos, 0)
@@ -390,12 +385,12 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 			r = append(r, mi)
 		}
 		return c.JSON(http.StatusOK, r)
-	}, serviceInjection)
+	})
 
 	methodApi := serviceApi.Group("/:" + PathParamMethod)
 	methodApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			req := &ContractRequest{}
+			req := &Request{}
 			if err := BindQueryParamsAndUnmarshalBody(c, req); err != nil {
 				s.l.Debugf("fail to BindQueryParamsAndUnmarshalBody err:%+v", err)
 				return echo.ErrBadRequest
@@ -404,35 +399,10 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 				s.l.Debugf("fail to Validate err:%+v", err)
 				return err
 			}
-			c.Set(ContextRequest, &req.Request)
-
-			p := c.Param(PathParamServiceOrAddress)
-			svc := s.GetService(p)
-			if svc == nil {
-				network, address := c.Param(PathParamNetwork), contract.Address(p)
-				if len(req.Spec) > 0 {
-					a := c.Get(ContextAdaptor).(contract.Adaptor)
-					var err error
-					if svc, err = NewContractService(a, req.Spec, address, network, s.l); err != nil {
-						s.l.Debugf("fail to NewContractService err:%+v", err)
-						return err
-					}
-					if _, ok := s.Signers[network]; ok {
-						if svc, err = service.NewSignerService(svc, s.Signers, s.l); err != nil {
-							s.l.Debugf("fail to NewSignerService err:%+v", err)
-							return err
-						}
-					}
-					s.SetService(svc)
-				} else if svc = s.GetService(ContractServiceName(network, address)); svc == nil {
-					return echo.NewHTTPError(http.StatusNotFound,
-						fmt.Sprintf("Service(%s) not found", p))
-				}
-			}
-			c.Set(ContextService, svc)
+			c.Set(ContextRequest, req)
 
 			pm := c.Param(PathParamMethod)
-			m, found := svc.Spec().Methods[pm]
+			m, found := c.Get(ContextService).(service.Service).Spec().Methods[pm]
 			if !found {
 				return echo.NewHTTPError(http.StatusNotFound,
 					fmt.Sprintf("Method(%s) not found", pm))

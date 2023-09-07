@@ -34,22 +34,21 @@ import (
 )
 
 const (
-	openapi3Version       = "3.0.3"
-	infoTitlePrefix       = "BTP SDK "
-	infoTitleSuffix       = " - OpenAPI " + openapi3Version
-	infoDefaultVersion    = "0.1.0"
-	tagReadonly           = "Readonly"
-	tagWritable           = "Writable"
-	tagGeneral            = "General"
-	tagAutoCaller         = "AutoCaller"
-	schemaRefPrefix       = "#/components/schemas/"
-	schemaTxID            = "TxID"
-	schemaBlockID         = "BlockID"
-	schemaRequest         = "Request"
-	schemaContractRequest = "ContractRequest"
-	schemaOptions         = "Options"
-	schemaErrorResponse   = "ErrorResponse"
-	parameterRefPrefix    = "#/components/parameters/"
+	openapi3Version     = "3.0.3"
+	infoTitlePrefix     = "BTP SDK "
+	infoTitleSuffix     = " - OpenAPI " + openapi3Version
+	infoDefaultVersion  = "0.1.0"
+	tagReadonly         = "Readonly"
+	tagWritable         = "Writable"
+	tagGeneral          = "General"
+	tagAutoCaller       = "AutoCaller"
+	schemaRefPrefix     = "#/components/schemas/"
+	schemaTxID          = "TxID"
+	schemaBlockID       = "BlockID"
+	schemaRequest       = "Request"
+	schemaOptions       = "Options"
+	schemaErrorResponse = "ErrorResponse"
+	parameterRefPrefix  = "#/components/parameters/"
 )
 
 var (
@@ -79,7 +78,6 @@ var (
 			openapi3.NewStringSchema().WithPattern("^0x([0-9a-f][0-9a-f])*$"),
 			openapi3.NewBytesSchema()),
 		schemaRequest:              MustGenerateSchema(&Request{}),
-		schemaContractRequest:      MustGenerateSchema(&ContractRequest{}),
 		schemaOptions:              openapi3.NewObjectSchema(),
 		schemaErrorResponse:        MustGenerateSchema(&ErrorResponse{}),
 		contract.TInteger.String(): integerSchema,
@@ -564,7 +562,7 @@ func newMethodAPIPathItem(npr, apr, mpr *openapi3.ParameterRef) (string, *openap
 			Description: "",
 			RequestBody: &openapi3.RequestBodyRef{
 				Value: openapi3.NewRequestBody().WithContent(
-					openapi3.NewContentWithJSONSchema(DefaultSchemaRef(schemaContractRequest).Value)),
+					openapi3.NewContentWithJSONSchema(DefaultSchemaRef(schemaRequest).Value)),
 			},
 			Responses: ResponsesWithResponse(nil, http.StatusOK,
 				NewSuccessResponseWithSchemaRef(DefaultSchemaRef(schemaTxID))),

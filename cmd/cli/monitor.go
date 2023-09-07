@@ -50,22 +50,10 @@ func NewMonitorCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.
 	cli.MarkAnnotationCustom(rootCmd.PersistentFlags(), "network.name", "network.type")
 	cli.BindPFlags(rootVc, rootCmd.PersistentFlags())
 
-	var (
-		svc  string
-		addr contract.Address
-	)
 	eventCmd := &cobra.Command{
 		Use:   "event",
 		Short: "Event monitor",
 		Args:  cobra.NoArgs,
-		PreRunE: func(cmd *cobra.Command, args []string) error {
-			svc = cmd.Flag("service").Value.String()
-			addr = contract.Address(cmd.Flag("contract.address").Value.String())
-			if len(svc) == 0 && len(addr) == 0 {
-				return errors.New("require service or contract.address")
-			}
-			return nil
-		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			height, err := intconv.ParseInt(cmd.Flag("height").Value.String(), 64)
 			if err != nil {
@@ -113,21 +101,17 @@ func NewMonitorCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.
 			onEvent := func(e contract.Event) error {
 				return cli.JsonPrettyPrintln(os.Stdout, e)
 			}
-			if len(svc) > 0 {
-				err = c.ServiceMonitorEvent(ctx, network, svc, req, onEvent)
-			} else if len(addr) > 0 {
-				err = c.MonitorEvent(ctx, network, addr, req, onEvent)
-			}
-			return err
+			svc := cmd.Flag("service").Value.String()
+			return c.MonitorEvent(ctx, network, svc, req, onEvent)
 		},
 	}
 	rootCmd.AddCommand(eventCmd)
 	eventFlags := eventCmd.Flags()
 	eventFlags.String("service", "", "service name")
-	eventFlags.String("contract.address", "", "contract address, if '--service' used, will be ignored")
 	eventFlags.StringToString("filter", nil,
 		"Event=Filter, raw json file or json string, if '--raw' used, will overwrite")
 	eventFlags.String("height", "0", "height, if '--raw' used, will overwrite")
 	eventFlags.String("raw", "", "call with 'data' using raw json file or json-string")
+	cli.MarkAnnotationRequired(eventFlags, "service")
 	return rootCmd, rootVc
 }

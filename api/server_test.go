@@ -361,17 +361,18 @@ func Test_ServerCall(t *testing.T) {
 	c := client()
 	for _, arg := range args {
 		for _, n := range arg.Networks {
-			var err error
-			if len(arg.Service) > 0 {
-				_, err = c.ServiceCall(n, arg.Service, arg.Method, &arg.Request, &arg.Response)
-			} else {
+			svc := arg.Service
+			if len(svc) == 0 {
 				ctr := contracts[n]
-				req := &ContractRequest{
-					Request: arg.Request,
+				req := &RegisterContractServiceRequest{
+					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				_, err = c.Call(n, ctr.Address, arg.Method, req, &arg.Response)
+				err := c.RegisterContractService(n, req)
+				assert.NoError(t, err)
+				svc = string(ctr.Address)
 			}
+			_, err := c.Call(n, svc, arg.Method, &arg.Request, &arg.Response)
 			assert.NoError(t, err)
 			t.Logf("response:%v", arg.Response)
 		}
@@ -453,20 +454,18 @@ func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 	c := client()
 	for _, arg := range args {
 		for _, n := range arg.Networks {
-			var (
-				txId contract.TxID
-				err  error
-			)
-			if len(arg.Service) > 0 {
-				txId, err = c.ServiceInvoke(n, arg.Service, arg.Method, &arg.Request, signers[n])
-			} else {
+			svc := arg.Service
+			if len(svc) == 0 {
 				ctr := contracts[n]
-				req := &ContractRequest{
-					Request: arg.Request,
+				req := &RegisterContractServiceRequest{
+					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				txId, err = c.Invoke(n, ctr.Address, arg.Method, req, signers[n])
+				err := c.RegisterContractService(n, req)
+				assert.NoError(t, err)
+				svc = string(ctr.Address)
 			}
+			txId, err := c.Invoke(n, svc, arg.Method, &arg.Request, signers[n])
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
 			txr, err := c.GetResult(n, txId)
@@ -551,20 +550,18 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 	c := client()
 	for _, arg := range args {
 		for _, n := range arg.Networks {
-			var (
-				txId contract.TxID
-				err  error
-			)
-			if len(arg.Service) > 0 {
-				txId, err = c.ServiceInvoke(n, arg.Service, arg.Method, &arg.Request, nil)
-			} else {
+			svc := arg.Service
+			if len(svc) == 0 {
 				ctr := contracts[n]
-				req := &ContractRequest{
-					Request: arg.Request,
+				req := &RegisterContractServiceRequest{
+					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				txId, err = c.Invoke(n, ctr.Address, arg.Method, req, signers[n])
+				err := c.RegisterContractService(n, req)
+				assert.NoError(t, err)
+				svc = string(ctr.Address)
 			}
+			txId, err := c.Invoke(n, svc, arg.Method, &arg.Request, nil)
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
 			txr, err := c.GetResult(n, txId)
@@ -604,20 +601,18 @@ func Test_ServerMonitorEvent(t *testing.T) {
 	c := client()
 	for _, arg := range args {
 		for _, n := range arg.Networks {
-			var (
-				txId contract.TxID
-				err  error
-			)
-			if len(arg.Service) > 0 {
-				txId, err = c.ServiceInvoke(n, arg.Service, arg.Method, &arg.Request, nil)
-			} else {
+			svc := arg.Service
+			if len(svc) == 0 {
 				ctr := contracts[n]
-				req := &ContractRequest{
-					Request: arg.Request,
+				req := &RegisterContractServiceRequest{
+					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				txId, err = c.Invoke(n, ctr.Address, arg.Method, req, signers[n])
+				err := c.RegisterContractService(n, req)
+				assert.NoError(t, err)
+				svc = string(ctr.Address)
 			}
+			txId, err := c.Invoke(n, svc, arg.Method, &arg.Request, nil)
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
 			txr, err := c.GetResult(n, txId)
@@ -640,13 +635,8 @@ func Test_ServerMonitorEvent(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			go func() {
-				if len(arg.Service) > 0 {
-					err := c.ServiceMonitorEvent(ctx, n, arg.Service, &arg.MonitorRequest, onEvent)
-					assert.Equal(t, ctx.Err(), err)
-				} else {
-					err := c.MonitorEvent(ctx, n, contracts[n].Address, &arg.MonitorRequest, onEvent)
-					assert.Equal(t, ctx.Err(), err)
-				}
+				err := c.MonitorEvent(ctx, n, svc, &arg.MonitorRequest, onEvent)
+				assert.Equal(t, ctx.Err(), err)
 			}()
 			select {
 			case e := <-ch:
