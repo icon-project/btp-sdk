@@ -41,6 +41,7 @@ const (
 	tagReadonly         = "Readonly"
 	tagWritable         = "Writable"
 	tagGeneral          = "General"
+	tagExperimental     = "Experimental"
 	tagAutoCaller       = "AutoCaller"
 	schemaRefPrefix     = "#/components/schemas/"
 	schemaTxID          = "TxID"
@@ -455,7 +456,10 @@ type OpenAPISpecProvider struct {
 
 func NewOpenAPISpecProvider(l log.Logger) *OpenAPISpecProvider {
 	oas := NewOpenAPISpec("")
-	oas.Tags = append(openapi3.Tags{NewTag(tagGeneral, "General purpose")}, oas.Tags...)
+	oas.Tags = append(openapi3.Tags{
+		NewTag(tagGeneral, "General purpose"),
+		NewTag(tagExperimental, "Experimental endpoints"),
+	}, oas.Tags...)
 
 	gpi := make(openapi3.Paths)
 	gsu, gspi := newGeneralServiceAPIPathItem()
@@ -530,7 +534,7 @@ func newGeneralServiceAPIPathItem() (string, *openapi3.PathItem) {
 				NewSuccessResponseWithSchema(MustGenerateSchema(ServiceInfos{}))),
 		},
 		Post: &openapi3.Operation{
-			Tags:        []string{tagGeneral},
+			Tags:        []string{tagExperimental},
 			Summary:     "Register contract service",
 			Description: "",
 			RequestBody: &openapi3.RequestBodyRef{
@@ -578,7 +582,7 @@ func newServiceAPIPathItem(apr, npr *openapi3.ParameterRef) (string, *openapi3.P
 		Parameters: openapi3.Parameters{apr},
 		Get: &openapi3.Operation{
 			Parameters:  openapi3.Parameters{npr},
-			Tags:        []string{tagGeneral},
+			Tags:        []string{tagExperimental},
 			Summary:     "Retrieve methods",
 			Description: "",
 			Responses: ResponsesWithResponse(nil, http.StatusOK,
@@ -599,7 +603,7 @@ func newMethodAPIPathItem(apr, mpr, npr *openapi3.ParameterRef) (string, *openap
 	pi := &openapi3.PathItem{
 		Parameters: openapi3.Parameters{apr, mpr},
 		Get: &openapi3.Operation{
-			Tags:        []string{tagGeneral, tagReadonly},
+			Tags:        []string{tagExperimental},
 			Summary:     "Call readonly method",
 			Description: "",
 			Parameters: NewParameters(npr.Value, openapi3.NewQueryParameter("request").
@@ -608,7 +612,7 @@ func newMethodAPIPathItem(apr, mpr, npr *openapi3.ParameterRef) (string, *openap
 				NewSuccessResponseWithSchema(openapi3.NewObjectSchema())),
 		},
 		Post: &openapi3.Operation{
-			Tags:        []string{tagGeneral, tagWritable},
+			Tags:        []string{tagExperimental},
 			Summary:     "Call writable method",
 			Description: "",
 			RequestBody: &openapi3.RequestBodyRef{

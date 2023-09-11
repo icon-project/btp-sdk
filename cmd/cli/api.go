@@ -138,7 +138,7 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 
 	registerCmd := &cobra.Command{
 		Use:   "register",
-		Short: "Register contract service",
+		Short: "[Experimental] Register contract service",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			spec, err := os.ReadFile(cmd.Flag("contract.spec").Value.String())
@@ -198,7 +198,7 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 
 	methodInfosCmd := &cobra.Command{
 		Use:   "methods",
-		Short: "Get list of method information",
+		Short: "[Experimental] Get list of method information",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			svc := cmd.Flag("service").Value.String()
