@@ -19,5 +19,6 @@ package service
 import "github.com/icon-project/btp2/common/errors"
 
 const (
-	ErrorCodeMismatchSigner errors.Code = errors.CodeService + iota
+	ErrorCodeNotFoundNetwork errors.Code = errors.CodeService + iota
+	ErrorCodeMismatchSigner
 )

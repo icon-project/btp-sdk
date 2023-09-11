@@ -89,7 +89,7 @@ func (s *DefaultService) Spec() Spec {
 func (s *DefaultService) network(network string) (DefaultServiceNetwork, error) {
 	n, ok := s.m[network]
 	if !ok {
-		return n, errors.Errorf("not found network:%s", network)
+		return n, ErrorCodeNotFoundNetwork.Errorf("not found network:%s", network)
 	}
 	return n, nil
 }
@@ -161,10 +161,18 @@ type MultiContractServiceNetwork struct {
 	NameToHandlers map[string]contract.Handler
 }
 
-func (n *MultiContractServiceNetwork) Handler(methodOrEvent string) (contract.Handler, error) {
-	h, ok := n.NameToHandlers[methodOrEvent]
+func (n *MultiContractServiceNetwork) HandlerByMethod(method string) (contract.Handler, error) {
+	h, ok := n.NameToHandlers[method]
 	if !ok {
-		return nil, errors.Errorf("not found handler methodOrEvent:%s", methodOrEvent)
+		return nil, contract.ErrorCodeNotFoundMethod.Errorf("not found method:%s", method)
+	}
+	return h, nil
+}
+
+func (n *MultiContractServiceNetwork) HandlerByEvent(event string) (contract.Handler, error) {
+	h, ok := n.NameToHandlers[event]
+	if !ok {
+		return nil, contract.ErrorCodeNotFoundEvent.Errorf("not found event:%s", event)
 	}
 	return h, nil
 }
@@ -264,17 +272,17 @@ func (s *MultiContractService) Spec() Spec {
 func (s *MultiContractService) network(network string) (MultiContractServiceNetwork, error) {
 	n, ok := s.m[network]
 	if !ok {
-		return n, errors.Errorf("not found handler network:%s", network)
+		return n, ErrorCodeNotFoundNetwork.Errorf("not found network:%s", network)
 	}
 	return n, nil
 }
 
-func (s *MultiContractService) handler(network, methodOrEvent string) (contract.Handler, error) {
+func (s *MultiContractService) handler(network, method string) (contract.Handler, error) {
 	n, err := s.network(network)
 	if err != nil {
 		return nil, err
 	}
-	return n.Handler(methodOrEvent)
+	return n.HandlerByMethod(method)
 }
 
 func (s *MultiContractService) Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error) {
@@ -298,7 +306,7 @@ func (s *MultiContractService) EventFilters(network string, nameToParams map[str
 	if err != nil {
 		return nil, err
 	}
-	return EventFilters(nameToParams, n.Handler)
+	return EventFilters(nameToParams, n.HandlerByEvent)
 }
 
 func (s *MultiContractService) MonitorEvent(ctx context.Context, network string, cb contract.EventCallback, efs []contract.EventFilter, height int64) error {

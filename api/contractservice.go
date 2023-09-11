@@ -75,14 +75,14 @@ func (s *ContractService) Spec() service.Spec {
 
 func (s *ContractService) Invoke(network, method string, params contract.Params, options contract.Options) (contract.TxID, error) {
 	if network != s.network {
-		return nil, errors.Errorf("not supported network:%s", network)
+		return nil, service.ErrorCodeNotFoundNetwork.Errorf("not found network:%s", network)
 	}
 	return s.h.Invoke(method, params, options)
 }
 
 func (s *ContractService) Call(network, method string, params contract.Params, options contract.Options) (contract.ReturnValue, error) {
 	if network != s.network {
-		return nil, errors.Errorf("not supported network:%s", network)
+		return nil, service.ErrorCodeNotFoundNetwork.Errorf("not found network:%s", network)
 	}
 	return s.h.Call(method, params, options)
 }

@@ -211,7 +211,7 @@ func (s *MergedService) Spec() Spec {
 func (s *MergedService) networkType(network string) (string, error) {
 	nt, ok := s.nMap[network]
 	if !ok {
-		return nt, errors.Errorf("network:%s not found", network)
+		return nt, ErrorCodeNotFoundNetwork.Errorf("not found network:%s", network)
 	}
 	return nt, nil
 }
