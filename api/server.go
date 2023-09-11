@@ -498,6 +498,7 @@ func (s *Server) RegisterAPIDocHandler(g *echo.Group) {
 }
 
 type EventMonitorRequest struct {
+	Network      string                       `json:"network"`
 	NameToParams map[string][]contract.Params `json:"nameToParams"`
 	Height       int64                        `json:"height"`
 }
@@ -652,7 +653,6 @@ func (s *Server) wsPingLoop(ctx context.Context, conn *websocket.Conn) {
 
 func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 	monitorApi := g.Group("/:" + PathParamServiceOrAddress)
-	monitorApi.Use(s.serviceInjection)
 	monitorApi.GET(UrlMonitorEvent, func(c echo.Context) error {
 		conn, err := s.wsConnect(c)
 		if err != nil {
@@ -660,8 +660,8 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 		}
 		defer s.wsClose(conn)
 		id := s.wsID(conn)
-		svc := c.Get(ContextService).(service.Service)
-		network := c.Get(ContextNetwork).(string)
+		p := c.Param(PathParamServiceOrAddress)
+		svc := s.GetService(p)
 		var efs []contract.EventFilter
 		req := &EventMonitorRequest{}
 		onSuccessHandshake := func() error {
@@ -669,7 +669,12 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 				s.l.Debugf("[%s]fail to Validate err:%+v", id, err)
 				return err
 			}
-			if efs, err = svc.EventFilters(network, req.NameToParams); err != nil {
+			if svc == nil {
+				if svc = s.GetService(ContractServiceName(req.Network, contract.Address(p))); svc == nil {
+					return errors.Errorf("Service(%s) not found", p)
+				}
+			}
+			if efs, err = svc.EventFilters(req.Network, req.NameToParams); err != nil {
 				s.l.Debugf("[%s]fail to EventFilters err:%+v", id, err)
 				return err
 			}
@@ -690,7 +695,7 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 		onEvent := func(e contract.Event) error {
 			return s.wsWrite(conn, e)
 		}
-		if err = svc.MonitorEvent(ctx, network, onEvent, efs, req.Height); err != nil {
+		if err = svc.MonitorEvent(ctx, req.Network, onEvent, efs, req.Height); err != nil {
 			s.l.Debugf("[%s]fail to MonitorEvent req:%+v err:%+v", id, req, err)
 			return nil
 		}

@@ -634,6 +634,7 @@ func Test_ServerMonitorEvent(t *testing.T) {
 				assert.FailNow(t, "not found event in TxResult")
 			}
 			expected := r.Events()[0]
+			arg.MonitorRequest.Network = n
 			arg.MonitorRequest.Height = expected.BlockHeight()
 			ch := make(chan contract.Event, 0)
 			onEvent := func(e contract.Event) error {
@@ -643,7 +644,7 @@ func Test_ServerMonitorEvent(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			go func() {
-				err := c.MonitorEvent(ctx, n, svc, &arg.MonitorRequest, onEvent)
+				err := c.MonitorEvent(ctx, svc, &arg.MonitorRequest, onEvent)
 				assert.Equal(t, ctx.Err(), err)
 			}()
 			select {

@@ -336,7 +336,7 @@ func (c *Client) wsReadLoop(ctx context.Context, conn *websocket.Conn, cb func(b
 	}
 }
 
-func (c *Client) monitorEvent(ctx context.Context, network, url string, req *EventMonitorRequest, cb contract.EventCallback) error {
+func (c *Client) monitorEvent(ctx context.Context, url string, req *EventMonitorRequest, cb contract.EventCallback) error {
 	conn, err := c.wsConnect(ctx, url)
 	if err != nil {
 		return err
@@ -347,7 +347,7 @@ func (c *Client) monitorEvent(ctx context.Context, network, url string, req *Eve
 	}
 	type eventSupplier func() contract.Event
 	var supplier eventSupplier
-	nt, ok := c.networkToType[network]
+	nt, ok := c.networkToType[req.Network]
 	if ok {
 		switch nt {
 		case icon.NetworkTypeIcon:
@@ -356,7 +356,7 @@ func (c *Client) monitorEvent(ctx context.Context, network, url string, req *Eve
 			supplier = func() contract.Event { return &eth.Event{} }
 		default:
 			c.wsClose(conn)
-			return errors.Errorf("not supported network %s", network)
+			return errors.Errorf("not supported network %s", req.Network)
 		}
 	}
 	return c.wsReadLoop(ctx, conn, func(b []byte) error {
@@ -368,7 +368,7 @@ func (c *Client) monitorEvent(ctx context.Context, network, url string, req *Eve
 	})
 }
 
-func (c *Client) MonitorEvent(ctx context.Context, network, svc string, req *EventMonitorRequest, cb contract.EventCallback) error {
-	url := c.monitorUrl("/%s%s?%s=%s", svc, UrlMonitorEvent, QueryParamNetwork, network)
-	return c.monitorEvent(ctx, network, url, req, cb)
+func (c *Client) MonitorEvent(ctx context.Context, svc string, req *EventMonitorRequest, cb contract.EventCallback) error {
+	url := c.monitorUrl("/%s%s", svc, UrlMonitorEvent)
+	return c.monitorEvent(ctx, url, req, cb)
 }

@@ -60,6 +60,7 @@ func NewMonitorCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.
 				return err
 			}
 			req := &api.EventMonitorRequest{
+				Network:      network,
 				Height:       height,
 				NameToParams: make(map[string][]contract.Params),
 			}
@@ -102,7 +103,7 @@ func NewMonitorCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.
 				return cli.JsonPrettyPrintln(os.Stdout, e)
 			}
 			svc := cmd.Flag("service").Value.String()
-			return c.MonitorEvent(ctx, network, svc, req, onEvent)
+			return c.MonitorEvent(ctx, svc, req, onEvent)
 		},
 	}
 	rootCmd.AddCommand(eventCmd)
