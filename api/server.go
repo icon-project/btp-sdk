@@ -35,19 +35,20 @@ func init() {
 }
 
 const (
-	PathParamNetwork          = "network"
 	PathParamTxID             = "txID"
 	PathParamBlockID          = "blockID"
 	PathParamServiceOrAddress = "serviceOrAddress"
 	PathParamMethod           = "method"
 	PathParamService          = "service"
 
+	QueryParamNetwork = "network"
 	QueryParamService = "service"
 	QueryParamHeight  = "height"
 
 	ContextAdaptor = "adaptor"
 	ContextService = "service"
 	ContextRequest = "request"
+	ContextNetwork = "network"
 
 	GroupUrlApi        = "/api"
 	GroupUrlMonitor    = "/monitor"
@@ -175,19 +176,15 @@ func (s *Server) Start() error {
 	return s.e.Start(s.cfg.Address)
 }
 
-type NetworkInfo struct {
-	Network     string `json:"network"`
-	NetworkType string `json:"type"`
-}
-type NetworkInfos []NetworkInfo
-
 type RegisterContractServiceRequest struct {
+	Network string           `json:"network"`
 	Address contract.Address `json:"address"`
 	Spec    json.RawMessage  `json:"spec"`
 }
 
 type ServiceInfo struct {
-	Name string `json:"name"`
+	Name     string            `json:"name"`
+	Networks map[string]string `json:"networks"`
 }
 type ServiceInfos []ServiceInfo
 
@@ -229,8 +226,53 @@ func NewTypeInfo(s contract.TypeSpec) TypeInfo {
 }
 
 type Request struct {
+	Network string           `json:"network" query:"network"`
 	Params  contract.Params  `json:"params" query:"params"`
 	Options contract.Options `json:"options" query:"options"`
+}
+
+func badRequestNotSupportedNetwork(network string) error {
+	return echo.NewHTTPError(http.StatusBadRequest,
+		fmt.Sprintf("not supported network:%s", network))
+}
+
+func (s *Server) adaptorInjection(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		network := c.QueryParam(QueryParamNetwork)
+		a := s.GetAdaptor(network)
+		if a == nil {
+			return badRequestNotSupportedNetwork(network)
+		}
+		c.Set(ContextAdaptor, a)
+		return next(c)
+	}
+}
+
+func (s *Server) serviceInjection(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		var (
+			network string
+			ok      bool
+		)
+		if network, ok = c.Get(ContextNetwork).(string); !ok {
+			network = c.QueryParam(QueryParamNetwork)
+			c.Set(ContextNetwork, network)
+		}
+		p := c.Param(PathParamServiceOrAddress)
+		svc := s.GetService(p)
+		if svc == nil {
+			address := contract.Address(p)
+			if svc = s.GetService(ContractServiceName(network, address)); svc == nil {
+				return echo.NewHTTPError(http.StatusNotFound,
+					fmt.Sprintf("Service(%s) not found", p))
+			}
+		}
+		c.Set(ContextService, svc)
+		if _, ok := svc.Networks()[network]; !ok {
+			return badRequestNotSupportedNetwork(network)
+		}
+		return next(c)
+	}
 }
 
 func (s *Server) RegisterAPIHandler(g *echo.Group) {
@@ -242,31 +284,9 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 	g.GET("", func(c echo.Context) error {
 		s.mtx.RLock()
 		defer s.mtx.RUnlock()
-		r := make(NetworkInfos, 0)
-		for n, a := range s.aMap {
-			r = append(r, NetworkInfo{Network: n, NetworkType: a.NetworkType()})
-		}
-		return c.JSON(http.StatusOK, r)
-	})
-	networkApi := g.Group("/:" + PathParamNetwork)
-	networkApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			p := c.Param(PathParamNetwork)
-			a := s.GetAdaptor(p)
-			if a == nil {
-				return echo.NewHTTPError(http.StatusNotFound,
-					fmt.Sprintf("Network(%s) not found", p))
-			}
-			c.Set(ContextAdaptor, a)
-			return next(c)
-		}
-	})
-	networkApi.GET("", func(c echo.Context) error {
-		s.mtx.RLock()
-		defer s.mtx.RUnlock()
 		r := make(ServiceInfos, 0)
 		for _, v := range s.sMap {
-			si := ServiceInfo{v.Name()}
+			si := ServiceInfo{v.Name(), v.Networks()}
 			if cs, ok := v.(*ContractService); ok {
 				si.Name = string(cs.Address())
 			}
@@ -274,19 +294,21 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		}
 		return c.JSON(http.StatusOK, r)
 	})
-	networkApi.POST("", func(c echo.Context) error {
+	g.POST("", func(c echo.Context) error {
 		req := &RegisterContractServiceRequest{}
 		if err := c.Bind(req); err != nil {
 			return err
 		}
-		network := c.Param(PathParamNetwork)
-		a := c.Get(ContextAdaptor).(contract.Adaptor)
-		svc, err := NewContractService(a, req.Spec, req.Address, network, s.l)
+		a := s.GetAdaptor(req.Network)
+		if a == nil {
+			return badRequestNotSupportedNetwork(req.Network)
+		}
+		svc, err := NewContractService(a, req.Spec, req.Address, req.Network, s.l)
 		if err != nil {
 			s.l.Debugf("fail to NewContractService err:%+v", err)
 			return err
 		}
-		if _, ok := s.Signers[network]; ok {
+		if _, ok := s.Signers[req.Network]; ok {
 			if svc, err = service.NewSignerService(svc, s.Signers, s.l); err != nil {
 				s.l.Debugf("fail to NewSignerService err:%+v", err)
 				return err
@@ -295,19 +317,16 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		s.SetService(svc)
 		return c.NoContent(http.StatusOK)
 	})
-
-	networkApi.GET(UrlGetResult+"/:"+PathParamTxID, func(c echo.Context) error {
-		a := c.Get(ContextAdaptor).(contract.Adaptor)
+	g.GET(UrlGetResult+"/:"+PathParamTxID, func(c echo.Context) error {
 		p := c.Param(PathParamTxID)
-		ret, err := a.GetResult(p)
+		ret, err := c.Get(ContextAdaptor).(contract.Adaptor).GetResult(p)
 		if err != nil {
 			s.l.Debugf("fail to GetResult err:%+v", err)
 			return err
 		}
 		return c.JSON(http.StatusOK, ret)
-	})
-
-	networkApi.GET(UrlGetFinality+"/:"+PathParamBlockID, func(c echo.Context) error {
+	}, s.adaptorInjection)
+	g.GET(UrlGetFinality+"/:"+PathParamBlockID, func(c echo.Context) error {
 		fm := c.Get(ContextAdaptor).(contract.Adaptor).FinalityMonitor()
 		id := c.Param(PathParamBlockID)
 		p := c.QueryParam(QueryParamHeight)
@@ -334,25 +353,14 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 			return err
 		}
 		return c.JSON(http.StatusOK, ret)
-	})
+	}, s.adaptorInjection)
 
-	serviceApi := networkApi.Group("/:" + PathParamServiceOrAddress)
-	serviceApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			p := c.Param(PathParamServiceOrAddress)
-			svc := s.GetService(p)
-			if svc == nil {
-				return echo.NewHTTPError(http.StatusNotFound,
-					fmt.Sprintf("Service(%s) not found", p))
-			}
-			c.Set(ContextService, svc)
-			return next(c)
-		}
-	})
+	serviceApi := g.Group("/:" + PathParamServiceOrAddress)
 	serviceApi.GET("", func(c echo.Context) error {
 		svc := c.Get(ContextService).(service.Service)
 		r := make(MethodInfos, 0)
-		networkType := svc.Networks()[c.Param(PathParamNetwork)]
+		network := c.Get(ContextNetwork).(string)
+		networkType := svc.Networks()[network]
 		for _, v := range svc.Spec().Methods {
 			mi := MethodInfo{
 				NetworkTypes: v.NetworkTypes,
@@ -362,7 +370,9 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 				Payable:      v.Payable,
 				Readonly:     v.Readonly,
 			}
-			if !service.StringSetContains(v.NetworkTypes, networkType) {
+			if service.StringSetContains(v.NetworkTypes, networkType) {
+				r = append(r, mi)
+			} else {
 				for _, o := range v.Overloads {
 					if service.StringSetContains(o.NetworkTypes, networkType) {
 						mi.NetworkTypes = o.NetworkTypes
@@ -378,56 +388,62 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 						if o.Readonly != nil {
 							mi.Readonly = *o.Readonly
 						}
+						r = append(r, mi)
 						break
 					}
 				}
 			}
-			r = append(r, mi)
 		}
 		return c.JSON(http.StatusOK, r)
-	})
+	}, s.serviceInjection)
 
 	methodApi := serviceApi.Group("/:" + PathParamMethod)
-	methodApi.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			req := &Request{}
-			if err := BindQueryParamsAndUnmarshalBody(c, req); err != nil {
-				s.l.Debugf("fail to BindQueryParamsAndUnmarshalBody err:%+v", err)
-				return echo.ErrBadRequest
-			}
-			if err := c.Validate(req); err != nil {
-				s.l.Debugf("fail to Validate err:%+v", err)
-				return err
-			}
-			c.Set(ContextRequest, req)
-
-			pm := c.Param(PathParamMethod)
-			m, found := c.Get(ContextService).(service.Service).Spec().Methods[pm]
-			if !found {
-				return echo.NewHTTPError(http.StatusNotFound,
-					fmt.Sprintf("Method(%s) not found", pm))
-			}
-			hm := c.Request().Method
-			if m.Readonly {
-				if hm != http.MethodGet {
-					return echo.NewHTTPError(http.StatusMethodNotAllowed,
-						fmt.Sprintf("HttpMethod(%s) not allowed, use GET", hm))
+	methodApi.Use(
+		func(next echo.HandlerFunc) echo.HandlerFunc {
+			return func(c echo.Context) error {
+				req := &Request{}
+				if err := BindQueryParamsAndUnmarshalBody(c, req); err != nil {
+					s.l.Debugf("fail to BindQueryParamsAndUnmarshalBody err:%+v", err)
+					return echo.ErrBadRequest
 				}
-			} else {
-				if hm != http.MethodPost {
+				if err := c.Validate(req); err != nil {
+					s.l.Debugf("fail to Validate err:%+v", err)
+					return err
+				}
+				c.Set(ContextRequest, req)
+				c.Set(ContextNetwork, req.Network)
+				return next(c)
+			}
+		},
+		s.serviceInjection,
+		func(next echo.HandlerFunc) echo.HandlerFunc {
+			return func(c echo.Context) error {
+				pm := c.Param(PathParamMethod)
+				m, found := c.Get(ContextService).(service.Service).Spec().Methods[pm]
+				if !found {
 					return echo.NewHTTPError(http.StatusNotFound,
-						fmt.Sprintf("HttpMethod(%s) not allowed, use POST", hm))
+						fmt.Sprintf("Method(%s) not found", pm))
 				}
+				hm := c.Request().Method
+				if m.Readonly {
+					if hm != http.MethodGet {
+						return echo.NewHTTPError(http.StatusMethodNotAllowed,
+							fmt.Sprintf("HttpMethod(%s) not allowed, use GET", hm))
+					}
+				} else {
+					if hm != http.MethodPost {
+						return echo.NewHTTPError(http.StatusNotFound,
+							fmt.Sprintf("HttpMethod(%s) not allowed, use POST", hm))
+					}
+				}
+				return next(c)
 			}
-			return next(c)
-		}
-	})
+		})
 	methodApi.POST("", func(c echo.Context) error {
 		req := c.Get(ContextRequest).(*Request)
 		svc := c.Get(ContextService).(service.Service)
-		network := c.Param(PathParamNetwork)
 		method := c.Param(PathParamMethod)
-		txID, err := svc.Invoke(network, method, req.Params, req.Options)
+		txID, err := svc.Invoke(req.Network, method, req.Params, req.Options)
 		if err != nil {
 			s.l.Errorf("fail to Invoke err:%+v", err)
 			return err
@@ -441,9 +457,8 @@ func (s *Server) RegisterAPIHandler(g *echo.Group) {
 		)
 		req := c.Get(ContextRequest).(*Request)
 		svc := c.Get(ContextService).(service.Service)
-		network := c.Param(PathParamNetwork)
 		method := c.Param(PathParamMethod)
-		ret, err = svc.Call(network, method, req.Params, req.Options)
+		ret, err = svc.Call(req.Network, method, req.Params, req.Options)
 		if err != nil {
 			s.l.Errorf("fail to Call err:%+v", err)
 			return err
@@ -636,22 +651,8 @@ func (s *Server) wsPingLoop(ctx context.Context, conn *websocket.Conn) {
 }
 
 func (s *Server) RegisterMonitorHandler(g *echo.Group) {
-	monitorApi := g.Group("/:"+PathParamNetwork+"/:"+PathParamServiceOrAddress,
-		func(next echo.HandlerFunc) echo.HandlerFunc {
-			return func(c echo.Context) error {
-				p := c.Param(PathParamServiceOrAddress)
-				svc := s.GetService(p)
-				if svc == nil {
-					network, address := c.Param(PathParamNetwork), contract.Address(p)
-					if svc = s.GetService(ContractServiceName(network, address)); svc == nil {
-						return echo.NewHTTPError(http.StatusNotFound,
-							fmt.Sprintf("Service(%s) not found", p))
-					}
-				}
-				c.Set(ContextService, svc)
-				return next(c)
-			}
-		})
+	monitorApi := g.Group("/:" + PathParamServiceOrAddress)
+	monitorApi.Use(s.serviceInjection)
 	monitorApi.GET(UrlMonitorEvent, func(c echo.Context) error {
 		conn, err := s.wsConnect(c)
 		if err != nil {
@@ -660,7 +661,7 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 		defer s.wsClose(conn)
 		id := s.wsID(conn)
 		svc := c.Get(ContextService).(service.Service)
-		network := c.Param(PathParamNetwork)
+		network := c.Get(ContextNetwork).(string)
 		var efs []contract.EventFilter
 		req := &EventMonitorRequest{}
 		onSuccessHandshake := func() error {

@@ -119,7 +119,7 @@ func (c *Client) GetResult(network string, id contract.TxID) (interface{}, error
 			txr = new(interface{})
 		}
 	}
-	_, err := c.do(http.MethodGet, c.apiUrl("/%s%s/%s", network, UrlGetResult, id), nil, txr)
+	_, err := c.do(http.MethodGet, c.apiUrl("%s/%s?%s=%s", UrlGetResult, id, QueryParamNetwork, network), nil, txr)
 	if err != nil {
 		return nil, err
 	}
@@ -132,11 +132,11 @@ func (c *Client) GetFinality(network string, id contract.BlockID, height int64) 
 	}
 	query := ""
 	if height > 0 {
-		query = fmt.Sprintf("?height=%d", height)
+		query = fmt.Sprintf("&height=%d", height)
 	}
 	var ret bool
 	_, err := c.do(http.MethodGet,
-		c.apiUrl("/%s%s/%s%s", network, UrlGetFinality, id, query),
+		c.apiUrl("%s/%s?%s=%s%s", UrlGetFinality, id, QueryParamNetwork, network, query),
 		nil, &ret)
 	if err != nil {
 		return ret, err
@@ -173,41 +173,33 @@ func (c *Client) invoke(url string, req *Request, s service.Signer) (contract.Tx
 	return txId, err
 }
 
-func (c *Client) NetworkInfos() (NetworkInfos, error) {
-	r := NetworkInfos{}
+func (c *Client) ServiceInfos() (ServiceInfos, error) {
+	r := ServiceInfos{}
 	if _, err := c.do(http.MethodGet, c.baseApiUrl, nil, &r); err != nil {
 		return nil, err
 	}
 	return r, nil
 }
 
-func (c *Client) ServiceInfos(network string) (ServiceInfos, error) {
-	r := ServiceInfos{}
-	if _, err := c.do(http.MethodGet, c.apiUrl("/%s", network), nil, &r); err != nil {
-		return nil, err
-	}
-	return r, nil
-}
-
-func (c *Client) RegisterContractService(network string, req *RegisterContractServiceRequest) error {
-	_, err := c.do(http.MethodPost, c.apiUrl("/%s", network), req, nil)
+func (c *Client) RegisterContractService(req *RegisterContractServiceRequest) error {
+	_, err := c.do(http.MethodPost, c.baseApiUrl, req, nil)
 	return err
 }
 
 func (c *Client) MethodInfos(network string, svc string) (MethodInfos, error) {
 	r := MethodInfos{}
-	if _, err := c.do(http.MethodGet, c.apiUrl("/%s/%s", network, svc), nil, &r); err != nil {
+	if _, err := c.do(http.MethodGet, c.apiUrl("/%s?%s=%s", svc, QueryParamNetwork, network), nil, &r); err != nil {
 		return nil, err
 	}
 	return r, nil
 }
 
-func (c *Client) Invoke(network, svc, method string, req *Request, s service.Signer) (contract.TxID, error) {
-	return c.invoke(c.apiUrl("/%s/%s/%s", network, svc, method), req, s)
+func (c *Client) Invoke(svc, method string, req *Request, s service.Signer) (contract.TxID, error) {
+	return c.invoke(c.apiUrl("/%s/%s", svc, method), req, s)
 }
 
-func (c *Client) Call(network, svc, method string, req *Request, resp interface{}) (*http.Response, error) {
-	return c.do(http.MethodGet, c.apiUrl("/%s/%s/%s", network, svc, method), req, resp)
+func (c *Client) Call(svc, method string, req *Request, resp interface{}) (*http.Response, error) {
+	return c.do(http.MethodGet, c.apiUrl("/%s/%s", svc, method), req, resp)
 }
 
 func (c *Client) monitorUrl(format string, args ...interface{}) string {
@@ -377,5 +369,6 @@ func (c *Client) monitorEvent(ctx context.Context, network, url string, req *Eve
 }
 
 func (c *Client) MonitorEvent(ctx context.Context, network, svc string, req *EventMonitorRequest, cb contract.EventCallback) error {
-	return c.monitorEvent(ctx, network, c.monitorUrl("/%s/%s%s", network, svc, UrlMonitorEvent), req, cb)
+	url := c.monitorUrl("/%s%s?%s=%s", svc, UrlMonitorEvent, QueryParamNetwork, network)
+	return c.monitorEvent(ctx, network, url, req, cb)
 }

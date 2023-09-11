@@ -117,7 +117,7 @@ func DefaultSchemaRef(name string) *openapi3.SchemaRef {
 func NewSchemas() openapi3.Schemas {
 	schemas := make(openapi3.Schemas)
 	for k, s := range defaultSchemas {
-		schemas[k] = s.NewRef()
+		schemas[k] = SchemaWithTitle(s, k).NewRef()
 	}
 	return schemas
 }
@@ -179,6 +179,7 @@ func TypeSpecToSchemaRef(s contract.TypeSpec, schemas openapi3.Schemas) *openapi
 		case contract.TVoid:
 			return nil
 		}
+		schema.Title = name
 		ref = schema.NewRef()
 		schemas[name] = ref
 	}
@@ -191,6 +192,21 @@ func TypeSpecToSchemaRef(s contract.TypeSpec, schemas openapi3.Schemas) *openapi
 		return schema.NewRef()
 	}
 	return openapi3.NewSchemaRef(schemaRefPrefix+name, ref.Value)
+}
+
+func SchemaWithTitle(s *openapi3.Schema, title string) *openapi3.Schema {
+	s.Title = title
+	return s
+}
+
+func NewSchemaFromRef(r *openapi3.SchemaRef) *openapi3.Schema {
+	if r == nil {
+		return openapi3.NewObjectSchema()
+	} else {
+		s := new(openapi3.Schema)
+		*s = *r.Value
+		return s
+	}
 }
 
 func NewPathParameterWithSchema(name string, s *openapi3.Schema) *openapi3.Parameter {
@@ -311,89 +327,119 @@ func NewServiceOpenAPISpec(s service.Service) openapi3.T {
 		if !methodNameRegexp.MatchString(sm.Name) {
 			continue
 		}
-		inputs := sm.Inputs
-		output := sm.Output
-		readonly := sm.Readonly
-		pi := NewPathItemForMethodSpec(s.Name(), sm.NetworkTypes, inputs, output, readonly, oas.Components.Schemas)
-		networkParam := PathParamNetwork
-		networks := networksMergeFunc(sm.NetworkTypes)
-		pi.Parameters = NewParameters(NewPathParameterWithSchema(networkParam, NewStringEnumSchema(networks...)))
-		path := fmt.Sprintf("%s/{%s}/%s/%s", GroupUrlApi, networkParam, ss.Name, sm.Name)
-		oas.Paths[path] = pi
-		for i, o := range sm.Overloads {
-			if o.Inputs != nil {
-				inputs = *o.Inputs
-			} else {
-				inputs = sm.Inputs
-			}
-			if o.Output != nil {
-				output = *o.Output
-			} else {
-				output = sm.Output
-			}
-			if o.Readonly != nil {
-				readonly = *o.Readonly
-			} else {
-				readonly = sm.Readonly
-			}
-			pi = NewPathItemForMethodSpec(s.Name(), o.NetworkTypes, inputs, output, readonly, oas.Components.Schemas)
-			networkParam = fmt.Sprintf("network_%d", i)
-			networks = networksMergeFunc(o.NetworkTypes)
-			pi.Parameters = NewParameters(NewPathParameterWithSchema(networkParam, NewStringEnumSchema(networks...)))
-			path = fmt.Sprintf("%s/{%s}/%s/%s", GroupUrlApi, networkParam, ss.Name, sm.Name)
-			oas.Paths[path] = pi
+		type opInfo struct {
+			networkTypes []string
+			iss          []*openapi3.Schema
+			osrs         []*openapi3.Schema
 		}
+		ops := make(map[bool]*opInfo)
+		getOpInfo := func(k bool) *opInfo {
+			v, ok := ops[k]
+			if !ok {
+				v = &opInfo{
+					iss:  []*openapi3.Schema{},
+					osrs: []*openapi3.Schema{},
+				}
+				ops[k] = v
+			}
+			return v
+		}
+		op := getOpInfo(sm.Readonly)
+		op.networkTypes = append(op.networkTypes, sm.NetworkTypes...)
+		is := NewObjectSchema(sm.Inputs, oas.Components.Schemas)
+		is.Description = fmt.Sprintf("available for %s",
+			strings.Join(networksMergeFunc(op.networkTypes), ","))
+		op.iss = append(op.iss, is)
+		osr := NewSchemaFromRef(TypeSpecToSchemaRef(sm.Output, oas.Components.Schemas))
+		osr.Description = is.Description
+		op.osrs = append(op.osrs, osr)
+
+		for _, o := range sm.Overloads {
+			if o.Readonly != nil {
+				op = getOpInfo(*o.Readonly)
+			} else {
+				op = getOpInfo(sm.Readonly)
+			}
+
+			op.networkTypes = append(op.networkTypes, o.NetworkTypes...)
+			opDesc := fmt.Sprintf("available for %s", strings.Join(networksMergeFunc(op.networkTypes), ","))
+			oDesc := fmt.Sprintf("available for %s", strings.Join(networksMergeFunc(o.NetworkTypes), ","))
+			if o.Inputs != nil {
+				is = NewObjectSchema(*o.Inputs, oas.Components.Schemas)
+				is.Description = oDesc
+				op.iss = append(op.iss, is)
+			} else {
+				if len(op.iss) == 0 {
+					is = NewObjectSchema(sm.Inputs, oas.Components.Schemas)
+				} else {
+					is = op.iss[0]
+				}
+				is.Description = opDesc
+			}
+
+			if o.Output != nil {
+				osr = NewSchemaFromRef(TypeSpecToSchemaRef(*o.Output, oas.Components.Schemas))
+				osr.Description = oDesc
+				op.osrs = append(op.osrs, osr)
+			} else {
+				if len(op.osrs) == 0 {
+					osr = NewSchemaFromRef(TypeSpecToSchemaRef(sm.Output, oas.Components.Schemas))
+				} else {
+					osr = op.osrs[0]
+				}
+				osr.Description = opDesc
+			}
+		}
+		pi := &openapi3.PathItem{}
+		for readonly := range ops {
+			op = ops[readonly]
+			ns := NewStringEnumSchema(networksMergeFunc(op.networkTypes)...)
+			var inputs *openapi3.Schema
+			if len(op.iss) > 1 {
+				inputs = openapi3.NewOneOfSchema(op.iss...)
+			} else {
+				inputs = op.iss[0]
+			}
+			if readonly {
+				var output *openapi3.Schema
+				if len(op.osrs) > 1 {
+					output = openapi3.NewOneOfSchema(op.osrs...)
+				} else {
+					output = op.osrs[0]
+				}
+				req := openapi3.NewObjectSchema().
+					WithPropertyRef("options", DefaultSchemaRef(schemaOptions)).
+					WithProperty("params", inputs)
+				pi.Get = &openapi3.Operation{
+					Tags:        append(op.networkTypes, tagReadonly, s.Name()),
+					OperationID: "",
+					Parameters: NewParameters(
+						openapi3.NewQueryParameter(QueryParamNetwork).WithSchema(ns),
+						openapi3.NewQueryParameter("request").WithSchema(req)),
+					Responses: ResponsesWithResponse(nil, http.StatusOK,
+						NewSuccessResponseWithSchema(output)),
+				}
+			} else {
+				req := openapi3.NewObjectSchema().
+					WithProperty(QueryParamNetwork, ns).
+					WithPropertyRef("options", DefaultSchemaRef(schemaOptions)).
+					WithProperty("params", inputs)
+				pi.Post = &openapi3.Operation{
+					Tags:        append(op.networkTypes, tagWritable, s.Name()),
+					OperationID: "",
+					RequestBody: &openapi3.RequestBodyRef{
+						Value: openapi3.NewRequestBody().WithContent(
+							openapi3.NewContentWithJSONSchema(req)),
+					},
+					Responses: ResponsesWithResponse(nil, http.StatusOK,
+						NewSuccessResponseWithSchemaRef(DefaultSchemaRef(schemaTxID))),
+				}
+			}
+		}
+		path := fmt.Sprintf("%s/%s/%s", GroupUrlApi, ss.Name, sm.Name)
+		oas.Paths[path] = pi
 	}
 	return oas
-}
-
-func NewPathItemForMethodSpec(
-	serviceName string,
-	networkTypes []string,
-	inputs map[string]*contract.NameAndTypeSpec,
-	output contract.TypeSpec,
-	readonly bool,
-	schemas openapi3.Schemas) *openapi3.PathItem {
-	pi := &openapi3.PathItem{}
-	req := openapi3.NewObjectSchema().
-		WithPropertyRef("options", DefaultSchemaRef(schemaOptions)).
-		WithProperty("params", NewObjectSchema(inputs, schemas))
-	if readonly {
-		pi.Get = &openapi3.Operation{
-			Tags:        append(networkTypes, tagReadonly, serviceName),
-			Summary:     "",
-			Description: "",
-			OperationID: "",
-			Parameters:  NewParameters(openapi3.NewQueryParameter("request").WithSchema(req)),
-			Responses: ResponsesWithResponse(nil, http.StatusOK,
-				NewSuccessResponseWithSchemaRef(TypeSpecToSchemaRef(output, schemas))),
-			Callbacks:    nil,
-			Deprecated:   false,
-			Security:     nil,
-			Servers:      nil,
-			ExternalDocs: nil,
-		}
-	} else {
-		pi.Post = &openapi3.Operation{
-			Tags:        append(networkTypes, tagWritable, serviceName),
-			Summary:     "",
-			Description: "",
-			OperationID: "",
-			Parameters:  nil,
-			RequestBody: &openapi3.RequestBodyRef{
-				Value: openapi3.NewRequestBody().WithContent(
-					openapi3.NewContentWithJSONSchema(req)),
-			},
-			Responses: ResponsesWithResponse(nil, http.StatusOK,
-				NewSuccessResponseWithSchemaRef(DefaultSchemaRef(schemaTxID))),
-			Callbacks:    nil,
-			Deprecated:   false,
-			Security:     nil,
-			Servers:      nil,
-			ExternalDocs: nil,
-		}
-	}
-	return pi
 }
 
 type OpenAPISpecProvider struct {
@@ -411,39 +457,29 @@ func NewOpenAPISpecProvider(l log.Logger) *OpenAPISpecProvider {
 	oas := NewOpenAPISpec("")
 	oas.Tags = append(openapi3.Tags{NewTag(tagGeneral, "General purpose")}, oas.Tags...)
 
-	oas.Paths[GroupUrlApi] = &openapi3.PathItem{
-		Get: &openapi3.Operation{
-			Tags:        []string{tagGeneral},
-			Summary:     "Retrieve networks",
-			Description: "",
-			OperationID: "",
-			Responses: ResponsesWithResponse(nil, http.StatusOK,
-				NewSuccessResponseWithSchema(MustGenerateSchema(NetworkInfos{}))),
-		},
-	}
-
 	gpi := make(openapi3.Paths)
-	npr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchema(PathParamNetwork, NewStringEnumSchema()))
-	nau, napi := newNetworkAPIPathItem(npr)
-	gpi[nau] = napi
+	gsu, gspi := newGeneralServiceAPIPathItem()
+	gpi[gsu] = gspi
 
+	npr := PutParameter(oas.Components.Parameters,
+		openapi3.NewQueryParameter(QueryParamNetwork).WithRequired(true).WithSchema(NewStringEnumSchema()))
 	tpr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchemaRef(PathParamTxID, DefaultSchemaRef(schemaTxID)))
-	gru, grpi := newGetResultPathItem(npr, tpr)
+	gru, grpi := newGetResultPathItem(tpr, npr)
 	gpi[gru] = grpi
 
 	bpr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchemaRef(PathParamBlockID, DefaultSchemaRef(schemaBlockID)))
 	hpr := PutParameter(oas.Components.Parameters, openapi3.NewQueryParameter(QueryParamHeight).WithSchema(openapi3.NewInt64Schema()))
-	gfu, gfpi := newGetFinalityPathItem(npr, bpr, hpr)
+	gfu, gfpi := newGetFinalityPathItem(bpr, npr, hpr)
 	gpi[gfu] = gfpi
 
 	as := openapi3.NewOneOfSchema(openapi3.NewStringSchema())
 	as.OneOf = append(as.OneOf, DefaultSchemaRef(contract.TAddress.String()))
 	apr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchema(PathParamServiceOrAddress, as))
-	sau, sapi := newServiceAPIPathItem(npr, apr)
+	sau, sapi := newServiceAPIPathItem(apr, npr)
 	gpi[sau] = sapi
 
 	mpr := PutParameter(oas.Components.Parameters, NewPathParameterWithSchema(PathParamMethod, openapi3.NewStringSchema()))
-	mu, mpi := newMethodAPIPathItem(npr, apr, mpr)
+	mu, mpi := newMethodAPIPathItem(apr, mpr, npr)
 	gpi[mu] = mpi
 
 	for k, v := range gpi {
@@ -484,9 +520,8 @@ func NewOpenAPISpecProvider(l log.Logger) *OpenAPISpecProvider {
 	}
 }
 
-func newNetworkAPIPathItem(npr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
+func newGeneralServiceAPIPathItem() (string, *openapi3.PathItem) {
 	pi := &openapi3.PathItem{
-		Parameters: openapi3.Parameters{npr},
 		Get: &openapi3.Operation{
 			Tags:        []string{tagGeneral},
 			Summary:     "Retrieve services",
@@ -505,13 +540,14 @@ func newNetworkAPIPathItem(npr *openapi3.ParameterRef) (string, *openapi3.PathIt
 			Responses: ResponsesWithResponse(nil, http.StatusOK, NewSuccessResponse()),
 		},
 	}
-	return fmt.Sprintf("%s/{%s}", GroupUrlApi, npr.Value.Name), pi
+	return GroupUrlApi, pi
 }
 
-func newGetResultPathItem(npr, tpr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
+func newGetResultPathItem(tpr, npr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
 	pi := &openapi3.PathItem{
-		Parameters: openapi3.Parameters{npr, tpr},
+		Parameters: openapi3.Parameters{tpr},
 		Get: &openapi3.Operation{
+			Parameters:  openapi3.Parameters{npr},
 			Tags:        []string{tagGeneral},
 			Summary:     "Get result of transaction with given TxID",
 			Description: "",
@@ -519,13 +555,14 @@ func newGetResultPathItem(npr, tpr *openapi3.ParameterRef) (string, *openapi3.Pa
 				NewSuccessResponseWithSchema(openapi3.NewObjectSchema())),
 		},
 	}
-	return fmt.Sprintf("%s/{%s}%s/{%s}", GroupUrlApi, npr.Value.Name, UrlGetResult, tpr.Value.Name), pi
+	return fmt.Sprintf("%s%s/{%s}", GroupUrlApi, UrlGetResult, tpr.Value.Name), pi
 }
 
-func newGetFinalityPathItem(npr, bpr, hpr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
+func newGetFinalityPathItem(bpr, npr, hpr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
 	pi := &openapi3.PathItem{
-		Parameters: openapi3.Parameters{npr, bpr, hpr},
+		Parameters: openapi3.Parameters{bpr},
 		Get: &openapi3.Operation{
+			Parameters:  openapi3.Parameters{npr, hpr},
 			Tags:        []string{tagGeneral},
 			Summary:     "Get finality of block with given BlockID and height",
 			Description: "",
@@ -533,13 +570,14 @@ func newGetFinalityPathItem(npr, bpr, hpr *openapi3.ParameterRef) (string, *open
 				NewSuccessResponseWithSchema(openapi3.NewBoolSchema())),
 		},
 	}
-	return fmt.Sprintf("%s/{%s}%s/{%s}", GroupUrlApi, npr.Value.Name, UrlGetFinality, bpr.Value.Name), pi
+	return fmt.Sprintf("%s%s/{%s}", GroupUrlApi, UrlGetFinality, bpr.Value.Name), pi
 }
 
-func newServiceAPIPathItem(npr, apr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
+func newServiceAPIPathItem(apr, npr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
 	pi := &openapi3.PathItem{
-		Parameters: openapi3.Parameters{npr, apr},
+		Parameters: openapi3.Parameters{apr},
 		Get: &openapi3.Operation{
+			Parameters:  openapi3.Parameters{npr},
 			Tags:        []string{tagGeneral},
 			Summary:     "Retrieve methods",
 			Description: "",
@@ -547,18 +585,25 @@ func newServiceAPIPathItem(npr, apr *openapi3.ParameterRef) (string, *openapi3.P
 				NewSuccessResponseWithSchemaRef(DefaultSchemaRef(schemaMethodInfos))),
 		},
 	}
-	return fmt.Sprintf("%s/{%s}/{%s}", GroupUrlApi, npr.Value.Name, apr.Value.Name), pi
+	return fmt.Sprintf("%s/{%s}", GroupUrlApi, apr.Value.Name), pi
 }
 
-func newMethodAPIPathItem(npr, apr, mpr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
+func newMethodAPIPathItem(apr, mpr, npr *openapi3.ParameterRef) (string, *openapi3.PathItem) {
+	queryReq := openapi3.NewObjectSchema().
+		WithPropertyRef("options", DefaultSchemaRef(schemaOptions)).
+		WithProperty("params", openapi3.NewObjectSchema())
+	bodyReq := openapi3.NewObjectSchema().
+		WithProperty(QueryParamNetwork, npr.Value.Schema.Value).
+		WithPropertyRef("options", DefaultSchemaRef(schemaOptions)).
+		WithProperty("params", openapi3.NewObjectSchema())
 	pi := &openapi3.PathItem{
-		Parameters: openapi3.Parameters{npr, apr, mpr},
+		Parameters: openapi3.Parameters{apr, mpr},
 		Get: &openapi3.Operation{
 			Tags:        []string{tagGeneral, tagReadonly},
 			Summary:     "Call readonly method",
 			Description: "",
-			Parameters: NewParameters(openapi3.NewQueryParameter("request").
-				WithSchema(DefaultSchemaRef(schemaRequest).Value)),
+			Parameters: NewParameters(npr.Value, openapi3.NewQueryParameter("request").
+				WithSchema(queryReq)),
 			Responses: ResponsesWithResponse(nil, http.StatusOK,
 				NewSuccessResponseWithSchema(openapi3.NewObjectSchema())),
 		},
@@ -568,13 +613,13 @@ func newMethodAPIPathItem(npr, apr, mpr *openapi3.ParameterRef) (string, *openap
 			Description: "",
 			RequestBody: &openapi3.RequestBodyRef{
 				Value: openapi3.NewRequestBody().WithContent(
-					openapi3.NewContentWithJSONSchema(DefaultSchemaRef(schemaRequest).Value)),
+					openapi3.NewContentWithJSONSchema(bodyReq)),
 			},
 			Responses: ResponsesWithResponse(nil, http.StatusOK,
 				NewSuccessResponseWithSchemaRef(DefaultSchemaRef(schemaTxID))),
 		},
 	}
-	return fmt.Sprintf("%s/{%s}/{%s}/{%s}", GroupUrlApi, npr.Value.Name, apr.Value.Name, mpr.Value.Name), pi
+	return fmt.Sprintf("%s/{%s}/{%s}", GroupUrlApi, apr.Value.Name, mpr.Value.Name), pi
 }
 
 func (o *OpenAPISpecProvider) Get(name string) openapi3.T {

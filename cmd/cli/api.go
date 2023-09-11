@@ -98,14 +98,14 @@ func AddAdminRequiredFlags(c *cobra.Command) {
 	pFlags.String("network.type", "", "network type")
 }
 
-func NewNetworksCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Command, *viper.Viper) {
-	rootCmd, rootVc := cli.NewCommand(parentCmd, parentVc, "networks", "Get list of network information")
+func NewServicesCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Command, *viper.Viper) {
+	rootCmd, rootVc := cli.NewCommand(parentCmd, parentVc, "services", "Get list of service information")
 	var (
 		c api.Client
 	)
 	rootCmd.PersistentPreRunE = ClientPersistentPreRunE(rootVc, &c)
 	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
-		r, err := c.NetworkInfos()
+		r, err := c.ServiceInfos()
 		if err != nil {
 			return err
 		}
@@ -136,18 +136,6 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 	cli.MarkAnnotationCustom(rootCmd.PersistentFlags(), "network.name", "network.type")
 	cli.BindPFlags(rootVc, rootCmd.PersistentFlags())
 
-	rootCmd.AddCommand(&cobra.Command{
-		Use:   "services",
-		Short: "Get list of service information",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := c.ServiceInfos(network)
-			if err != nil {
-				return err
-			}
-			return cli.JsonPrettyPrintln(os.Stdout, r)
-		},
-	})
 	registerCmd := &cobra.Command{
 		Use:   "register",
 		Short: "Register contract service",
@@ -158,10 +146,11 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 				return err
 			}
 			registerReq := &api.RegisterContractServiceRequest{
+				Network: network,
 				Address: contract.Address(cmd.Flag("contract.address").Value.String()),
 				Spec:    spec,
 			}
-			if err = c.RegisterContractService(network, registerReq); err != nil {
+			if err = c.RegisterContractService(registerReq); err != nil {
 				return err
 			}
 			cmd.Println("Operation success")
@@ -245,6 +234,7 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 						return err
 					}
 				}
+				req.Network = network
 				if req.Params, err = GetStringToInterface(fs, "param"); err != nil {
 					return err
 				}
@@ -271,7 +261,7 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 	callCmd.RunE = func(cmd *cobra.Command, args []string) error {
 		var resp interface{}
 		svc := cmd.Flag("service").Value.String()
-		if _, err := c.Call(network, svc, method, req, &resp); err != nil {
+		if _, err := c.Call(svc, method, req, &resp); err != nil {
 			return err
 		}
 		if err := cli.JsonPrettyPrintln(os.Stdout, resp); err != nil {
@@ -291,7 +281,7 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 		}
 		var txID contract.TxID
 		svc := cmd.Flag("service").Value.String()
-		txID, err = c.Invoke(network, svc, method, req, s)
+		txID, err = c.Invoke(svc, method, req, s)
 		if err != nil {
 			return err
 		}

@@ -365,14 +365,16 @@ func Test_ServerCall(t *testing.T) {
 			if len(svc) == 0 {
 				ctr := contracts[n]
 				req := &RegisterContractServiceRequest{
+					Network: n,
 					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				err := c.RegisterContractService(n, req)
+				err := c.RegisterContractService(req)
 				assert.NoError(t, err)
 				svc = string(ctr.Address)
 			}
-			_, err := c.Call(n, svc, arg.Method, &arg.Request, &arg.Response)
+			arg.Request.Network = n
+			_, err := c.Call(svc, arg.Method, &arg.Request, &arg.Response)
 			assert.NoError(t, err)
 			t.Logf("response:%v", arg.Response)
 		}
@@ -458,14 +460,16 @@ func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 			if len(svc) == 0 {
 				ctr := contracts[n]
 				req := &RegisterContractServiceRequest{
+					Network: n,
 					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				err := c.RegisterContractService(n, req)
+				err := c.RegisterContractService(req)
 				assert.NoError(t, err)
 				svc = string(ctr.Address)
 			}
-			txId, err := c.Invoke(n, svc, arg.Method, &arg.Request, signers[n])
+			arg.Request.Network = n
+			txId, err := c.Invoke(svc, arg.Method, &arg.Request, signers[n])
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
 			txr, err := c.GetResult(n, txId)
@@ -554,14 +558,16 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 			if len(svc) == 0 {
 				ctr := contracts[n]
 				req := &RegisterContractServiceRequest{
+					Network: n,
 					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				err := c.RegisterContractService(n, req)
+				err := c.RegisterContractService(req)
 				assert.NoError(t, err)
 				svc = string(ctr.Address)
 			}
-			txId, err := c.Invoke(n, svc, arg.Method, &arg.Request, nil)
+			arg.Request.Network = n
+			txId, err := c.Invoke(svc, arg.Method, &arg.Request, nil)
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
 			txr, err := c.GetResult(n, txId)
@@ -605,14 +611,16 @@ func Test_ServerMonitorEvent(t *testing.T) {
 			if len(svc) == 0 {
 				ctr := contracts[n]
 				req := &RegisterContractServiceRequest{
+					Network: n,
 					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				err := c.RegisterContractService(n, req)
+				err := c.RegisterContractService(req)
 				assert.NoError(t, err)
 				svc = string(ctr.Address)
 			}
-			txId, err := c.Invoke(n, svc, arg.Method, &arg.Request, nil)
+			arg.Request.Network = n
+			txId, err := c.Invoke(svc, arg.Method, &arg.Request, nil)
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
 			txr, err := c.GetResult(n, txId)
