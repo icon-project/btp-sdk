@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/icon-project/btp-sdk/btptracker"
-	"github.com/icon-project/btp-sdk/btptracker/storage/models"
 	"github.com/icon-project/btp-sdk/btptracker/storage/repository"
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/service"
@@ -122,9 +121,9 @@ func NewTracker(s service.Service, networks map[string]btptracker.Network, db *g
 	}
 
 	err := db.AutoMigrate(
-		models.BTPEvent{},
-		models.BTPStatus{},
-		models.Block{})
+		repository.BTPEvent{},
+		repository.BTPStatus{},
+		repository.Block{})
 	if err != nil {
 		return nil, err
 	}
@@ -259,53 +258,54 @@ func eventIndexedValue(p interface{}) interface{} {
 	return p
 }
 
-func (r *Tracker) updateBlock(networkAddress string, e contract.Event) (models.Block, error) {
+func (r *Tracker) updateBlock(networkAddress string, e contract.Event) (repository.Block, error) {
 
 	hash, err := getBlockId(e)
 	if err != nil {
-		return models.Block{}, errors.Errorf("invalid _src type:%T", e.Params()["_src"])
+		return repository.Block{}, errors.Errorf("invalid _src type:%T", e.Params()["_src"])
 	}
 	height := e.BlockHeight()
 
-	block := repository.SelectBlockBy(r.db, models.Block{
+	block := repository.SelectBlockBy(r.db, repository.Block{
 		NetworkAddress: networkAddress,
 		Height:         height,
 		BlockHash:      hash,
 	})
 	// TODO how to know service type is icon or others
-	if reflect.DeepEqual(block, models.Block{}) {
-		block, err = repository.InsertBlock(r.db, *models.NewBlock(
-			networkAddress,
-			height,
-			hash,
-			false))
+	if reflect.DeepEqual(block, repository.Block{}) {
+		block, err = repository.InsertBlock(r.db, repository.Block{
+			NetworkAddress: networkAddress,
+			BlockHash:      hash,
+			Height:         height,
+			Finalized:      false})
 	}
 	if err != nil {
-		return models.Block{}, errors.Errorf("falied to insert block %n", err)
+		return repository.Block{}, errors.Errorf("falied to insert block %n", err)
 	}
 	return block, nil
 }
 
-func (r *Tracker) updateBtpStatus(networkAddress string, bId int, e contract.Event) (models.BTPStatus, error) {
+func (r *Tracker) updateBtpStatus(networkAddress string, bId int, e contract.Event) (repository.BTPStatus, error) {
 	src, err := getSrc(e)
 	if err != nil {
-		return models.BTPStatus{}, errors.Errorf("invalid _src type:%T", e.Params()["_src"])
+		return repository.BTPStatus{}, errors.Errorf("invalid _src type:%T", e.Params()["_src"])
 	}
 	nsn, _ := e.Params()["_nsn"].(contract.Integer).AsInt64()
 
 	// If btpStatus does not exist, it is created first.
-	bs := repository.SelectBtpStatusBy(r.db, models.BTPStatus{
+	bs, _ := repository.SelectBtpStatusBy(r.db, repository.BTPStatus{
 		Src: src,
 		Nsn: nsn,
 	})
-	if reflect.DeepEqual(bs, models.BTPStatus{}) {
-		bs = repository.InsertBtpStatus(r.db, *models.NewBTPStatus(
-			src,
-			networkAddress,
-			BTPInDelivery,
-			"",
-			nsn,
-			false))
+	if reflect.DeepEqual(bs, repository.BTPStatus{}) {
+		bs = repository.InsertBtpStatus(r.db, repository.BTPStatus{
+			Src:         src,
+			LastNetwork: sql.NullString{String: networkAddress, Valid: true},
+			Status:      sql.NullString{String: BTPInDelivery, Valid: true},
+			Links:       sql.NullString{String: "", Valid: true},
+			Nsn:         nsn,
+			Finalized:   false,
+		})
 	}
 
 	// Insert BTP Event with block id and btp status id
@@ -314,10 +314,10 @@ func (r *Tracker) updateBtpStatus(networkAddress string, bId int, e contract.Eve
 
 	txHash, err := getTxHash(e)
 	if err != nil {
-		return models.BTPStatus{}, errors.Errorf("invalid _src type:%T", e.Params()["_src"])
+		return repository.BTPStatus{}, errors.Errorf("invalid _src type:%T", e.Params()["_src"])
 	}
 	identifier := []byte(strconv.Itoa(e.Identifier()))
-	btpEvent := repository.InsertBtpEvent(r.db, models.BTPEvent{
+	btpEvent := repository.InsertBtpEvent(r.db, repository.BTPEvent{
 		Src:         src,
 		Nsn:         nsn,
 		Next:        next,
@@ -328,7 +328,7 @@ func (r *Tracker) updateBtpStatus(networkAddress string, bId int, e contract.Eve
 		EventId:     identifier,
 		OccurredIn:  networkAddress,
 	})
-	if !reflect.DeepEqual(btpEvent, models.BTPEvent{}) {
+	if !reflect.DeepEqual(btpEvent, repository.BTPEvent{}) {
 		links, status := r.getLinks(src, nsn)
 		b, err := json.Marshal(links)
 		if err != nil {
@@ -367,7 +367,7 @@ func (r *Tracker) getLinks(src string, nsn int64) ([]int, string) {
 
 	//Find first link that BTP event value is "SEND", The starting point
 	curLink, startingPoint := findStartingEvent(events)
-	if reflect.DeepEqual(models.BTPEvent{}, curLink) {
+	if reflect.DeepEqual(repository.BTPEvent{}, curLink) {
 		return links, status
 	}
 	links = append(links, curLink.Id)
@@ -404,14 +404,14 @@ func (r *Tracker) getLinks(src string, nsn int64) ([]int, string) {
 	return links, status
 }
 
-func trimBTPEvents(events []models.BTPEvent, index int) ([]models.BTPEvent, int) {
+func trimBTPEvents(events []repository.BTPEvent, index int) ([]repository.BTPEvent, int) {
 	events = append(events[:index], events[index+1:]...)
 	index--
 	return events, index
 }
 
 // If current link's event is "DROP" or "RECEIVE", BTPEvent.Next is empty string.
-func isTransferClosed(event models.BTPEvent) bool {
+func isTransferClosed(event repository.BTPEvent) bool {
 	isClosed := false
 	if event.Next == "" {
 		if event.Event == DROP || (event.Event == RECEIVE && event.Next == "") {
@@ -421,8 +421,8 @@ func isTransferClosed(event models.BTPEvent) bool {
 	return isClosed
 }
 
-func findStartingEvent(events []models.BTPEvent) (models.BTPEvent, int) {
-	var curLink models.BTPEvent
+func findStartingEvent(events []repository.BTPEvent) (repository.BTPEvent, int) {
+	var curLink repository.BTPEvent
 	var index int
 	for i := 0; i < len(events); i++ {
 		if events[i].Event == SEND {
@@ -434,8 +434,8 @@ func findStartingEvent(events []models.BTPEvent) (models.BTPEvent, int) {
 	return curLink, index
 }
 
-func findCandidatesForNextEvent(events []models.BTPEvent, curLink models.BTPEvent) []models.BTPEvent {
-	var nextEvents []models.BTPEvent = nil
+func findCandidatesForNextEvent(events []repository.BTPEvent, curLink repository.BTPEvent) []repository.BTPEvent {
+	var nextEvents []repository.BTPEvent = nil
 	for _, event := range events {
 		if curLink.Event == RECEIVE {
 			if event.Event == REPLY || event.Event == ERROR || event.Event == DROP {
@@ -450,7 +450,7 @@ func findCandidatesForNextEvent(events []models.BTPEvent, curLink models.BTPEven
 	return nextEvents
 }
 
-func findNextEvent(candidates []models.BTPEvent, links []int) models.BTPEvent {
+func findNextEvent(candidates []repository.BTPEvent, links []int) repository.BTPEvent {
 	//If Event is "ROUTE" or "RECEIVE", compare createdAt(time)
 	if candidates[0].Event == ROUTE || candidates[0].Event == RECEIVE {
 		checkVal := false
@@ -466,7 +466,7 @@ func findNextEvent(candidates []models.BTPEvent, links []int) models.BTPEvent {
 			return candidates[0]
 		}
 	}
-	return models.BTPEvent{}
+	return repository.BTPEvent{}
 }
 
 func (r *Tracker) finalityMonitor(ctx context.Context, network string) {
@@ -494,7 +494,7 @@ func (r *Tracker) finalityMonitor(ctx context.Context, network string) {
 
 func (r *Tracker) handleFinalizeBlock(network Network, fm contract.FinalityMonitor, info contract.BlockInfo) error {
 	na := network.Options.NetworkAddress
-	var blocks []models.Block
+	var blocks []repository.Block
 	blocks = repository.FindBlocksByHeight(r.db, na, info.Height(), false)
 
 	for _, block := range blocks {
@@ -506,7 +506,7 @@ func (r *Tracker) handleFinalizeBlock(network Network, fm contract.FinalityMonit
 	return nil
 }
 
-func (r *Tracker) finalizeBlock(fm contract.FinalityMonitor, block models.Block) error {
+func (r *Tracker) finalizeBlock(fm contract.FinalityMonitor, block repository.Block) error {
 	_, err := fm.HeightByID(block.BlockHash)
 	if err != nil {
 		if err == contract.ErrMismatchBlockID {
@@ -514,10 +514,10 @@ func (r *Tracker) finalizeBlock(fm contract.FinalityMonitor, block models.Block)
 		}
 		return err
 	}
-	block = repository.UpdateBlockBySelective(r.db, block, models.Block{
+	block = repository.UpdateBlockBySelective(r.db, block, repository.Block{
 		Finalized: true,
 	})
-	if reflect.DeepEqual(block, models.Block{}) {
+	if reflect.DeepEqual(block, repository.Block{}) {
 		return errors.Wrapf(err, "fail to update block finality err:%s", err.Error())
 	}
 	return nil
