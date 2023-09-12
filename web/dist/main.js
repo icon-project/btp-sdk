@@ -19,15 +19,16 @@ const baseUrlInput = document.getElementById('baseUrlInput')
 const networkInput = document.getElementById('networkInput')
 const networkError = document.getElementById('networkError')
 let baseUrl;
+let services = {};
 let networks = {};
 let networkToAccount = {};
 
 baseUrlInput.addEventListener('change', async function() {
     baseUrl = baseUrlInput.value;
-    await updateNetworks();
+    await updateServices();
 });
 
-async function updateNetworks() {
+async function updateServices() {
     networkError.parentElement.hidden = true
     networkError.innerText = '';
     const selected = networkInput.value;
@@ -38,13 +39,19 @@ async function updateNetworks() {
     if (!resp) {
         return
     }
+    services = {};
     networks = {};
-    const networkArr = await resp.json();
+    const serviceArr = await resp.json();
     let networkInputInnerHTML = '';
-    networkArr.map(e => {
-        networks[e.network] = e.type;
-        networkInputInnerHTML += `<option value="${e.network}">${e.network}</option>`;
+    serviceArr.map(e => {
+        services[e.name] = e
+        Object.keys(e.networks).map(n => {
+            networks[n] = e.networks[n];
+        });
     });
+    Object.keys(networks).map(n => {
+        networkInputInnerHTML += `<option value="${n}">${n}</option>`;
+    })
     networkInput.innerHTML = networkInputInnerHTML;
     if (selected) {
         networkInput.value = selected;
@@ -52,7 +59,7 @@ async function updateNetworks() {
 }
 
 async function ensureNetwork(network) {
-    await updateNetworks();
+    await updateServices();
     const networkType = networks[network];
     if (!networkType) {
         throw new Error(`not supported network:${network}`);
@@ -208,11 +215,12 @@ function postData(data) {
 
 async function invoke(service, method, params, account) {
     const network = networkInput.value;
-    const url = `${baseUrl}/${network}/${service}/${method}`
+    const url = `${baseUrl}/${service}/${method}`
     if (!account) {
         account = await ensureAccount(network);
     }
     let data = {
+        "network": network,
         "options": {
             "from": account,
         },
@@ -282,8 +290,9 @@ async function sign(network, hexData, account) {
 
 async function call(service, method, params) {
     const network = networkInput.value;
-    const url = `${baseUrl}/${network}/${service}/${method}`
+    const url = `${baseUrl}/${service}/${method}`
     let data = {
+        "network": network,
         "options": {},
         "params": params
     }
@@ -297,7 +306,7 @@ async function call(service, method, params) {
 async function initialize() {
     baseUrl = DEFAULT_BASE_URL;
     baseUrlInput.value = baseUrl;
-    await updateNetworks();
+    await updateServices();
 
     let ethereumProviderInputInnerHTML = `<option value="${HANA_WALLET}">${HANA_WALLET}</option>`;
     ethereumProviderInputInnerHTML += `<option value="${META_MASK}">${META_MASK}</option>`;
