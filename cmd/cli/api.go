@@ -31,7 +31,6 @@ import (
 
 	"github.com/icon-project/btp-sdk/api"
 	"github.com/icon-project/btp-sdk/contract"
-	"github.com/icon-project/btp-sdk/service"
 )
 
 func GetStringToInterface(fs *pflag.FlagSet, name string) (map[string]interface{}, error) {
@@ -99,14 +98,14 @@ func AddAdminRequiredFlags(c *cobra.Command) {
 	pFlags.String("network.type", "", "network type")
 }
 
-func NewNetworksCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Command, *viper.Viper) {
-	rootCmd, rootVc := cli.NewCommand(parentCmd, parentVc, "networks", "Get list of network information")
+func NewServicesCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Command, *viper.Viper) {
+	rootCmd, rootVc := cli.NewCommand(parentCmd, parentVc, "services", "Get list of service information")
 	var (
 		c api.Client
 	)
 	rootCmd.PersistentPreRunE = ClientPersistentPreRunE(rootVc, &c)
 	rootCmd.RunE = func(cmd *cobra.Command, args []string) error {
-		r, err := c.NetworkInfos()
+		r, err := c.ServiceInfos()
 		if err != nil {
 			return err
 		}
@@ -137,21 +136,9 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 	cli.MarkAnnotationCustom(rootCmd.PersistentFlags(), "network.name", "network.type")
 	cli.BindPFlags(rootVc, rootCmd.PersistentFlags())
 
-	rootCmd.AddCommand(&cobra.Command{
-		Use:   "services",
-		Short: "Get list of service information",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			r, err := c.ServiceInfos(network)
-			if err != nil {
-				return err
-			}
-			return cli.JsonPrettyPrintln(os.Stdout, r)
-		},
-	})
 	registerCmd := &cobra.Command{
 		Use:   "register",
-		Short: "Register contract service",
+		Short: "[Experimental] Register contract service",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			spec, err := os.ReadFile(cmd.Flag("contract.spec").Value.String())
@@ -159,10 +146,11 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 				return err
 			}
 			registerReq := &api.RegisterContractServiceRequest{
+				Network: network,
 				Address: contract.Address(cmd.Flag("contract.address").Value.String()),
 				Spec:    spec,
 			}
-			if err = c.RegisterContractService(network, registerReq); err != nil {
+			if err = c.RegisterContractService(registerReq); err != nil {
 				return err
 			}
 			cmd.Println("Operation success")
@@ -208,27 +196,12 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 	finality.Flags().String("height", "0", "height")
 	rootCmd.AddCommand(finality)
 
-	var (
-		svc  string
-		addr contract.Address
-	)
-	serviceApiPreRunE := func(cmd *cobra.Command, args []string) error {
-		svc = cmd.Flag("service").Value.String()
-		addr = contract.Address(cmd.Flag("contract.address").Value.String())
-		if len(svc) == 0 && len(addr) == 0 {
-			return errors.New("require service or contract.address")
-		}
-		return nil
-	}
 	methodInfosCmd := &cobra.Command{
-		Use:     "methods",
-		Short:   "Get list of method information",
-		Args:    cobra.NoArgs,
-		PreRunE: serviceApiPreRunE,
+		Use:   "methods",
+		Short: "[Experimental] Get list of method information",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(svc) == 0 {
-				svc = string(addr)
-			}
+			svc := cmd.Flag("service").Value.String()
 			txr, err := c.MethodInfos(network, svc)
 			if err != nil {
 				return err
@@ -236,13 +209,14 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 			return cli.JsonPrettyPrintln(os.Stdout, txr)
 		},
 	}
-	methodInfosCmd.Flags().String("service", "", "service name")
-	methodInfosCmd.Flags().String("contract.address", "", "contract address, if '--service' used, will be ignored")
 	rootCmd.AddCommand(methodInfosCmd)
+	methodInfosFlags := methodInfosCmd.Flags()
+	methodInfosFlags.String("service", "", "service name")
+	cli.MarkAnnotationRequired(methodInfosFlags, "service")
 
 	var (
 		method string
-		req    = &api.ContractRequest{}
+		req    = &api.Request{}
 	)
 	newMethodApiCommand := func(use, short string) *cobra.Command {
 		cmd := &cobra.Command{
@@ -250,9 +224,6 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 			Short: short,
 			Args:  cli.ArgsWithDefaultErrorFunc(cobra.ExactArgs(1)),
 			PreRunE: func(cmd *cobra.Command, args []string) error {
-				if err := serviceApiPreRunE(cmd, args); err != nil {
-					return err
-				}
 				method = args[0]
 				var (
 					fs  = cmd.Flags()
@@ -263,26 +234,18 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 						return err
 					}
 				}
+				req.Network = network
 				if req.Params, err = GetStringToInterface(fs, "param"); err != nil {
 					return err
 				}
 				if req.Options, err = GetStringToInterface(fs, "option"); err != nil {
 					return err
 				}
-				if specFile := cmd.Flag("contract.spec").Value.String(); len(svc) == 0 && len(addr) > 0 && len(specFile) > 0 {
-					if req.Spec, err = os.ReadFile(specFile); err != nil {
-						return err
-					}
-				}
 				return nil
 			},
 		}
 		fs := cmd.Flags()
 		fs.String("service", "", "service name")
-		fs.String("contract.address", "", "contract address, if '--service' used, will be ignored")
-		fs.String("contract.spec", "", "contract spec, if '--service' used, will be ignored")
-		fs.String("method", "",
-			"Name of the function to invoke, if '--raw' used, will overwrite")
 		fs.StringToString("param", nil,
 			"key=value, Function parameters, if '--raw' used, will overwrite")
 		fs.StringToString("option", nil,
@@ -290,24 +253,18 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 		fs.String("raw", "", "call with 'data' using raw json file or json-string")
 		//fs.StringToString("params", nil,
 		//	"raw json string or '@<json file>' or '-' for stdin for parameter JSON. it overrides raw one ")
+		cli.MarkAnnotationRequired(fs, "service")
 		return cmd
 	}
 
 	callCmd := newMethodApiCommand("call", "Call")
 	callCmd.RunE = func(cmd *cobra.Command, args []string) error {
-		var (
-			err  error
-			resp interface{}
-		)
-		if len(svc) > 0 {
-			_, err = c.ServiceCall(network, svc, method, &req.Request, &resp)
-		} else if len(addr) > 0 {
-			_, err = c.Call(network, addr, method, req, &resp)
-		}
-		if err != nil {
+		var resp interface{}
+		svc := cmd.Flag("service").Value.String()
+		if _, err := c.Call(svc, method, req, &resp); err != nil {
 			return err
 		}
-		if err = cli.JsonPrettyPrintln(os.Stdout, resp); err != nil {
+		if err := cli.JsonPrettyPrintln(os.Stdout, resp); err != nil {
 			return errors.Errorf("failed JsonIntend resp=%+v, err=%+v", resp, err)
 		}
 		return nil
@@ -316,21 +273,15 @@ func NewApiCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.Comm
 
 	invokeCmd := newMethodApiCommand("invoke", "Invoke")
 	invokeCmd.RunE = func(cmd *cobra.Command, args []string) error {
-		var (
-			err  error
-			txID contract.TxID
-			s    service.Signer
-		)
 		keystore := cmd.Flag("keystore").Value.String()
 		secret := cmd.Flag("secret").Value.String()
-		if s, err = NewDefaultSigner(networkType, keystore, secret); err != nil {
+		s, err := NewDefaultSigner(networkType, keystore, secret)
+		if err != nil {
 			return err
 		}
-		if len(svc) > 0 {
-			txID, err = c.ServiceInvoke(network, svc, method, &req.Request, s)
-		} else if len(addr) > 0 {
-			txID, err = c.Invoke(network, addr, method, req, s)
-		}
+		var txID contract.TxID
+		svc := cmd.Flag("service").Value.String()
+		txID, err = c.Invoke(svc, method, req, s)
 		if err != nil {
 			return err
 		}

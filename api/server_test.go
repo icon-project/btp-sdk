@@ -370,17 +370,20 @@ func Test_ServerCall(t *testing.T) {
 	c := client()
 	for _, arg := range args {
 		for _, n := range arg.Networks {
-			var err error
-			if len(arg.Service) > 0 {
-				_, err = c.ServiceCall(n, arg.Service, arg.Method, &arg.Request, &arg.Response)
-			} else {
+			svc := arg.Service
+			if len(svc) == 0 {
 				ctr := contracts[n]
-				req := &ContractRequest{
-					Request: arg.Request,
+				req := &RegisterContractServiceRequest{
+					Network: n,
+					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				_, err = c.Call(n, ctr.Address, arg.Method, req, &arg.Response)
+				err := c.RegisterContractService(req)
+				assert.NoError(t, err)
+				svc = string(ctr.Address)
 			}
+			arg.Request.Network = n
+			_, err := c.Call(svc, arg.Method, &arg.Request, &arg.Response)
 			assert.NoError(t, err)
 			t.Logf("response:%v", arg.Response)
 		}
@@ -462,20 +465,20 @@ func Test_ServerInvokeWithoutSignerService(t *testing.T) {
 	c := client()
 	for _, arg := range args {
 		for _, n := range arg.Networks {
-			var (
-				txId contract.TxID
-				err  error
-			)
-			if len(arg.Service) > 0 {
-				txId, err = c.ServiceInvoke(n, arg.Service, arg.Method, &arg.Request, signers[n])
-			} else {
+			svc := arg.Service
+			if len(svc) == 0 {
 				ctr := contracts[n]
-				req := &ContractRequest{
-					Request: arg.Request,
+				req := &RegisterContractServiceRequest{
+					Network: n,
+					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				txId, err = c.Invoke(n, ctr.Address, arg.Method, req, signers[n])
+				err := c.RegisterContractService(req)
+				assert.NoError(t, err)
+				svc = string(ctr.Address)
 			}
+			arg.Request.Network = n
+			txId, err := c.Invoke(svc, arg.Method, &arg.Request, signers[n])
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
 			txr, err := c.GetResult(n, txId)
@@ -560,20 +563,20 @@ func Test_ServerInvokeWithSignerService(t *testing.T) {
 	c := client()
 	for _, arg := range args {
 		for _, n := range arg.Networks {
-			var (
-				txId contract.TxID
-				err  error
-			)
-			if len(arg.Service) > 0 {
-				txId, err = c.ServiceInvoke(n, arg.Service, arg.Method, &arg.Request, nil)
-			} else {
+			svc := arg.Service
+			if len(svc) == 0 {
 				ctr := contracts[n]
-				req := &ContractRequest{
-					Request: arg.Request,
+				req := &RegisterContractServiceRequest{
+					Network: n,
+					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				txId, err = c.Invoke(n, ctr.Address, arg.Method, req, signers[n])
+				err := c.RegisterContractService(req)
+				assert.NoError(t, err)
+				svc = string(ctr.Address)
 			}
+			arg.Request.Network = n
+			txId, err := c.Invoke(svc, arg.Method, &arg.Request, nil)
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
 			txr, err := c.GetResult(n, txId)
@@ -613,20 +616,20 @@ func Test_ServerMonitorEvent(t *testing.T) {
 	c := client()
 	for _, arg := range args {
 		for _, n := range arg.Networks {
-			var (
-				txId contract.TxID
-				err  error
-			)
-			if len(arg.Service) > 0 {
-				txId, err = c.ServiceInvoke(n, arg.Service, arg.Method, &arg.Request, nil)
-			} else {
+			svc := arg.Service
+			if len(svc) == 0 {
 				ctr := contracts[n]
-				req := &ContractRequest{
-					Request: arg.Request,
+				req := &RegisterContractServiceRequest{
+					Network: n,
+					Address: ctr.Address,
 					Spec:    ctr.Spec,
 				}
-				txId, err = c.Invoke(n, ctr.Address, arg.Method, req, signers[n])
+				err := c.RegisterContractService(req)
+				assert.NoError(t, err)
+				svc = string(ctr.Address)
 			}
+			arg.Request.Network = n
+			txId, err := c.Invoke(svc, arg.Method, &arg.Request, nil)
 			assert.NoError(t, err)
 			t.Logf("txId:%v", txId)
 			txr, err := c.GetResult(n, txId)
@@ -640,6 +643,7 @@ func Test_ServerMonitorEvent(t *testing.T) {
 				assert.FailNow(t, "not found event in TxResult")
 			}
 			expected := r.Events()[0]
+			arg.MonitorRequest.Network = n
 			arg.MonitorRequest.Height = expected.BlockHeight()
 			ch := make(chan contract.Event, 0)
 			onEvent := func(e contract.Event) error {
@@ -649,13 +653,8 @@ func Test_ServerMonitorEvent(t *testing.T) {
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			go func() {
-				if len(arg.Service) > 0 {
-					err := c.ServiceMonitorEvent(ctx, n, arg.Service, &arg.MonitorRequest, onEvent)
-					assert.Equal(t, ctx.Err(), err)
-				} else {
-					err := c.MonitorEvent(ctx, n, contracts[n].Address, &arg.MonitorRequest, onEvent)
-					assert.Equal(t, ctx.Err(), err)
-				}
+				err := c.MonitorEvent(ctx, svc, &arg.MonitorRequest, onEvent)
+				assert.Equal(t, ctx.Err(), err)
 			}()
 			select {
 			case e := <-ch:
