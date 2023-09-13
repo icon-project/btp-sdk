@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/icon-project/btp-sdk/btptracker/storage/repository"
-	"github.com/icon-project/btp-sdk/utils"
-	"gorm.io/gorm"
 	"io"
 	"net/http"
 	"reflect"
@@ -14,6 +11,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
+
+	"github.com/icon-project/btp-sdk/btptracker/storage/repository"
+	"github.com/icon-project/btp-sdk/utils"
 
 	"github.com/gorilla/websocket"
 	"github.com/icon-project/btp2/common/errors"
@@ -78,7 +80,7 @@ type ServerConfig struct {
 	Address           string               `json:"address"`
 	TransportLogLevel contract.LogLevel    `json:"transport_log_level,omitempty"`
 	PingIntervalSec   int                  `json:"ping_interval_sec,omitempty"`
-	Storage           *utils.StorageConfig `json:"storage,omitempty"`
+	Storage           utils.StorageConfig `json:"storage"`
 }
 
 type Server struct {
@@ -180,10 +182,10 @@ func (s *Server) Start() error {
 			MaxAge: 3600,
 		}),
 		middleware.Recover())
-	//s.RegisterAPIHandler(s.e.Group(GroupUrlApi))
-	//s.RegisterAPIDocHandler(s.e.Group(GroupUrlApiDocs))
-	//s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
-	//s.RegisterAutoCallerHandler(s.e.Group(GroupUrlAutoCaller))
+	s.RegisterAPIHandler(s.e.Group(GroupUrlApi))
+	s.RegisterAPIDocHandler(s.e.Group(GroupUrlApiDocs))
+	s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
+	s.RegisterAutoCallerHandler(s.e.Group(GroupUrlAutoCaller))
 	s.RegisterTrackerHandler(s.e.Group(GroupUrlTracker))
 	web.RegisterWebHandler(s.e.Group(GroupUrlWeb))
 	return s.e.Start(s.cfg.Address)
@@ -722,6 +724,15 @@ type AutoCallerInfo struct {
 type AutoCallerInfos []AutoCallerInfo
 
 func (s *Server) RegisterAutoCallerHandler(g *echo.Group) {
+	g.GET("", func(c echo.Context) error {
+		s.mtx.RLock()
+		defer s.mtx.RUnlock()
+		r := make(AutoCallerInfos, 0)
+		for _, v := range s.cMap {
+			r = append(r, AutoCallerInfo{v.Name()})
+		}
+		return c.JSON(http.StatusOK, r)
+	})
 	g.GET("/:"+PathParamService, func(c echo.Context) error {
 		p := c.Param(PathParamService)
 		ac := s.GetAutoCaller(p)
