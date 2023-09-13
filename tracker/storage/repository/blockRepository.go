@@ -1,8 +1,9 @@
 package repository
 
 import (
-	"gorm.io/gorm"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type Block struct {
@@ -23,41 +24,39 @@ func InsertBlock(db *gorm.DB, block Block) (Block, error) {
 	return block, nil
 }
 
-func SelectLastBlockBySrc(db *gorm.DB, networkAddress string) Block {
+func SelectLastBlockBySrc(db *gorm.DB, networkAddress string) (Block, error) {
 	var block Block
 	result := db.Order("height desc").Where(Block{
 		NetworkAddress: networkAddress,
 	}).First(&block)
 	if result.Error != nil {
-		println("Failed to get Block by last height")
-		return Block{}
+		return Block{}, result.Error
 	}
-	return block
+	return block, nil
 }
 
-func FindBlocksByHeight(db *gorm.DB, networkAddress string, height int64, finalized bool) []Block {
+func FindBlocksByHeight(db *gorm.DB, networkAddress string, height int64, finalized bool) ([]Block, error) {
 	var blocks []Block
 	result := db.Order("height desc").Where("network_address = ? AND height <= ? AND finalized = ?", networkAddress, height, finalized).Find(&blocks)
 	if result.Error != nil {
-		println("Failed to get Block by height")
-		return []Block{}
+		return []Block{}, result.Error
 	}
-	return blocks
+	return blocks, nil
 }
 
-func UpdateBlockBySelective(db *gorm.DB, block Block, chg Block) Block {
+func UpdateBlockBySelective(db *gorm.DB, block Block, chg Block) (Block, error) {
 	result := db.Model(&block).Updates(chg)
 	if result.Error != nil {
-		return Block{}
+		return Block{}, result.Error
 	}
-	return block
+	return block, nil
 }
 
-func SelectBlockBy(db *gorm.DB, block Block) Block {
+func SelectBlockBy(db *gorm.DB, block Block) (Block, error) {
 	var b Block
 	result := db.Where(block).First(&b)
 	if result.Error != nil {
-		return Block{}
+		return Block{}, result.Error
 	}
-	return b
+	return b, nil
 }

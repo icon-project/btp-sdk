@@ -2,8 +2,9 @@ package repository
 
 import (
 	"database/sql"
-	"gorm.io/gorm"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -38,13 +39,13 @@ type NetworkSummary struct {
 	Completed  int64  `json:"status_completed"`
 }
 
-func InsertBtpStatus(db *gorm.DB, btpStatus BTPStatus) BTPStatus {
+func InsertBtpStatus(db *gorm.DB, btpStatus BTPStatus) (BTPStatus, error) {
 	result := db.Create(&btpStatus)
 	if result.Error != nil {
 		println("Failed to add BTPStatus ", btpStatus.Id)
-		return BTPStatus{}
+		return BTPStatus{}, result.Error
 	}
-	return btpStatus
+	return btpStatus, nil
 }
 
 func SelectBtpStatusBy(db *gorm.DB, status BTPStatus) (BTPStatus, error) {

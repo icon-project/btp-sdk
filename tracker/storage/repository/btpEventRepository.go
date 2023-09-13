@@ -1,8 +1,9 @@
 package repository
 
 import (
-	"gorm.io/gorm"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type BTPEvent struct {
@@ -21,21 +22,21 @@ type BTPEvent struct {
 	BtpStatus   BTPStatus `gorm:"foreignKey:btp_status_id;references:id"`
 }
 
-func InsertBtpEvent(db *gorm.DB, btpEvent BTPEvent) BTPEvent {
+func InsertBtpEvent(db *gorm.DB, btpEvent BTPEvent) (BTPEvent, error) {
 	result := db.Create(&btpEvent)
 	if result.Error != nil {
 		println("Failed to add BTPEvent ", btpEvent.Id)
-		return BTPEvent{}
+		return BTPEvent{}, result.Error
 	}
-	return btpEvent
+	return btpEvent, nil
 }
 
-func SelectBtpEventBySrcAndNsn(db *gorm.DB, src string, nsn int64) []BTPEvent {
+func SelectBtpEventBySrcAndNsn(db *gorm.DB, src string, nsn int64) ([]BTPEvent, error) {
 	var btpEvents []BTPEvent
 	result := db.Order("created_at asc").Where("src = ? AND nsn = ?", src, nsn).Find(&btpEvents)
 	if result.Error != nil {
 		println("Failed to get BTPEvents by Src: ? and Nsn: ?", src, nsn)
-		return []BTPEvent{}
+		return []BTPEvent{}, result.Error
 	}
-	return btpEvents
+	return btpEvents, nil
 }

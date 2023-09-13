@@ -21,18 +21,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/icon-project/btp-sdk/tracker"
-	"github.com/icon-project/btp-sdk/tracker/storage/repository"
-	"github.com/icon-project/btp-sdk/contract"
-	"github.com/icon-project/btp-sdk/service"
-	"github.com/icon-project/btp-sdk/service/bmc"
-	"github.com/icon-project/btp2/common/errors"
-	"github.com/icon-project/btp2/common/log"
-	"gorm.io/gorm"
 	"reflect"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/icon-project/btp2/common/errors"
+	"github.com/icon-project/btp2/common/log"
+	"gorm.io/gorm"
+
+	"github.com/icon-project/btp-sdk/contract"
+	"github.com/icon-project/btp-sdk/service"
+	"github.com/icon-project/btp-sdk/service/bmc"
+	"github.com/icon-project/btp-sdk/tracker"
+	"github.com/icon-project/btp-sdk/tracker/storage/repository"
 )
 
 const (
@@ -178,8 +180,15 @@ func (r *Tracker) Stop() error {
 }
 
 func (r *Tracker) getMonitorHeight(network string) (int64, error) {
-	lb := repository.SelectLastBlockBySrc(r.db, r.nMap[network].Options.NetworkAddress)
+	lb, err := repository.SelectLastBlockBySrc(r.db, r.nMap[network].Options.NetworkAddress)
 	ih := r.nMap[network].Options.InitHeight
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Debugf("No results were found, network: %s", network)
+			return ih, nil
+		}
+		return ih, err
+	}
 	if lb.Height >= ih {
 		return lb.Height + 1, nil
 	}
@@ -266,11 +275,16 @@ func (r *Tracker) updateBlock(networkAddress string, e contract.Event) (reposito
 	}
 	height := e.BlockHeight()
 
-	block := repository.SelectBlockBy(r.db, repository.Block{
+	block, err := repository.SelectBlockBy(r.db, repository.Block{
 		NetworkAddress: networkAddress,
 		Height:         height,
 		BlockHash:      hash,
 	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Debugf("No results were found, network: %s, height: %s, hash: %s", networkAddress, height, hash)
+		}
+	}
 	// TODO how to know service type is icon or others
 	if reflect.DeepEqual(block, repository.Block{}) {
 		block, err = repository.InsertBlock(r.db, repository.Block{
@@ -298,7 +312,7 @@ func (r *Tracker) updateBtpStatus(networkAddress string, bId int, e contract.Eve
 		Nsn: nsn,
 	})
 	if reflect.DeepEqual(bs, repository.BTPStatus{}) {
-		bs = repository.InsertBtpStatus(r.db, repository.BTPStatus{
+		bs, err = repository.InsertBtpStatus(r.db, repository.BTPStatus{
 			Src:         src,
 			LastNetwork: sql.NullString{String: networkAddress, Valid: true},
 			Status:      sql.NullString{String: BTPInDelivery, Valid: true},
@@ -317,7 +331,7 @@ func (r *Tracker) updateBtpStatus(networkAddress string, bId int, e contract.Eve
 		return repository.BTPStatus{}, errors.Errorf("invalid _src type:%T", e.Params()["_src"])
 	}
 	identifier := []byte(strconv.Itoa(e.Identifier()))
-	btpEvent := repository.InsertBtpEvent(r.db, repository.BTPEvent{
+	btpEvent, err := repository.InsertBtpEvent(r.db, repository.BTPEvent{
 		Src:         src,
 		Nsn:         nsn,
 		Next:        next,
@@ -360,7 +374,12 @@ func (r *Tracker) getLinks(src string, nsn int64) ([]int, string) {
 	links := make([]int, 0)
 	status := BTPInDelivery
 	//Find BTPEvents by src and nsn, order by createdAt(time) asc
-	events := repository.SelectBtpEventBySrcAndNsn(r.db, src, nsn)
+	events, err := repository.SelectBtpEventBySrcAndNsn(r.db, src, nsn)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Debugf("No results were found, src: %s, nsn: %s", src, nsn)
+		}
+	}
 	if len(events) == 0 {
 		return links, status
 	}
@@ -495,8 +514,13 @@ func (r *Tracker) finalityMonitor(ctx context.Context, network string) {
 func (r *Tracker) handleFinalizeBlock(network Network, fm contract.FinalityMonitor, info contract.BlockInfo) error {
 	na := network.Options.NetworkAddress
 	var blocks []repository.Block
-	blocks = repository.FindBlocksByHeight(r.db, na, info.Height(), false)
+	blocks, err := repository.FindBlocksByHeight(r.db, na, info.Height(), false)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			log.Debugf("No results were found, network: %s, height: %s", network, info.Height())
 
+		}
+	}
 	for _, block := range blocks {
 		err := r.finalizeBlock(fm, block)
 		if err != nil {
@@ -514,7 +538,7 @@ func (r *Tracker) finalizeBlock(fm contract.FinalityMonitor, block repository.Bl
 		}
 		return err
 	}
-	block = repository.UpdateBlockBySelective(r.db, block, repository.Block{
+	block, err = repository.UpdateBlockBySelective(r.db, block, repository.Block{
 		Finalized: true,
 	})
 	if reflect.DeepEqual(block, repository.Block{}) {
