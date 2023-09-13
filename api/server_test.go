@@ -19,10 +19,11 @@ package api
 import (
 	"context"
 	"fmt"
-	"github.com/icon-project/btp-sdk/utils"
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/icon-project/btp-sdk/utils"
 
 	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/types"
@@ -55,9 +56,9 @@ var (
 		Storage: &utils.StorageConfig{
 			DBType:   "mysql",
 			HostName: "127.0.0.1:3306",
-			DBName:   "btpTracker",
-			UserName: "by.kim",
-			Password: "11732188",
+			DBName:   "btp_sdk",
+			UserName: "test",
+			Password: "test1234",
 		},
 	}
 )

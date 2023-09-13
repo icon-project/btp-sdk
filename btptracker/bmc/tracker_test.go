@@ -2,6 +2,13 @@ package bmc
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
+	"github.com/icon-project/btp2/common/log"
+	"github.com/stretchr/testify/assert"
+	"gorm.io/gorm"
+
 	"github.com/icon-project/btp-sdk/btptracker"
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/contract/eth"
@@ -9,11 +16,6 @@ import (
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
 	"github.com/icon-project/btp-sdk/utils"
-	"github.com/icon-project/btp2/common/log"
-	"github.com/stretchr/testify/assert"
-	"gorm.io/gorm"
-	"testing"
-	"time"
 )
 
 const (
@@ -75,9 +77,9 @@ var (
 	storageConfig = &utils.StorageConfig{
 		DBType:   "mysql",
 		HostName: "127.0.0.1:3306",
-		DBName:   "btpTracker",
-		UserName: "by.kim",
-		Password: "11732188",
+		DBName:   "btp_sdk",
+		UserName: "test",
+		Password: "test1234",
 	}
 )
 
