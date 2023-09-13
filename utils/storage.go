@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 )
@@ -15,7 +16,7 @@ type StorageConfig struct {
 }
 
 // NewStorage :Opening a database and save the reference to `Database` struct.
-func NewStorage(cfg *StorageConfig) (*gorm.DB, error) {
+func NewStorage(cfg StorageConfig) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=True",
 		cfg.UserName, cfg.Password, cfg.HostName, cfg.DBName)
 	return gorm.Open(mysql.New(mysql.Config{

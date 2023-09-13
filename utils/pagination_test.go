@@ -2,9 +2,11 @@ package utils
 
 import (
 	"fmt"
-	"github.com/icon-project/btp-sdk/btptracker/storage/repository"
-	"gorm.io/gorm"
 	"testing"
+
+	"gorm.io/gorm"
+
+	"github.com/icon-project/btp-sdk/tracker/storage/repository"
 )
 
 func Test_Pagination(t *testing.T) {
@@ -31,11 +33,11 @@ func Test_Summary(t *testing.T) {
 }
 
 func getDB() *gorm.DB {
-	cfg := &StorageConfig{
+	cfg := StorageConfig{
 		DBType:   "mysql",
-		DBName:   "btpTracker",
-		UserName: "by.kim",
-		Password: "11732188",
+		DBName:   "btp_sdk",
+		UserName: "test",
+		Password: "test1234",
 		HostName: "localhost:3306",
 	}
 

@@ -53,7 +53,7 @@ var (
 		Address:           serverAddress,
 		TransportLogLevel: contract.LogLevel(serverLogLevel),
 		PingIntervalSec:   pingIntervalSec,
-		Storage: &utils.StorageConfig{
+		Storage: utils.StorageConfig{
 			DBType:   "mysql",
 			HostName: "127.0.0.1:3306",
 			DBName:   "btp_sdk",

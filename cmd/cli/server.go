@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-
 	"os"
 	"path/filepath"
 	"reflect"
@@ -32,7 +31,7 @@ type Config struct {
 
 	Server   api.ServerConfig         `json:"server"`
 	Networks map[string]NetworkConfig `json:"networks"`
-	Storage  *utils.StorageConfig     `json:"storage"`
+	Storage  utils.StorageConfig     `json:"storage"`
 
 	LogLevel     string            `json:"log_level"`
 	ConsoleLevel string            `json:"console_level"`

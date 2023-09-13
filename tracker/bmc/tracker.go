@@ -21,8 +21,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/icon-project/btp-sdk/btptracker"
-	"github.com/icon-project/btp-sdk/btptracker/storage/repository"
+	"github.com/icon-project/btp-sdk/tracker"
+	"github.com/icon-project/btp-sdk/tracker/storage/repository"
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
@@ -50,7 +50,7 @@ const (
 )
 
 func init() {
-	btptracker.RegisterFactory(bmc.ServiceName, NewTracker)
+	tracker.RegisterFactory(bmc.ServiceName, NewTracker)
 }
 
 type Tracker struct {
@@ -76,7 +76,7 @@ type TrackerOptions struct {
 	Contracts      []contract.Address `json:"contracts"`
 }
 
-func NewTracker(s service.Service, networks map[string]btptracker.Network, db *gorm.DB, l log.Logger) (btptracker.Tracker, error) {
+func NewTracker(s service.Service, networks map[string]tracker.Network, db *gorm.DB, l log.Logger) (tracker.Tracker, error) {
 	if s.Name() != bmc.ServiceName {
 		return nil, errors.Errorf("invalid service name:%s", s.Name())
 	}

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package btptracker
+package tracker
 
 import (
 	"github.com/icon-project/btp-sdk/contract"

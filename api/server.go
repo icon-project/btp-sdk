@@ -14,7 +14,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/icon-project/btp-sdk/btptracker/storage/repository"
+	"github.com/icon-project/btp-sdk/tracker/storage/repository"
 	"github.com/icon-project/btp-sdk/utils"
 
 	"github.com/gorilla/websocket"

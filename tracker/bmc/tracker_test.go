@@ -9,12 +9,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm"
 
-	"github.com/icon-project/btp-sdk/btptracker"
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/contract/eth"
 	"github.com/icon-project/btp-sdk/contract/icon"
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
+	"github.com/icon-project/btp-sdk/tracker"
 	"github.com/icon-project/btp-sdk/utils"
 )
 
@@ -74,7 +74,7 @@ var (
 			},
 		},
 	}
-	storageConfig = &utils.StorageConfig{
+	storageConfig = utils.StorageConfig{
 		DBType:   "mysql",
 		HostName: "127.0.0.1:3306",
 		DBName:   "btp_sdk",
@@ -131,16 +131,16 @@ func Test_Tracker(t *testing.T) {
 	<-time.After(time.Minute * 10)
 }
 
-func NewTestTracker(t *testing.T, s service.Service, db *gorm.DB, l log.Logger) btptracker.Tracker {
-	networks := make(map[string]btptracker.Network)
+func NewTestTracker(t *testing.T, s service.Service, db *gorm.DB, l log.Logger) tracker.Tracker {
+	networks := make(map[string]tracker.Network)
 	for network, config := range configs {
-		networks[network] = btptracker.Network{
+		networks[network] = tracker.Network{
 			NetworkType: config.NetworkType,
 			Adaptor:     adaptor(t, network),
 			Options:     MustEncodeOptions(config.TrackerOption),
 		}
 	}
-	tkr, err := btptracker.NewTracker(bmc.ServiceName, s, networks, db, l)
+	tkr, err := tracker.NewTracker(bmc.ServiceName, s, networks, db, l)
 	if err != nil {
 		assert.FailNow(t, "fail to NewTracker", err)
 	}
