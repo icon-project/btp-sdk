@@ -719,7 +719,8 @@ func (s *Server) RegisterMonitorHandler(g *echo.Group) {
 }
 
 type AutoCallerInfo struct {
-	Name string `json:"name"`
+	Name  string   `json:"name"`
+	Tasks []string `json:"tasks"`
 }
 type AutoCallerInfos []AutoCallerInfo
 
@@ -729,7 +730,7 @@ func (s *Server) RegisterAutoCallerHandler(g *echo.Group) {
 		defer s.mtx.RUnlock()
 		r := make(AutoCallerInfos, 0)
 		for _, v := range s.cMap {
-			r = append(r, AutoCallerInfo{v.Name()})
+			r = append(r, AutoCallerInfo{v.Name(), v.Tasks()})
 		}
 		return c.JSON(http.StatusOK, r)
 	})
