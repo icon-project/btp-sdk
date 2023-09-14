@@ -13,6 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/icon-project/btp2/common/errors"
+	"github.com/icon-project/btp2/common/intconv"
 	"github.com/icon-project/btp2/common/log"
 	"github.com/invopop/yaml"
 	"github.com/labstack/echo/v4"
@@ -21,6 +22,7 @@ import (
 	"github.com/icon-project/btp-sdk/autocaller"
 	_ "github.com/icon-project/btp-sdk/autocaller/xcall"
 	"github.com/icon-project/btp-sdk/contract"
+	"github.com/icon-project/btp-sdk/database"
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
 	"github.com/icon-project/btp-sdk/service/dappsample"
@@ -709,6 +711,27 @@ type AutoCallerInfo struct {
 }
 type AutoCallerInfos []AutoCallerInfo
 
+type Pageable struct {
+	Page uintQueryParam `json:"page" query:"page"`
+	Size uintQueryParam `json:"size" query:"size"`
+	Sort string         `json:"sort,omitempty" query:"sort"`
+}
+
+type uintQueryParam uint
+
+func (p *uintQueryParam) UnmarshalText(text []byte) error {
+	if len(text) == 0 {
+		*p = 0
+		return nil
+	}
+	v, err := intconv.ParseUint(string(text), 64)
+	if err != nil {
+		return err
+	}
+	*p = uintQueryParam(v)
+	return nil
+}
+
 func (s *Server) RegisterAutoCallerHandler(g *echo.Group) {
 	g.GET("", func(c echo.Context) error {
 		s.mtx.RLock()
@@ -726,15 +749,36 @@ func (s *Server) RegisterAutoCallerHandler(g *echo.Group) {
 			return echo.NewHTTPError(http.StatusNotFound,
 				fmt.Sprintf("AutoCaller(%s) not found", p))
 		}
-		fp := autocaller.FindParam{}
-		if err := BindQueryParamsAndUnmarshalBody(c, &fp); err != nil {
-			s.l.Debugf("fail to BindQueryParamsAndUnmarshalBody err:%+v", err)
+		task := c.QueryParam("task")
+		if len(task) == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "required query parameter: task")
+		}
+		if !service.StringSetContains(ac.Tasks(), task) {
+			return echo.NewHTTPError(http.StatusBadRequest,
+				fmt.Sprintf("invalid task(%s), must be one of {%s}", task, strings.Join(ac.Tasks(), ",")))
+		}
+		pageable := Pageable{}
+		if err := BindQueryParamsAndUnmarshalBody(c, &pageable); err != nil {
+			s.l.Debugf("fail to BindQueryParamsAndUnmarshalBody Pageable err:%+v", err)
 			return echo.ErrBadRequest
 		}
-		s.l.Debugln("fp.Task:", fp.Task)
-		if len(fp.Task) > 0 && !service.StringSetContains(ac.Tasks(), fp.Task) {
-			return echo.NewHTTPError(http.StatusBadRequest,
-				fmt.Sprintf("invalid task(%s), must be empty or one of {%s}", fp.Task, strings.Join(ac.Tasks(), ",")))
+		fp := autocaller.FindParam{
+			Task: task,
+			Pageable: database.Pageable{
+				Page: uint(pageable.Page),
+				Size: uint(pageable.Size),
+				Sort: pageable.Sort,
+			},
+		}
+		m, err := QueryParamsToMap(c)
+		if err != nil {
+			return err
+		}
+		if tv, ok := m["query"]; ok {
+			if fp.Query, ok = tv.(map[string]interface{}); !ok {
+				return echo.NewHTTPError(http.StatusBadRequest,
+					fmt.Sprintf("invalid query(%v)", tv))
+			}
 		}
 
 		ret, err := ac.Find(fp)

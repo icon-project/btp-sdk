@@ -20,6 +20,7 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/contract/eth"
 	"github.com/icon-project/btp-sdk/contract/icon"
+	"github.com/icon-project/btp-sdk/database"
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
 	"github.com/icon-project/btp-sdk/service/xcall"
@@ -30,6 +31,7 @@ type Config struct {
 
 	Server   api.ServerConfig         `json:"server"`
 	Networks map[string]NetworkConfig `json:"networks"`
+	Database database.Config          `json:"database"`
 
 	LogLevel     string            `json:"log_level"`
 	ConsoleLevel string            `json:"console_level"`
@@ -275,6 +277,14 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 						},
 					}
 				}
+				cfg.Database = database.Config{
+					Driver:   database.DriverMysql,
+					User:     "user",
+					Password: "password",
+					Host:     "localhost",
+					Port:     3306,
+					DBName:   "btpsdk",
+				}
 			}
 
 			if err := cli.JsonPrettySaveFile(saveFilePath, 0644, cfg); err != nil {
@@ -403,8 +413,12 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 				}
 				s.SetService(svc)
 			}
+			db, err := database.OpenDatabase(cfg.Database)
+			if err != nil {
+				return err
+			}
 			for name, networks := range acToNetworks {
-				ac, err := autocaller.NewAutoCaller(name, s.GetService(name), networks, l)
+				ac, err := autocaller.NewAutoCaller(name, s.GetService(name), networks, db, l)
 				if err != nil {
 					return err
 				}

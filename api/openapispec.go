@@ -30,6 +30,7 @@ import (
 
 	"github.com/icon-project/btp-sdk/autocaller"
 	"github.com/icon-project/btp-sdk/contract"
+	"github.com/icon-project/btp-sdk/database"
 	"github.com/icon-project/btp-sdk/service"
 )
 
@@ -504,13 +505,20 @@ func NewOpenAPISpecProvider(l log.Logger) *OpenAPISpecProvider {
 	oas.Paths[acu] = &openapi3.PathItem{
 		Get: &openapi3.Operation{
 			Tags:        []string{tagAutoCaller},
-			Summary:     "Retrieve Auto Caller status",
+			Summary:     "Retrieve Auto Caller tasks",
 			Description: "",
 			OperationID: "",
 			Parameters: NewParameters(append([]*openapi3.Parameter{NewPathParameterWithSchema(PathParamService, openapi3.NewStringSchema())},
-				NewQueryParametersByObjectSchema(MustGenerateSchema(autocaller.FindParam{}))...)...),
+				openapi3.NewQueryParameter("task").WithRequired(true).WithSchema(openapi3.NewStringSchema()),
+				openapi3.NewQueryParameter("pageable").WithSchema(MustGenerateSchema(Pageable{})),
+				openapi3.NewQueryParameter("query").WithSchema(MustGenerateSchema(struct {
+					Query map[string]interface{} `json:"query"`
+				}{})))...),
 			Responses: ResponsesWithResponse(nil, http.StatusOK,
-				NewSuccessResponseWithSchema(openapi3.NewArraySchema().WithItems(openapi3.NewObjectSchema()))),
+				NewSuccessResponseWithSchema(
+					MustGenerateSchema(database.Page[autocaller.Task]{}).
+						WithProperty("content", openapi3.NewArraySchema().WithItems(
+							MustGenerateSchema(autocaller.Task{}).WithAnyAdditionalProperties())))),
 		},
 	}
 	return &OpenAPISpecProvider{
