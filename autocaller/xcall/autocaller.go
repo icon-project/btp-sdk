@@ -35,7 +35,6 @@ import (
 )
 
 const (
-	EventCallMessageSent     = "CallMessageSent"
 	EventCallMessage         = "CallMessage"
 	EventRollbackMessage     = "RollbackMessage"
 	MethodExecuteCall        = "executeCall"
@@ -97,7 +96,6 @@ func NewAutoCaller(s service.Service, networks map[string]autocaller.Network, db
 		signers[network] = n.Signer
 	}
 	for fromNetwork, fn := range nMap {
-		cmsParams := make([]contract.Params, 0)
 		cmParams := make([]contract.Params, 0)
 		for _, fa := range fn.Options.Contracts {
 			from := types.BtpAddress(fmt.Sprintf("btp://%s/%s", fn.Options.NetworkAddress, fa))
@@ -107,10 +105,6 @@ func NewAutoCaller(s service.Service, networks map[string]autocaller.Network, db
 				}
 				for _, ta := range tn.Options.Contracts {
 					to := types.BtpAddress(fmt.Sprintf("btp://%s/%s", tn.Options.NetworkAddress, ta))
-					cmsParams = append(cmsParams, contract.Params{
-						"_from": contract.Address(from.ContractAddress()),
-						"_to":   to.String(),
-					})
 					cmParams = append(cmParams, contract.Params{
 						"_from": to.String(),
 						"_to":   from.ContractAddress(),
@@ -119,7 +113,6 @@ func NewAutoCaller(s service.Service, networks map[string]autocaller.Network, db
 			}
 		}
 		nameToParams := map[string][]contract.Params{
-			EventCallMessageSent: cmsParams,
 			EventCallMessage:     cmParams,
 			EventRollbackMessage: nil,
 		}
