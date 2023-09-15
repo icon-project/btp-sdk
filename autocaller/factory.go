@@ -19,8 +19,10 @@ package autocaller
 import (
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
+	"gorm.io/gorm"
 
 	"github.com/icon-project/btp-sdk/contract"
+	"github.com/icon-project/btp-sdk/database"
 	"github.com/icon-project/btp-sdk/service"
 )
 
@@ -29,14 +31,13 @@ type AutoCaller interface {
 	Tasks() []string
 	Start() error
 	Stop() error
-	Find(FindParam) ([]interface{}, error) //TODO support Pagination
+	Find(FindParam) (*database.Page[any], error)
 }
 
 type FindParam struct {
-	Task string `json:"task" query:"task"`
-	//TODO condition with common fields {Network,SendTxID,Sent}
-	//TODO condition with fields map[string]interface{}
-	//TODO support Pagination with Pageable
+	Task     string                 `json:"task"`
+	Pageable database.Pageable      `json:"pageable"`
+	Query    map[string]interface{} `json:"query"`
 }
 
 type Network struct {
@@ -46,7 +47,7 @@ type Network struct {
 	Options     contract.Options
 }
 
-type Factory func(service.Service, map[string]Network, log.Logger) (AutoCaller, error)
+type Factory func(service.Service, map[string]Network, *gorm.DB, log.Logger) (AutoCaller, error)
 
 var (
 	fMap = make(map[string]Factory)
@@ -60,10 +61,22 @@ func RegisterFactory(serviceName string, sf Factory) {
 	log.Tracef("RegisterFactory autocaller:%s", serviceName)
 }
 
-func NewAutoCaller(name string, s service.Service, networks map[string]Network, l log.Logger) (AutoCaller, error) {
+func NewAutoCaller(name string, s service.Service, networks map[string]Network, db *gorm.DB, l log.Logger) (AutoCaller, error) {
 	if f, ok := fMap[name]; ok {
 		l = l.WithFields(log.Fields{log.FieldKeyChain: name, log.FieldKeyModule: "autocaller"})
-		return f(s, networks, l)
+		return f(s, networks, db, l)
 	}
 	return nil, errors.Errorf("not found autocaller name:%s", name)
+}
+
+type Task struct {
+	database.Model
+	Name    string `json:"name"`
+	Network string `json:"network" gorm:"index"`
+	Sent    bool   `json:"sent"`
+	TxID    string `json:"tx_id"`
+	//TODO monitor tx result
+	//TxBlockHeight int64  `json:"tx_block_height"`
+	//TxBlockID     string `json:"tx_block_id"`
+	//Done          bool   `json:"done"`
 }
