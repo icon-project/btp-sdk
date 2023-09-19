@@ -149,6 +149,7 @@ func (f *FinalitySupplier) Serve(ctx context.Context, last contract.BlockInfo, c
 		}
 		if height < bi.Height() {
 			cb(bi)
+			height = bi.Height()
 		}
 		<-time.After(period)
 	}
