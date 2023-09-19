@@ -139,10 +139,14 @@ func (m *DefaultFinalityMonitor) _start() {
 				return
 			default:
 			}
-			if err := m.FinalitySupplier.Serve(ctx, m.getLast(), func(bi BlockInfo) {
-				m.notify(bi)
-			}); err != nil {
-				m.l.Debugf("fail to Serve err:%+v", err)
+			if last, err := m.Last(); err != nil {
+				m.l.Debugf("fail to Last err:%+v", err)
+			} else {
+				if err := m.FinalitySupplier.Serve(ctx, last, func(bi BlockInfo) {
+					m.notify(bi)
+				}); err != nil {
+					m.l.Debugf("fail to Serve err:%+v", err)
+				}
 			}
 			<-time.After(retryInterval)
 		}
@@ -181,10 +185,11 @@ func (m *DefaultFinalityMonitor) getLast() BlockInfo {
 
 func (m *DefaultFinalityMonitor) Last() (BlockInfo, error) {
 	if m.IsStarted() {
-		return m.getLast(), nil
-	} else {
-		return m.FinalitySupplier.Latest()
+		if last := m.getLast(); last != nil {
+			return last, nil
+		}
 	}
+	return m.FinalitySupplier.Latest()
 }
 
 func (m *DefaultFinalityMonitor) IsFinalized(height int64, id BlockID) (bool, error) {

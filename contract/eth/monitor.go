@@ -134,10 +134,7 @@ func (f *FinalitySupplier) HeightByID(id contract.BlockID) (int64, error) {
 }
 
 func (f *FinalitySupplier) Serve(ctx context.Context, last contract.BlockInfo, cb func(contract.BlockInfo)) error {
-	var height int64
-	if last != nil {
-		height = last.Height()
-	}
+	height := last.Height()
 	period := time.Duration(f.opt.PollingPeriodSec) * time.Second
 	for {
 		select {
