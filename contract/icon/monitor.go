@@ -21,8 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/icon-project/btp2/chain/icon/client"
@@ -30,12 +28,6 @@ import (
 	"github.com/icon-project/btp2/common/log"
 
 	"github.com/icon-project/btp-sdk/contract"
-)
-
-const (
-	DefaultBlockInfoPoolSize            = 1
-	DefaultMonitorRetryInterval         = time.Second
-	DefaultBlockInfoNotifyRetryInterval = time.Second
 )
 
 type BlockInfo struct {
@@ -54,6 +46,14 @@ func (b *BlockInfo) Height() int64 {
 func (b *BlockInfo) String() string {
 	return fmt.Sprintf("BlockInfo{ID:%s,Height:%d}",
 		b.id.String(), b.height)
+}
+
+func (b *BlockInfo) EqualID(id contract.BlockID) (bool, error) {
+	hb, err := HexBytesOf(id)
+	if err != nil {
+		return false, errors.Wrapf(err, "invalid BlockID err:%v", err.Error())
+	}
+	return bytes.Equal(b.id, hb), nil
 }
 
 type BlockInfoJson struct {
@@ -79,155 +79,33 @@ func (b *BlockInfo) MarshalJSON() ([]byte, error) {
 	return json.Marshal(v)
 }
 
-type FinalityMonitor struct {
+type FinalitySupplier struct {
 	*client.Client
-	runCancel context.CancelFunc
-	runMtx    sync.RWMutex
-	bi        *BlockInfo
-	biMtx     sync.RWMutex
-	ch        chan contract.BlockInfo
-	l         log.Logger
+	l log.Logger
 }
 
-func NewFinalityMonitor(c *client.Client, l log.Logger) *FinalityMonitor {
-	return &FinalityMonitor{
+func NewFinalitySupplier(c *client.Client, l log.Logger) *FinalitySupplier {
+	return &FinalitySupplier{
 		Client: c,
 		l:      l,
 	}
 }
 
-func (m *FinalityMonitor) setLast(bi *BlockInfo) {
-	m.biMtx.Lock()
-	defer m.biMtx.Unlock()
-	m.bi = bi
-}
-
-func (m *FinalityMonitor) getLast() *BlockInfo {
-	m.biMtx.RLock()
-	defer m.biMtx.RUnlock()
-	return m.bi
-}
-
-func (m *FinalityMonitor) notify(ctx context.Context) {
-	bi := &BlockInfo{
-		height: 0,
-	}
-	for {
-		last := m.getLast()
-		if last == nil || bi.height >= last.height {
-			<-time.After(DefaultBlockInfoNotifyRetryInterval)
-			continue
-		}
-		bi = last
-		select {
-		case m.ch <- bi:
-			m.l.Tracef("notify success BlockInfo %s", bi.String())
-		case <-ctx.Done():
-			m.l.Infof("notify stopped BlockInfo %s", bi.String())
-			return
-		default:
-			m.l.Tracef("notify failure BlockInfo %s", bi.String())
-			<-time.After(DefaultBlockInfoNotifyRetryInterval)
-		}
-	}
-}
-
-func (m *FinalityMonitor) monitor(ctx context.Context) {
-	for {
-		select {
-		case <-time.After(DefaultMonitorRetryInterval):
-			last := m.getLast()
-			if last == nil {
-				blk, err := m.Client.GetLastBlock()
-				if err != nil {
-					m.l.Debugf("fail to MonitorBlock GetLastBlock err:%+v", err)
-					continue
-				}
-				id, _ := blk.BlockHash.Value()
-				last = &BlockInfo{
-					id:     id,
-					height: blk.Height,
-				}
-				m.setLast(last)
-			}
-			m.l.Debugln("try to MonitorBlock last:%v", last)
-			p := &client.BlockRequest{
-				Height: client.NewHexInt(last.height),
-			}
-			if err := m.Client.MonitorBlock(p, func(conn *websocket.Conn, v *client.BlockNotification) error {
-				id, err := v.Hash.Value()
-				if err != nil {
-					return err
-				}
-				height, err := v.Height.Value()
-				if err != nil {
-					return err
-				}
-				m.setLast(&BlockInfo{
-					id:     id,
-					height: height,
-				})
-				return nil
-			}, func(conn *websocket.Conn) {
-				m.l.Debugln("MonitorBlock connected")
-			}, func(conn *websocket.Conn, err error) {
-				m.l.Debugf("fail to MonitorBlock err:%+v", err)
-			}); err != nil {
-				m.l.Debugf("fail to MonitorBlock err:%+v", err)
-			}
-			m.l.Debugln("MonitorBlock stopped")
-		case <-ctx.Done():
-			m.l.Debugln("MonitorBlock context done")
-			return
-		}
-	}
-}
-
-func (m *FinalityMonitor) IsFinalized(height int64, id contract.BlockID) (bool, error) {
-	if height < 1 {
-		return false, errors.Errorf("invalid height:%d", height)
-	}
-	hb, err := HexBytesOf(id)
+func (f *FinalitySupplier) Latest() (contract.BlockInfo, error) {
+	blk, err := f.Client.GetLastBlock()
 	if err != nil {
-		return false, errors.Wrapf(err, "invalid BlockID err:%v", err.Error())
+		return nil, err
 	}
-	last := m.getLast()
-	if last == nil {
-		var blk *client.Block
-		if blk, err = m.Client.GetLastBlock(); err != nil {
-			return false, err
-		}
-		last = &BlockInfo{
-			height: blk.Height,
-		}
-		last.id, _ = blk.BlockHash.Value()
+	bi := &BlockInfo{
+		height: blk.Height,
 	}
-	if height > last.height {
-		return false, nil
+	if bi.id, err = blk.BlockHash.Value(); err != nil {
+		return nil, err
 	}
-	var thb HexBytes
-	if height == last.height {
-		thb = last.id
-	} else {
-		p := &client.BlockHeightParam{
-			Height: client.NewHexInt(height),
-		}
-		var blk *client.Block
-		if blk, err = m.Client.GetBlockByHeight(p); err != nil {
-			return false, err
-		}
-
-		if thb, err = HexBytesOf(blk.BlockHash); err != nil {
-			return false, err
-		}
-	}
-	if !bytes.Equal(hb, thb) {
-		return false, contract.ErrMismatchBlockID
-	}
-	return true, nil
+	return bi, nil
 }
 
-func (m *FinalityMonitor) HeightByID(id contract.BlockID) (int64, error) {
+func (f *FinalitySupplier) HeightByID(id contract.BlockID) (int64, error) {
 	hb, err := HexBytesOf(id)
 	if err != nil {
 		return 0, errors.Wrapf(err, "invalid BlockID err:%v", err.Error())
@@ -235,36 +113,42 @@ func (m *FinalityMonitor) HeightByID(id contract.BlockID) (int64, error) {
 	p := &client.BlockHashParam{
 		Hash: client.NewHexBytes(hb),
 	}
-	blk, err := m.Client.GetBlockByHash(p)
+	blk, err := f.Client.GetBlockByHash(p)
 	if err != nil {
 		return 0, err
 	}
 	return blk.Height, nil
 }
 
-func (m *FinalityMonitor) Start() (<-chan contract.BlockInfo, error) {
-	m.runMtx.Lock()
-	defer m.runMtx.Unlock()
-	if m.runCancel != nil {
-		return nil, errors.Errorf("already started")
+func (f *FinalitySupplier) Serve(ctx context.Context, last contract.BlockInfo, cb func(contract.BlockInfo)) error {
+	var height int64
+	if last != nil {
+		height = last.Height()
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	m.runCancel = cancel
-	m.ch = make(chan contract.BlockInfo, DefaultBlockInfoPoolSize)
-	go m.notify(ctx)
-	go m.monitor(ctx)
-	return m.ch, nil
+	req := &client.BlockRequest{
+		Height: client.NewHexInt(height),
+	}
+	resp := &BlockNotification{}
+	return f.Client.MonitorWithContext(ctx, "/block", req, resp, func(conn *websocket.Conn, v interface{}) {
+		switch n := v.(type) {
+		case *BlockNotification:
+			id, _ := n.Hash.Value()
+			height, _ := n.Height.Value()
+			bi := &BlockInfo{
+				id:     id,
+				height: height,
+			}
+			cb(bi)
+		case client.WSEvent:
+			f.l.Debugf("monitorBlock connected conn:%s", conn.LocalAddr().String())
+		case error:
+			f.l.Infof("err:%+v", n)
+		default:
+			f.l.Infof("err:%+v", errors.Errorf("not supported type %T", n))
+		}
+	})
 }
 
-func (m *FinalityMonitor) Stop() error {
-	m.runMtx.Lock()
-	defer m.runMtx.Unlock()
-	if m.runCancel == nil {
-		return errors.Errorf("already stopped")
-	}
-	m.runCancel()
-	m.runCancel = nil
-	m.ch = nil
-	m.setLast(nil)
-	return nil
+func NewFinalityMonitor(options contract.Options, c *client.Client, l log.Logger) (contract.FinalityMonitor, error) {
+	return contract.NewDefaultFinalityMonitor(options, NewFinalitySupplier(c, l), l)
 }

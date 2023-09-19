@@ -20,27 +20,28 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
+	"github.com/icon-project/btp-sdk/contract"
 )
 
-func finalityMonitor(t *testing.T, networkType string) *FinalityMonitor {
+const (
+	subscriptionBufferSize = 1
+)
+
+func finalityMonitor(t *testing.T, networkType string) contract.FinalityMonitor {
 	a := adaptor(t, networkType)
-	return a.FinalityMonitor().(*FinalityMonitor)
+	return a.FinalityMonitor()
 }
 
 func Test_FinalityMonitor(t *testing.T) {
 	m := finalityMonitor(t, NetworkTypeEth)
-	ch, err := m.Start()
-	if err != nil {
-		assert.FailNow(t, "fail to Start", err)
+	s := m.Subscribe(subscriptionBufferSize)
+	bi := <-s.C()
+	t.Logf("first bi:%s", bi)
+	s.Unsubscribe()
+	for bi = range s.C() {
+		t.Logf("buffered bi:%s", bi)
 	}
-loop:
-	for {
-		select {
-		case bi := <-ch:
-			t.Logf("bi:%s", bi)
-			err = m.Stop()
-			assert.NoError(t, err)
-			break loop
-		}
-	}
+	_, opened := <-s.C()
+	assert.False(t, opened)
 }
