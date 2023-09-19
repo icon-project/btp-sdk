@@ -90,13 +90,24 @@ type BaseEventCallback func(e BaseEvent) error
 type BlockInfo interface {
 	ID() BlockID
 	Height() int64
+	EqualID(id BlockID) (bool, error)
 }
 
 type FinalityMonitor interface {
-	Start() (<-chan BlockInfo, error)
-	Stop() error
 	IsFinalized(height int64, id BlockID) (bool, error)
 	HeightByID(id BlockID) (int64, error)
+	Subscribe(size uint) FinalitySubscription
+}
+
+type FinalitySubscription interface {
+	C() <-chan BlockInfo
+	Unsubscribe()
+}
+
+type FinalitySupplier interface {
+	Latest() (BlockInfo, error)
+	HeightByID(id BlockID) (int64, error)
+	Serve(context.Context, BlockInfo, func(BlockInfo)) error
 }
 
 type Adaptor interface {

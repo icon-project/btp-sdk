@@ -62,6 +62,7 @@ type Adaptor struct {
 type AdaptorOption struct {
 	NetworkID         client.HexInt     `json:"nid"`
 	TransportLogLevel contract.LogLevel `json:"transport_log_level,omitempty"`
+	FinalityMonitor   contract.Options  `json:"finality_monitor"`
 }
 
 func NewAdaptor(networkType string, endpoint string, options contract.Options, l log.Logger) (contract.Adaptor, error) {
@@ -72,8 +73,18 @@ func NewAdaptor(networkType string, endpoint string, options contract.Options, l
 	opt.TransportLogLevel = contract.LogLevel(contract.EnsureTransportLogLevel(opt.TransportLogLevel.Level()))
 	c := client.NewClient(endpoint, l)
 	c.Client = jsonrpc.NewJsonRpcClient(contract.NewHttpClient(opt.TransportLogLevel.Level(), l), endpoint)
-
-	fm := NewFinalityMonitor(c, l)
+	var (
+		fm  contract.FinalityMonitor
+		err error
+	)
+	switch networkType {
+	case NetworkTypeIcon:
+		if fm, err = NewFinalityMonitor(opt.FinalityMonitor, c, l); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.Errorf("not supported networkType:%s", networkType)
+	}
 	return &Adaptor{
 		Client:      c,
 		fm:          fm,
