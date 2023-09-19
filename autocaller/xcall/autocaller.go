@@ -271,7 +271,7 @@ func (c *AutoCaller) onCallMessage(network string, e contract.Event) error {
 		"_reqId": cm.ReqId,
 		"_data":  cm.Data,
 	}, contract.Options{
-		"Estimate": true,
+		"estimate": true,
 	})
 	if err != nil {
 		if ee, ok := err.(contract.EstimateError); ok && ee.Reason() == ReasonInvalidRequestId {
@@ -308,7 +308,9 @@ func (c *AutoCaller) onRollbackMessage(network string, e contract.Event) error {
 	}
 	txID, err := c.s.Invoke(network, MethodExecuteRollback, contract.Params{
 		"_sn": rm.Sn,
-	}, nil)
+	}, contract.Options{
+		"estimate": true,
+	})
 	if err != nil {
 		if ee, ok := err.(contract.EstimateError); ok &&
 			(ee.Reason() == ReasonInvalidSerialNum || ee.Reason() == ReasonRollbackNotEnabled) {

@@ -66,7 +66,7 @@ func NewCall(network string, e contract.Event) (*Call, error) {
 	if m.Sn, err = uint64Of(p["_sn"]); err != nil {
 		return nil, err
 	}
-	if m.Sn, err = uint64Of(p["_reqId"]); err != nil {
+	if m.ReqId, err = uint64Of(p["_reqId"]); err != nil {
 		return nil, err
 	}
 	if m.Data, err = contract.BytesOf(p["_data"]); err != nil {

@@ -121,12 +121,8 @@ func (f *FinalitySupplier) HeightByID(id contract.BlockID) (int64, error) {
 }
 
 func (f *FinalitySupplier) Serve(ctx context.Context, last contract.BlockInfo, cb func(contract.BlockInfo)) error {
-	var height int64
-	if last != nil {
-		height = last.Height()
-	}
 	req := &client.BlockRequest{
-		Height: client.NewHexInt(height),
+		Height: client.NewHexInt(last.Height()),
 	}
 	resp := &BlockNotification{}
 	return f.Client.MonitorWithContext(ctx, "/block", req, resp, func(conn *websocket.Conn, v interface{}) {
