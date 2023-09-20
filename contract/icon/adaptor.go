@@ -114,6 +114,9 @@ func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
 	p := &client.TransactionHashParam{Hash: client.NewHexBytes(txh)}
 	txr, err := a.GetTransactionResult(p)
 	if err != nil {
+		if je, ok := err.(*jsonrpc.Error); ok && je.Code == client.JsonrpcErrorCodeNotFound {
+			return nil, contract.ErrorCodeNotFoundTransaction.Wrapf(err, "not found txID:%v", p.Hash)
+		}
 		return nil, errors.Wrapf(err, "fail to GetTransactionResult err:%s", err.Error())
 	}
 	txBlkHeight, _ := txr.BlockHeight.Value()

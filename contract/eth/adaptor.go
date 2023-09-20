@@ -125,6 +125,9 @@ func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
 	}
 	txr, err := a.TransactionReceipt(context.Background(), common.BytesToHash(txh))
 	if err != nil {
+		if err == ethereum.NotFound {
+			return nil, contract.ErrorCodeNotFoundTransaction.Wrapf(err, "not found txID:%+v", id)
+		}
 		return nil, errors.Wrapf(err, "fail to TransactionReceipt err:%s", err.Error())
 	}
 	var txf *TxFailure
