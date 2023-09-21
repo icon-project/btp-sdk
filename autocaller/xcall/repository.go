@@ -17,6 +17,8 @@
 package xcall
 
 import (
+	"fmt"
+
 	"github.com/icon-project/btp2/common/errors"
 	"gorm.io/gorm"
 
@@ -50,26 +52,33 @@ func NewCall(network string, e contract.Event) (*Call, error) {
 			Name:    TaskCall,
 			Network: network,
 		},
-		EventHeight: e.BlockHeight(),
-	}
-	if e.Name() != EventCallMessage {
-		return nil, errors.Errorf("mismatch event name:%s expected:%s", e.Name(), EventCallMessage)
 	}
 	p := e.Params()
 	var err error
-	if m.From, err = stringOf(eventIndexedValue(p["_from"])); err != nil {
-		return nil, err
-	}
-	if m.To, err = stringOf(eventIndexedValue(p["_to"])); err != nil {
-		return nil, err
-	}
-	if m.Sn, err = uint64Of(p["_sn"]); err != nil {
-		return nil, err
+	switch e.Name() {
+	case EventCallMessage:
+		m.EventHeight = e.BlockHeight()
+		if m.From, err = stringOf(eventIndexedValue(p["_from"])); err != nil {
+			return nil, err
+		}
+		if m.To, err = stringOf(eventIndexedValue(p["_to"])); err != nil {
+			return nil, err
+		}
+		if m.Sn, err = uint64Of(p["_sn"]); err != nil {
+			return nil, err
+		}
+		if m.Data, err = contract.BytesOf(p["_data"]); err != nil {
+			return nil, err
+		}
+	case EventCallExecuted:
+		m.State = autocaller.TaskStateDone
+		m.TxID = fmt.Sprintf("%s", e.TxID())
+		m.BlockHeight = e.BlockHeight()
+		m.BlockID = fmt.Sprintf("%s", e.BlockID())
+	default:
+		return nil, errors.Errorf("fail to NewCall event name:%s", e.Name())
 	}
 	if m.ReqId, err = uint64Of(p["_reqId"]); err != nil {
-		return nil, err
-	}
-	if m.Data, err = contract.BytesOf(p["_data"]); err != nil {
 		return nil, err
 	}
 	return m, nil
@@ -88,13 +97,20 @@ func NewRollback(network string, e contract.Event) (*Rollback, error) {
 			Name:    TaskRollback,
 			Network: network,
 		},
-		EventHeight: e.BlockHeight(),
-	}
-	if e.Name() != EventRollbackMessage {
-		return nil, errors.Errorf("mismatch event name:%s expected:%s", e.Name(), EventRollbackMessage)
 	}
 	p := e.Params()
 	var err error
+	switch e.Name() {
+	case EventRollbackMessage:
+		m.EventHeight = e.BlockHeight()
+	case EventRollbackExecuted:
+		m.State = autocaller.TaskStateDone
+		m.TxID = fmt.Sprintf("%s", e.TxID())
+		m.BlockHeight = e.BlockHeight()
+		m.BlockID = fmt.Sprintf("%s", e.BlockID())
+	default:
+		return nil, errors.Errorf("fail to NewRollback event name:%s", e.Name())
+	}
 	if m.Sn, err = uint64Of(p["_sn"]); err != nil {
 		return nil, err
 	}
@@ -119,6 +135,12 @@ func (r *CallRepository) FindOneByNetworkOrderByEventHeightDesc(network string) 
 		Task: autocaller.Task{
 			Network: network,
 		},
+	})
+}
+
+func (r *CallRepository) SaveIfFoundStateIsNotDone(v *Call) (bool, error) {
+	return r.Repository.SaveIf(v, func(found *Call) bool {
+		return found == nil || found.State != autocaller.TaskStateDone
 	})
 }
 
@@ -150,6 +172,12 @@ func (r *RollbackRepository) FindOneByNetworkOrderByEventHeightDesc(network stri
 		Task: autocaller.Task{
 			Network: network,
 		},
+	})
+}
+
+func (r *RollbackRepository) SaveIfFoundStateIsNotDone(v *Rollback) (bool, error) {
+	return r.Repository.SaveIf(v, func(found *Rollback) bool {
+		return found == nil || found.State != autocaller.TaskStateDone
 	})
 }
 
