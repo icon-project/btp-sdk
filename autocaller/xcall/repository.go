@@ -123,7 +123,7 @@ func (r *CallRepository) FindOneByNetworkOrderByEventHeightDesc(network string) 
 }
 
 func NewCallRepository(db *gorm.DB) (*CallRepository, error) {
-	r, err := database.NewDefaultRepository(db, CallTable, Call{})
+	r, err := database.NewDefaultRepository[Call](db, CallTable)
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (r *RollbackRepository) FindOneByNetworkOrderByEventHeightDesc(network stri
 }
 
 func NewRollbackRepository(db *gorm.DB) (*RollbackRepository, error) {
-	r, err := database.NewDefaultRepository(db, RollbackTable, Rollback{})
+	r, err := database.NewDefaultRepository[Rollback](db, RollbackTable)
 	if err != nil {
 		return nil, err
 	}

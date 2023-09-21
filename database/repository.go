@@ -18,7 +18,6 @@ package database
 
 import (
 	"math"
-	"reflect"
 	"time"
 
 	"gorm.io/gorm"
@@ -60,24 +59,17 @@ func (p *Page[T]) ToAny() *Page[any] {
 }
 
 type DefaultRepository[T any] struct {
-	db        *gorm.DB
-	name      string
-	model     T
-	modelType reflect.Type
-	sliceType reflect.Type
+	db   *gorm.DB
+	name string
 }
 
-func NewDefaultRepository[T any](db *gorm.DB, name string, model T) (*DefaultRepository[T], error) {
-	if err := db.Table(name).AutoMigrate(&model); err != nil {
+func NewDefaultRepository[T any](db *gorm.DB, name string) (*DefaultRepository[T], error) {
+	if err := db.Table(name).AutoMigrate(new(T)); err != nil {
 		return nil, err
 	}
-	modelType := reflect.TypeOf(model)
 	return &DefaultRepository[T]{
-		db:        db,
-		name:      name,
-		model:     model,
-		modelType: modelType,
-		sliceType: reflect.SliceOf(modelType),
+		db:   db,
+		name: name,
 	}, nil
 }
 
