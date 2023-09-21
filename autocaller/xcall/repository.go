@@ -102,7 +102,7 @@ func NewRollback(network string, e contract.Event) (*Rollback, error) {
 }
 
 type CallRepository struct {
-	*database.DefaultRepository[Call]
+	database.Repository[Call]
 }
 
 func (r *CallRepository) FindOneByNetworkAndReqID(network string, reqID uint64) (*Call, error) {
@@ -128,12 +128,12 @@ func NewCallRepository(db *gorm.DB) (*CallRepository, error) {
 		return nil, err
 	}
 	return &CallRepository{
-		DefaultRepository: r,
+		Repository: r,
 	}, nil
 }
 
 type RollbackRepository struct {
-	*database.DefaultRepository[Rollback]
+	database.Repository[Rollback]
 }
 
 func (r *RollbackRepository) FindOneByNetworkAndSn(network string, sn uint64) (*Rollback, error) {
@@ -159,6 +159,6 @@ func NewRollbackRepository(db *gorm.DB) (*RollbackRepository, error) {
 		return nil, err
 	}
 	return &RollbackRepository{
-		DefaultRepository: r,
+		Repository: r,
 	}, nil
 }
