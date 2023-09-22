@@ -297,7 +297,8 @@ func (a *Adaptor) MonitorEvent(
 					blk, _ := a.GetBlockByHeight(bp)
 					for _, e := range es {
 						e.txHash, _ = blk.NormalTransactions[e.txIndex].TxHash.Value()
-						if cb(e) != nil {
+						if err := cb(e); err != nil {
+							a.l.Debugf("EventCallback returns err:%+v", err)
 							conn.Close()
 						}
 					}
