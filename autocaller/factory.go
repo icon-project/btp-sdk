@@ -105,11 +105,11 @@ func ParseTaskState(s string) (TaskState, error) {
 	case "sending":
 		return TaskStateSending, nil
 	case "skip":
-		return TaskStateSending, nil
+		return TaskStateSkip, nil
 	case "done":
-		return TaskStateSending, nil
+		return TaskStateDone, nil
 	case "error":
-		return TaskStateSending, nil
+		return TaskStateError, nil
 	default:
 		return TaskStateNone, errors.Errorf("invalid TaskState str:%s", s)
 	}
