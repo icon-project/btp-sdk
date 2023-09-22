@@ -111,14 +111,13 @@ func (r *DefaultRepository[T]) SaveIf(v *T, predicate func(found *T) bool) (bool
 			ret := tx.(*DefaultRepository[T]).table()
 			found := new(T)
 			*found = *v
-			err := ret.First(found).Error
-			if err != nil {
+			if err := filterError(ret.First(found).Error); err != nil {
 				return err
 			}
 			if save = predicate(found); !save {
 				return nil
 			}
-			return ret.Save(v).Error
+			return tx.Save(v)
 		},
 	)
 	return save, err
