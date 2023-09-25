@@ -12,10 +12,10 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/contract/eth"
 	"github.com/icon-project/btp-sdk/contract/icon"
+	"github.com/icon-project/btp-sdk/database"
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
 	"github.com/icon-project/btp-sdk/tracker"
-	"github.com/icon-project/btp-sdk/utils"
 )
 
 const (
@@ -74,12 +74,13 @@ var (
 			},
 		},
 	}
-	storageConfig = utils.StorageConfig{
-		DBType:   "mysql",
-		HostName: "127.0.0.1:3306",
-		DBName:   "btp_sdk",
-		UserName: "test",
+	Database = database.Config{
+		Driver: "mysql",
+		User: "test",
 		Password: "test1234",
+		Host: "127.0.0.1",
+		Port: 3306,
+		DBName: "btp_sdk",
 	}
 )
 
@@ -119,7 +120,7 @@ func Test_Tracker(t *testing.T) {
 	s := NewTestService(t, l)
 	fmt.Println("Service Name: ", s.Name())
 
-	db, _ := utils.NewStorage(storageConfig)
+	db, _ := database.OpenDatabase(Database)
 
 	tkr := NewTestTracker(t, s, db, l)
 	fmt.Println("Tracker Name: ", tkr.Name())
@@ -136,7 +137,6 @@ func NewTestTracker(t *testing.T, s service.Service, db *gorm.DB, l log.Logger) 
 	for network, config := range configs {
 		networks[network] = tracker.Network{
 			NetworkType: config.NetworkType,
-			Adaptor:     adaptor(t, network),
 			Options:     MustEncodeOptions(config.TrackerOption),
 		}
 	}

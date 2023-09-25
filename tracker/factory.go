@@ -17,20 +17,20 @@
 package tracker
 
 import (
-	"github.com/icon-project/btp-sdk/contract"
-	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
 	"gorm.io/gorm"
+
+	"github.com/icon-project/btp-sdk/contract"
+	"github.com/icon-project/btp-sdk/service"
 )
 
 type Tracker interface {
-	DB() *gorm.DB
 	Name() string
 	Start() error //default monitorBTPEvent,  TODO xCallEvent, blockFinalize
 	Stop() error
 	//MonitorXCallEvent() error
-	//BlockFinalize() error
+	//APIHandler() *bmc.TrackerAPIHandler
 }
 
 type Network struct {
@@ -38,6 +38,8 @@ type Network struct {
 	Adaptor     contract.Adaptor
 	Options     contract.Options
 }
+
+type Options map[string]interface{}
 type Factory func(service.Service, map[string]Network, *gorm.DB, log.Logger) (Tracker, error)
 
 var (

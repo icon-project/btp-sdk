@@ -23,8 +23,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/icon-project/btp-sdk/utils"
-
 	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/types"
 	"github.com/stretchr/testify/assert"
@@ -53,13 +51,6 @@ var (
 		Address:           serverAddress,
 		TransportLogLevel: contract.LogLevel(serverLogLevel),
 		PingIntervalSec:   pingIntervalSec,
-		Storage: utils.StorageConfig{
-			DBType:   "mysql",
-			HostName: "127.0.0.1:3306",
-			DBName:   "btp_sdk",
-			UserName: "test",
-			Password: "test1234",
-		},
 	}
 )
 

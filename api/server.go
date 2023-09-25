@@ -7,15 +7,9 @@ import (
 	"io"
 	"net/http"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"gorm.io/gorm"
-
-	"github.com/icon-project/btp-sdk/tracker/storage/repository"
-	"github.com/icon-project/btp-sdk/utils"
 
 	"github.com/gorilla/websocket"
 	"github.com/icon-project/btp2/common/errors"
@@ -33,6 +27,7 @@ import (
 	"github.com/icon-project/btp-sdk/service/bmc"
 	"github.com/icon-project/btp-sdk/service/dappsample"
 	"github.com/icon-project/btp-sdk/service/xcall"
+	"github.com/icon-project/btp-sdk/tracker"
 	"github.com/icon-project/btp-sdk/web"
 )
 
@@ -48,7 +43,6 @@ const (
 	PathParamServiceOrAddress = "serviceOrAddress"
 	PathParamMethod           = "method"
 	PathParamService          = "service"
-	PathParamId               = "id"
 
 	QueryParamNetwork = "network"
 	QueryParamService = "service"
@@ -82,16 +76,15 @@ type ServerConfig struct {
 	Address           string               `json:"address"`
 	TransportLogLevel contract.LogLevel    `json:"transport_log_level,omitempty"`
 	PingIntervalSec   int                  `json:"ping_interval_sec,omitempty"`
-	Storage           utils.StorageConfig `json:"storage"`
 }
 
 type Server struct {
 	e    *echo.Echo
-	db   *gorm.DB
 	cfg  ServerConfig
 	aMap map[string]contract.Adaptor
 	sMap map[string]service.Service
 	cMap map[string]autocaller.AutoCaller
+	tMap map[string]tracker.Tracker
 	mtx  sync.RWMutex
 	oasp *OpenAPISpecProvider
 	u    websocket.Upgrader
@@ -115,16 +108,14 @@ func NewServer(cfg ServerConfig, l log.Logger) (*Server, error) {
 	e.Validator = NewValidator()
 	e.HTTPErrorHandler = HttpErrorHandler
 
-	db, _ := utils.NewStorage(cfg.Storage)
-
 	sl := Logger(l)
 	return &Server{
 		e:       e,
-		db:      db,
 		cfg:     cfg,
 		aMap:    make(map[string]contract.Adaptor),
 		sMap:    make(map[string]service.Service),
 		cMap:    make(map[string]autocaller.AutoCaller),
+		tMap: 	 make(map[string]tracker.Tracker),
 		oasp:    NewOpenAPISpecProvider(sl),
 		l:       sl,
 		Signers: make(map[string]service.Signer),
@@ -176,6 +167,19 @@ func (s *Server) GetAutoCaller(name string) autocaller.AutoCaller {
 	return s.cMap[name]
 }
 
+func (s *Server) SetTracker(t tracker.Tracker) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	s.tMap[t.Name()] = t
+	s.l.Debugf("SetTracker %s", t.Name())
+}
+
+func (s *Server) GetTracker(name string) tracker.Tracker {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	return s.tMap[name]
+}
+
 func (s *Server) Start() error {
 	s.l.Infoln("starting the server")
 	// CORS middleware
@@ -188,7 +192,7 @@ func (s *Server) Start() error {
 	s.RegisterAPIDocHandler(s.e.Group(GroupUrlApiDocs))
 	s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
 	s.RegisterAutoCallerHandler(s.e.Group(GroupUrlAutoCaller))
-	s.RegisterTrackerHandler(s.e.Group(GroupUrlTracker))
+	//TODO Register tracker api handler
 	web.RegisterWebHandler(s.e.Group(GroupUrlWeb))
 	return s.e.Start(s.cfg.Address)
 }
@@ -804,54 +808,54 @@ func (s *Server) RegisterAutoCallerHandler(g *echo.Group) {
 	})
 }
 
-func (s *Server) RegisterTrackerHandler(g *echo.Group) {
-	g.GET("/summary", func(c echo.Context) error {
-		ret, err := repository.SummaryOfBtpStatusByNetworks(s.db)
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusOK, ret)
-	})
-	g.GET("/search", func(c echo.Context) error {
-		src := c.QueryParam("src")
-		strNsn := c.QueryParam("nsn")
-		nsn, _ := strconv.ParseInt(strNsn, 10, 64)
-		ret, err := repository.GetBtpStatusBySrcAndNsn(s.db, src, nsn)
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusOK, ret)
-	})
-	g.GET("/status/latest", func(c echo.Context) error {
-		p := utils.DefaultPageable()
-
-		var btpStatus []*repository.BTPStatus
-		page, err := utils.Paginate(s.db, p, btpStatus, repository.BTPStatus{})
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusOK, page)
-	})
-	g.GET("/status", func(c echo.Context) error {
-		p := utils.GetPageableFromRequest(c)
-		var btpStatus []*repository.BTPStatus
-		page, err := utils.Paginate(s.db, p, btpStatus, repository.BTPStatus{})
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusOK, page)
-	})
-	g.GET("/status/:"+PathParamId, func(c echo.Context) error {
-		id, _ := strconv.Atoi(c.Param(PathParamId))
-		ret, err := repository.SelectBtpStatusBy(s.db, repository.BTPStatus{
-			Id: id,
-		})
-		if err != nil {
-			return err
-		}
-		return c.JSON(http.StatusOK, ret)
-	})
-}
+//func (s *Server) RegisterTrackerHandler(g *echo.Group) {
+//	g.GET("/summary", func(c echo.Context) error {
+//		ret, err := repository.SummaryOfBtpStatusByNetworks(s.db)
+//		if err != nil {
+//			return err
+//		}
+//		return c.JSON(http.StatusOK, ret)
+//	})
+//	g.GET("/search", func(c echo.Context) error {
+//		src := c.QueryParam("src")
+//		strNsn := c.QueryParam("nsn")
+//		nsn, _ := strconv.ParseInt(strNsn, 10, 64)
+//		ret, err := repository.GetBtpStatusBySrcAndNsn(s.db, src, nsn)
+//		if err != nil {
+//			return err
+//		}
+//		return c.JSON(http.StatusOK, ret)
+//	})
+//	g.GET("/status/latest", func(c echo.Context) error {
+//		p := utils.DefaultPageable()
+//
+//		var btpStatus []*repository.BTPStatus
+//		page, err := utils.Paginate(s.db, p, btpStatus, repository.BTPStatus{})
+//		if err != nil {
+//			return err
+//		}
+//		return c.JSON(http.StatusOK, page)
+//	})
+//	g.GET("/status", func(c echo.Context) error {
+//		p := utils.GetPageableFromRequest(c)
+//		var btpStatus []*repository.BTPStatus
+//		page, err := utils.Paginate(s.db, p, btpStatus, repository.BTPStatus{})
+//		if err != nil {
+//			return err
+//		}
+//		return c.JSON(http.StatusOK, page)
+//	})
+//	g.GET("/status/:"+PathParamId, func(c echo.Context) error {
+//		id, _ := strconv.Atoi(c.Param(PathParamId))
+//		ret, err := repository.SelectBtpStatusBy(s.db, repository.BTPStatus{
+//			Id: id,
+//		})
+//		if err != nil {
+//			return err
+//		}
+//		return c.JSON(http.StatusOK, ret)
+//	})
+//}
 
 func (s *Server) Stop() error {
 	s.l.Infoln("shutting down the server")
