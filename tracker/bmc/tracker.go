@@ -240,49 +240,67 @@ func (r *Tracker) monitorEvent(ctx context.Context, network string, efs []contra
 
 func (r *Tracker) handleBTPEvent(network string, e contract.Event) error {
 	na := r.getNetworkAddress(network)
-	hash, err := getBlockId(e)
+	hash, err := getParamString(e, "blockId")
 	height := e.BlockHeight()
 
 	b, err := r.storeBlock(na, hash, height)
 	if err != nil {
 		return err
 	}
-	
-	_, err = r.storeBtpStatus(na, b.Id, e)
+	src, err := getParamString(e, "src")
 	if err != nil {
-		return err
+		return errors.Errorf("invalid _src type:%T", e.Params()["_src"])
 	}
-	return nil
+	nsn, err := getParamInt64(e, "nsn")
+	if err != nil {
+		return errors.Errorf("invalid _nsn type:%T", e.Params()["_nsn"])
+	}
+
+	bs, err := r.storeBtpStatus(src, na, nsn)
+
+	err = r.storeBtpEvent(e, src, nsn, b.Id, bs.Id, na)
+
+	err = r.updateLink(bs, src, na, nsn )
+
+	return err
 }
 
-func getSrc(e contract.Event) (string, error) {
-	p := e.Params()["_src"]
-	log.Debugf("_src type: %T value: %v", p, p)
-	src, err := contract.StringOf(eventIndexedValue(p))
+func getParamString(e contract.Event, param string) (string , error){
+	var p interface{}
+	var err error
+	switch param {
+	case "src":
+		p = e.Params()["_src"]
+		log.Debugf("_src type: %T value: %v", p, p)
+	case "next":
+		p = e.Params()["_next"]
+		log.Debugf("_next type: %T value: %v", p, p)
+	case "event":
+		p = e.Params()["_event"]
+		log.Debugf("_event type: %T value: %v", p, p)
+	case "blockId":
+		p = e.BlockID()
+		log.Debugf("_blockId type: %T value: %v", p, p)
+	case "txId":
+		p = e.TxID()
+		log.Debugf("_txId type: %T value: %v", p, p)
+	}
+	value, err := contract.StringOf(eventIndexedValue(p))
 	if err != nil {
 		return "", err
 	}
-	return string(src), nil
+	return string(value), nil
 }
 
-func getBlockId(e contract.Event) (string, error) {
-	p := e.BlockID()
-	log.Debugf("_blockId type: %T value: %v", p, p)
-	bId, err := contract.StringOf(eventIndexedValue(p))
-	if err != nil {
-		return "", err
+func getParamInt64(e contract.Event, param string) (int64, error){
+	var p interface{}
+	var err error
+	switch param {
+	case "nsn":
+		p, err = e.Params()["_nsn"].(contract.Integer).AsInt64()
+		log.Debugf("_nsn type: %T value: %v", p, p)
 	}
-	return string(bId), nil
-}
-
-func getTxHash(e contract.Event) (string, error) {
-	p := e.TxID()
-	log.Debugf("_txId type: %T value: %v", p, p)
-	tId, err := contract.StringOf(eventIndexedValue(p))
-	if err != nil {
-		return "", err
-	}
-	return string(tId), nil
+	return p.(int64), err
 }
 
 func eventIndexedValue(p interface{}) interface{} {
@@ -297,66 +315,73 @@ func eventIndexedValue(p interface{}) interface{} {
 
 func (r *Tracker) storeBlock(na, hash string, height int64) (*Block, error) {
 	b, err := r.br.FindOneByNetworkAddressAndHeightAndHash(na, hash, height)
-	if b == nil {
-		err = r.br.SaveBlock(Block{
-			NetworkAddress: na,
-			BlockHash:      hash,
-			Height:         height,
-			Finalized:      false,
-		})
-		if err == nil {
-			b, _ = r.br.FindOneByNetworkAddressAndHeightAndHash(na, hash, height)
-		}
+	if err != nil {
+		return nil, err
 	}
-	return b, nil
+	if b != nil {
+		return b, nil
+	}
+	b = &Block{
+		NetworkAddress: na,
+		BlockHash:      hash,
+		Height:         height,
+		Finalized:      false,
+	}
+	err = r.br.Save(b)
+	if err != nil {
+		return nil, err
+	}
+	return r.br.FindOneByNetworkAddressAndHeightAndHash(na, hash, height)
 }
 
-func (r *Tracker) storeBtpStatus(na string, bId int, e contract.Event) (BTPStatus, error) {
-	src, err := getSrc(e)
+func (r *Tracker) storeBtpStatus(src, na string, nsn int64) (*BTPStatus, error) {
+	bs, err := r.sr.FindOneBySrcAndNsn(src, nsn)
 	if err != nil {
-		return BTPStatus{}, errors.Errorf("invalid _src type:%T", e.Params()["_src"])
+		return nil, err
 	}
-	nsn, _ := e.Params()["_nsn"].(contract.Integer).AsInt64()
-
-	// If btpStatus does not exist, it is created first.
-	bs, _ := r.sr.FindOneBySrcAndNsn(src, nsn)
-	if bs == nil {
-		err = r.sr.SaveBtpStatus(BTPStatus{
-			Src:         src,
-			LastNetwork: sql.NullString{String: na, Valid: true},
-			Status:      sql.NullString{String: BTPInDelivery, Valid: true},
-			Links:       sql.NullString{String: "", Valid: true},
-			Nsn:         nsn,
-			Finalized:   false,
-		})
-		if err == nil {
-			bs, _ = r.sr.FindOneBySrcAndNsn(src, nsn)
-		}
+	if bs != nil {
+		return bs, nil
 	}
+	bs = &BTPStatus{
+		Src:         src,
+		LastNetwork: sql.NullString{String: na, Valid: true},
+		Status:      sql.NullString{String: BTPInDelivery, Valid: true},
+		Links:       sql.NullString{String: "", Valid: true},
+		Nsn:         nsn,
+		Finalized:   false,
+	}
+	err = r.sr.Save(bs)
+	if err != nil {
+		return nil, err
+	}
+	return r.sr.FindOneBySrcAndNsn(src, nsn)
+}
 
+func (r *Tracker)storeBtpEvent(e contract.Event, src string, nsn int64, bId, bsId int, na string) error {
 	// Insert BTP Event with block id and btp status id
-	next := string(e.Params()["_next"].(contract.String))
-	be := string(e.Params()["_event"].(contract.String))
-
-	txHash, err := getTxHash(e)
+	next, err := getParamString(e, "next")
+	event, err := getParamString(e, "event")
+	txHash, err := getParamString(e, "txId")
 	if err != nil {
-		return BTPStatus{}, errors.Errorf("invalid _src type:%T", e.Params()["_src"])
+		return errors.Errorf("invalid _txId type:%T", e.Params()["_txId"])
 	}
+
 	identifier := []byte(strconv.Itoa(e.Identifier()))
-	err = r.er.SaveBtpEvent(BTPEvent{
+	be := &BTPEvent{
 		Src:         src,
 		Nsn:         nsn,
 		Next:        next,
-		Event:       be,
+		Event:       event,
 		BlockId:     bId,
-		BtpStatusId: bs.Id,
+		BtpStatusId: bsId,
 		TxHash:      txHash,
 		EventId:     identifier,
 		OccurredIn:  na,
-	})
-	if err != nil {
-		return BTPStatus{}, nil
 	}
+	return r.er.Save(be)
+}
+
+func (r *Tracker) updateLink(bs *BTPStatus, src, na string, nsn int64) error {
 	links, status := r.getLinks(src, nsn)
 	b, err := json.Marshal(links)
 	if err != nil {
@@ -374,11 +399,8 @@ func (r *Tracker) storeBtpStatus(na string, bId int, e contract.Event) (BTPStatu
 		String: na,
 		Valid:  true,
 	}
-	err = r.sr.SaveBtpStatus(*bs)
-	if err != nil {
-		return BTPStatus{}, err
-	}
-	return *bs, nil
+	err = r.sr.Save(bs)
+	return err
 }
 
 func (r *Tracker) getNetworkAddress(network string) string {
@@ -552,9 +574,7 @@ func (r *Tracker) handleFinalizeBlock(network Network, fm contract.FinalityMonit
 func (r *Tracker) finalizeBlock(fm contract.FinalityMonitor, block Block) error {
 	result, err := fm.IsFinalized(block.Height, block.BlockHash)
 	if err != nil {
-		if err == contract.ErrMismatchBlockID {
-			//TODO handle drop block and btp event
-		}
+		//TODO handle dropped block, also btp status and events
 		return err
 	}
 	if result {
@@ -564,6 +584,6 @@ func (r *Tracker) finalizeBlock(fm contract.FinalityMonitor, block Block) error 
 	return err
 }
 
-func (r *Tracker) APIHandler() *TrackerAPIHandler {
+func (r *Tracker) GetApiHandler() *TrackerAPIHandler {
 	return r.ah
 }

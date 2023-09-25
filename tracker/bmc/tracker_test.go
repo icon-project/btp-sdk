@@ -137,6 +137,7 @@ func NewTestTracker(t *testing.T, s service.Service, db *gorm.DB, l log.Logger) 
 	for network, config := range configs {
 		networks[network] = tracker.Network{
 			NetworkType: config.NetworkType,
+			Adaptor:     adaptor(t, network),
 			Options:     MustEncodeOptions(config.TrackerOption),
 		}
 	}
