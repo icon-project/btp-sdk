@@ -77,10 +77,11 @@ func NewMonitorCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.
 				return errors.New("require filter at least one")
 			}
 			for name, rawJson := range nameToRawJson {
-				var params contract.Params
+				var params []contract.Params
 				if len(rawJson) > 0 {
 					var b []byte
-					if strings.HasPrefix(strings.TrimSpace(rawJson), "{") {
+					trimed := strings.TrimSpace(rawJson)
+					if trimed[0] == '{' || trimed[0] == '[' {
 						b = []byte(rawJson)
 					} else {
 						if b, err = os.ReadFile(rawJson); err != nil {
@@ -91,11 +92,7 @@ func NewMonitorCommand(parentCmd *cobra.Command, parentVc *viper.Viper) (*cobra.
 						return err
 					}
 				}
-				l, ok := req.NameToParams[name]
-				if !ok {
-					l = make([]contract.Params, 0)
-				}
-				req.NameToParams[name] = append(l, params)
+				req.NameToParams[name] = params
 			}
 			ctx, cancel := context.WithCancel(context.Background())
 			cli.OnInterrupt(cancel)
