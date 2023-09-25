@@ -114,6 +114,9 @@ func (a *Adaptor) GetResult(id contract.TxID) (contract.TxResult, error) {
 	p := &client.TransactionHashParam{Hash: client.NewHexBytes(txh)}
 	txr, err := a.GetTransactionResult(p)
 	if err != nil {
+		if je, ok := err.(*jsonrpc.Error); ok && je.Code == client.JsonrpcErrorCodeNotFound {
+			return nil, contract.ErrorCodeNotFoundTransaction.Wrapf(err, "not found txID:%v", p.Hash)
+		}
 		return nil, errors.Wrapf(err, "fail to GetTransactionResult err:%s", err.Error())
 	}
 	txBlkHeight, _ := txr.BlockHeight.Value()
@@ -294,7 +297,8 @@ func (a *Adaptor) MonitorEvent(
 					blk, _ := a.GetBlockByHeight(bp)
 					for _, e := range es {
 						e.txHash, _ = blk.NormalTransactions[e.txIndex].TxHash.Value()
-						if cb(e) != nil {
+						if err := cb(e); err != nil {
+							a.l.Debugf("EventCallback returns err:%+v", err)
 							conn.Close()
 						}
 					}

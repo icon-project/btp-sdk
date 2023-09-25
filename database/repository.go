@@ -17,8 +17,8 @@
 package database
 
 import (
+	"database/sql"
 	"math"
-	"reflect"
 	"time"
 
 	"gorm.io/gorm"
@@ -59,25 +59,36 @@ func (p *Page[T]) ToAny() *Page[any] {
 	return r
 }
 
-type DefaultRepository[T any] struct {
-	db        *gorm.DB
-	name      string
-	model     T
-	modelType reflect.Type
-	sliceType reflect.Type
+type Repository[T any] interface {
+	Save(v *T) error
+	SaveIf(v *T, predicate func(found *T) bool) (bool, error)
+	Delete(query interface{}, conds ...interface{}) error
+	Exists(query interface{}, conds ...interface{}) (bool, error)
+	Count(query interface{}, conds ...interface{}) (int64, error)
+	FindByID(id interface{}) (*T, error)
+	FindOne(query interface{}, conds ...interface{}) (*T, error)
+	FindOneWithOrder(order string, query interface{}, conds ...interface{}) (*T, error)
+	Find(query interface{}, conds ...interface{}) ([]T, error)
+	FindWithOrder(order string, query interface{}, conds ...interface{}) ([]T, error)
+	Page(p Pageable, query interface{}, conds ...interface{}) (*Page[T], error)
+	Transaction(fc func(tx Repository[T]) error, opts ...*sql.TxOptions) error
+	Begin(opts ...*sql.TxOptions) (tx Repository[T])
+	Rollback()
+	Commit()
 }
 
-func NewDefaultRepository[T any](db *gorm.DB, name string, model T) (*DefaultRepository[T], error) {
-	if err := db.Table(name).AutoMigrate(&model); err != nil {
+type DefaultRepository[T any] struct {
+	db   *gorm.DB
+	name string
+}
+
+func NewDefaultRepository[T any](db *gorm.DB, name string) (*DefaultRepository[T], error) {
+	if err := db.Table(name).AutoMigrate(new(T)); err != nil {
 		return nil, err
 	}
-	modelType := reflect.TypeOf(model)
 	return &DefaultRepository[T]{
-		db:        db,
-		name:      name,
-		model:     model,
-		modelType: modelType,
-		sliceType: reflect.SliceOf(modelType),
+		db:   db,
+		name: name,
 	}, nil
 }
 
@@ -91,6 +102,25 @@ func (r *DefaultRepository[T]) table() *gorm.DB {
 
 func (r *DefaultRepository[T]) Save(v *T) error {
 	return r.table().Save(v).Error
+}
+
+func (r *DefaultRepository[T]) SaveIf(v *T, predicate func(found *T) bool) (bool, error) {
+	save := false
+	err := r.Transaction(
+		func(tx Repository[T]) error {
+			ret := tx.(*DefaultRepository[T]).table()
+			found := new(T)
+			*found = *v
+			if err := filterError(ret.First(found).Error); err != nil {
+				return err
+			}
+			if save = predicate(found); !save {
+				return nil
+			}
+			return tx.Save(v)
+		},
+	)
+	return save, err
 }
 
 func (r *DefaultRepository[T]) Delete(query interface{}, conds ...interface{}) error {
@@ -128,6 +158,15 @@ func filterError(err error) error {
 		return err
 	}
 	return nil
+}
+
+func (r *DefaultRepository[T]) FindByID(id interface{}) (*T, error) {
+	v := new(T)
+	err := r.table().First(v, id).Error
+	if err != nil {
+		return nil, filterError(err)
+	}
+	return v, nil
 }
 
 func (r *DefaultRepository[T]) FindOne(query interface{}, conds ...interface{}) (*T, error) {
@@ -194,4 +233,29 @@ func (r *DefaultRepository[T]) Page(p Pageable, query interface{}, conds ...inte
 		TotalPages:    totalPages,
 		Content:       l,
 	}, nil
+}
+
+func (r *DefaultRepository[T]) tx(tx *gorm.DB) *DefaultRepository[T] {
+	return &DefaultRepository[T]{
+		db:   tx,
+		name: r.name,
+	}
+}
+
+func (r *DefaultRepository[T]) Transaction(fc func(tx Repository[T]) error, opts ...*sql.TxOptions) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return fc(r.tx(tx))
+	}, opts...)
+}
+
+func (r *DefaultRepository[T]) Begin(opts ...*sql.TxOptions) (tx Repository[T]) {
+	return r.tx(r.db.Begin(opts...))
+}
+
+func (r *DefaultRepository[T]) Rollback() {
+	r.db.Rollback()
+}
+
+func (r *DefaultRepository[T]) Commit() {
+	r.db.Commit()
 }

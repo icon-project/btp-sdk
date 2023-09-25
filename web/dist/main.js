@@ -72,8 +72,7 @@ const ethereumProviderInput = document.getElementById('ethereumProviderInput')
 const ethereumProviderError = document.getElementById('ethereumProviderError')
 const META_MASK = "MetaMask";
 const HANA_WALLET = "HanaWallet";
-const hanaWalletEthereumProvider = hanaWalletEthereum();
-const metaMaskEthereumProvider = metaMaskEthereum();
+let ethereumProviders = {};
 let ethereumProvider;
 function hanaWalletEthereum() {
     if (window.hanaWallet && window.hanaWallet.available) {
@@ -83,12 +82,13 @@ function hanaWalletEthereum() {
     }
 }
 
-function metaMaskEthereum() {
+async function metaMaskEthereum() {
     // console.log(MetaMaskSDK);
     const opt = {
         forceInjectProvider: typeof window.ethereum === 'undefined',
     }
     const MMSDK = new MetaMaskSDK.MetaMaskSDK(opt);
+    await MMSDK.init();
     return MMSDK.getProvider() // You can also access via window.ethereum
 }
 
@@ -97,28 +97,10 @@ async function updateEthereumProvider() {
     ethereumProviderError.innerText = '';
     const selected = ethereumProviderInput.value;
     if (ethereumProvider === undefined) {
-        switch (selected) {
-            case META_MASK:
-                ethereumProvider = metaMaskEthereumProvider;
-                break;
-            case HANA_WALLET:
-                ethereumProvider = hanaWalletEthereumProvider;
-                break;
-        }
-    } else {
-        switch (selected) {
-            case META_MASK:
-                if (!ethereumProvider.isMetaMask || ethereumProvider.isHanaWallet) {
-                    ethereumProvider = metaMaskEthereumProvider;
-                }
-                break;
-            case HANA_WALLET:
-                if (!ethereumProvider.isHanaWallet) {
-                    ethereumProvider = hanaWalletEthereumProvider;
-                }
-                break;
-        }
+        ethereumProviders[META_MASK] = await metaMaskEthereum();
+        ethereumProviders[HANA_WALLET] = hanaWalletEthereum();
     }
+    ethereumProvider = ethereumProviders[selected];
     if (ethereumProvider.isConnected()) {
         return new Promise(resolve => resolve());
     }
