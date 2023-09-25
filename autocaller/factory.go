@@ -80,6 +80,7 @@ const (
 	TaskStateSkip
 	TaskStateDone
 	TaskStateError
+	TaskStateNotApplicable
 )
 
 func (s TaskState) String() string {
@@ -96,6 +97,8 @@ func (s TaskState) String() string {
 		return "done"
 	case TaskStateError:
 		return "error"
+	case TaskStateNotApplicable:
+		return "not_applicable"
 	default:
 		return ""
 	}
@@ -115,6 +118,8 @@ func ParseTaskState(s string) (TaskState, error) {
 		return TaskStateDone, nil
 	case "error":
 		return TaskStateError, nil
+	case "not_applicable":
+		return TaskStateNotApplicable, nil
 	default:
 		return TaskStateNone, errors.Errorf("invalid TaskState str:%s", s)
 	}
@@ -134,7 +139,7 @@ func (s *TaskState) UnmarshalJSON(input []byte) error {
 }
 
 func (s TaskState) MarshalJSON() ([]byte, error) {
-	if s < TaskStateNone || s > TaskStateError {
+	if s < TaskStateNone || s > TaskStateNotApplicable {
 		return nil, errors.New("invalid TaskState")
 	}
 	return json.Marshal(s.String())

@@ -104,6 +104,10 @@ type Rollback struct {
 	autocaller.Task
 	// EventHeight height of ResponseMessage event
 	EventHeight int64 `json:"event_height"`
+	// From address of caller
+	From string `json:"from"`
+	// To BTPAddress of callee
+	To string `json:"to"`
 	// Sn serial number of the request
 	Sn uint64 `json:"sn" gorm:"index"`
 	// ExecResultCode execution result code
@@ -122,8 +126,22 @@ func NewRollback(network string, e contract.Event) (*Rollback, error) {
 	p := e.Params()
 	var err error
 	switch e.Name() {
-	case EventRollbackMessage:
+	case EventCallMessageSent:
+		if m.From, err = stringOf(eventIndexedValue(p["_from"])); err != nil {
+			return nil, err
+		}
+		if m.To, err = stringOf(eventIndexedValue(p["_to"])); err != nil {
+			return nil, err
+		}
+	case EventResponseMessage:
 		m.EventHeight = e.BlockHeight()
+		var code int64
+		if code, err = int64Of(p["_code"]); err != nil {
+			return nil, err
+		}
+		if code == ExecuteResultCodeSuccess {
+			m.State = autocaller.TaskStateNotApplicable
+		}
 	case EventRollbackExecuted:
 		m.State = autocaller.TaskStateDone
 		m.TxID = fmt.Sprintf("%s", e.TxID())
