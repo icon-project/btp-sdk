@@ -76,6 +76,7 @@ type TaskState int
 const (
 	TaskStateNone TaskState = iota
 	TaskStateSending
+	TaskStateSent
 	TaskStateSkip
 	TaskStateDone
 	TaskStateError
@@ -87,6 +88,8 @@ func (s TaskState) String() string {
 		return "none"
 	case TaskStateSending:
 		return "sending"
+	case TaskStateSent:
+		return "sent"
 	case TaskStateSkip:
 		return "skip"
 	case TaskStateDone:
@@ -104,6 +107,8 @@ func ParseTaskState(s string) (TaskState, error) {
 		return TaskStateNone, nil
 	case "sending":
 		return TaskStateSending, nil
+	case "sent":
+		return TaskStateSent, nil
 	case "skip":
 		return TaskStateSkip, nil
 	case "done":

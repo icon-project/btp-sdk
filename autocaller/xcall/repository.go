@@ -29,21 +29,31 @@ import (
 )
 
 const (
-	TablePrefix            = "autocaller_" + xcall.ServiceName
-	CallTable              = TablePrefix + "_call"
-	RollbackTable          = TablePrefix + "_rollback"
-	orderByEventHeightDesc = "event_height desc"
+	TablePrefix              = "autocaller_" + xcall.ServiceName
+	CallTable                = TablePrefix + "_call"
+	RollbackTable            = TablePrefix + "_rollback"
+	orderByEventHeightDesc   = "event_height desc"
+	ExecuteResultCodeSuccess = 0
 )
 
 type Call struct {
 	autocaller.Task
-	From  string `json:"from"`
-	To    string `json:"to"`
-	Sn    uint64 `json:"sn"`
-	ReqId uint64 `json:"req_id" gorm:"index"`
-	Data  []byte `json:"data"`
-
+	// EventHeight height of CallMessage event
 	EventHeight int64 `json:"event_height"`
+	// From BTPAddress of caller
+	From string `json:"from"`
+	// To address of callee
+	To string `json:"to"`
+	// Sn serial number of the request, generated in source-chain
+	Sn uint64 `json:"sn"`
+	// ReqId serial number of the request, generated in destination-chain
+	ReqId uint64 `json:"req_id" gorm:"index"`
+	// Data calldata
+	Data []byte `json:"data"`
+	// ExecResultCode execution result code
+	ExecResultCode int64 `json:"exec_result_code"`
+	// ExecResultMsg execution result message
+	ExecResultMsg string `json:"exec_result_msg"`
 }
 
 func NewCall(network string, e contract.Event) (*Call, error) {
@@ -75,6 +85,12 @@ func NewCall(network string, e contract.Event) (*Call, error) {
 		m.TxID = fmt.Sprintf("%s", e.TxID())
 		m.BlockHeight = e.BlockHeight()
 		m.BlockID = fmt.Sprintf("%s", e.BlockID())
+		if m.ExecResultCode, err = int64Of(p["_code"]); err != nil {
+			return nil, err
+		}
+		if m.ExecResultMsg, err = stringOf(p["_msg"]); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, errors.Errorf("fail to NewCall event name:%s", e.Name())
 	}
@@ -86,9 +102,14 @@ func NewCall(network string, e contract.Event) (*Call, error) {
 
 type Rollback struct {
 	autocaller.Task
-	Sn uint64 `json:"sn" gorm:"index"`
-
+	// EventHeight height of ResponseMessage event
 	EventHeight int64 `json:"event_height"`
+	// Sn serial number of the request
+	Sn uint64 `json:"sn" gorm:"index"`
+	// ExecResultCode execution result code
+	ExecResultCode int64 `json:"exec_result_code"`
+	// ExecResultMsg execution result message
+	ExecResultMsg string `json:"exec_result_msg"`
 }
 
 func NewRollback(network string, e contract.Event) (*Rollback, error) {
@@ -108,6 +129,12 @@ func NewRollback(network string, e contract.Event) (*Rollback, error) {
 		m.TxID = fmt.Sprintf("%s", e.TxID())
 		m.BlockHeight = e.BlockHeight()
 		m.BlockID = fmt.Sprintf("%s", e.BlockID())
+		if m.ExecResultCode, err = int64Of(p["_code"]); err != nil {
+			return nil, err
+		}
+		if m.ExecResultMsg, err = stringOf(p["_msg"]); err != nil {
+			return nil, err
+		}
 	default:
 		return nil, errors.Errorf("fail to NewRollback event name:%s", e.Name())
 	}

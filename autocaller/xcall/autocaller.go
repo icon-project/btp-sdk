@@ -297,6 +297,8 @@ func (c *AutoCaller) onCallEvent(network string, e contract.Event) error {
 			found.TxID = cm.TxID
 			found.BlockHeight = cm.BlockHeight
 			found.BlockID = cm.BlockID
+			found.ExecResultCode = cm.ExecResultCode
+			found.ExecResultMsg = cm.ExecResultMsg
 		}
 		if found == nil {
 			c.l.Infof("missing Call CallExecuted:{Network:%s,ReqID:%v,EventHeight:%d}",
@@ -365,7 +367,7 @@ func (c *AutoCaller) callResult(cm *Call) {
 		c.onCallError(cm, txr.Failure().(error))
 		return
 	}
-	cm.State = autocaller.TaskStateDone
+	cm.State = autocaller.TaskStateSent
 	cm.BlockID = fmt.Sprintf("%s", txr.BlockID())
 	cm.BlockHeight = txr.BlockHeight()
 	if _, err = c.cr.SaveIfFoundStateIsNotDone(cm); err != nil {
@@ -412,6 +414,8 @@ func (c *AutoCaller) onRollbackEvent(network string, e contract.Event) error {
 			found.TxID = rm.TxID
 			found.BlockHeight = rm.BlockHeight
 			found.BlockID = rm.BlockID
+			found.ExecResultCode = rm.ExecResultCode
+			found.ExecResultMsg = rm.ExecResultMsg
 		}
 		if found == nil {
 			c.l.Infof("missing Rollback RollbackExecuted:{Network:%s,Sn:%v,EventHeight:%d}",
@@ -480,7 +484,7 @@ func (c *AutoCaller) rollbackResult(rm *Rollback) {
 		c.onRollbackError(rm, txr.Failure().(error))
 		return
 	}
-	rm.State = autocaller.TaskStateDone
+	rm.State = autocaller.TaskStateSent
 	rm.BlockID = fmt.Sprintf("%s", txr.BlockID())
 	rm.BlockHeight = txr.BlockHeight()
 	if _, err = c.rr.SaveIfFoundStateIsNotDone(rm); err != nil {
