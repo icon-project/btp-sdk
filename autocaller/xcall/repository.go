@@ -139,6 +139,10 @@ func (r *CallRepository) FindOneByNetworkOrderByEventHeightDesc(network string) 
 }
 
 func (r *CallRepository) SaveIfFoundStateIsNotDone(v *Call) (bool, error) {
+	if v.ID == 0 {
+		err := r.Repository.Save(v)
+		return true, err
+	}
 	return r.Repository.SaveIf(v, func(found *Call) bool {
 		return found == nil || found.State != autocaller.TaskStateDone
 	})
@@ -176,6 +180,10 @@ func (r *RollbackRepository) FindOneByNetworkOrderByEventHeightDesc(network stri
 }
 
 func (r *RollbackRepository) SaveIfFoundStateIsNotDone(v *Rollback) (bool, error) {
+	if v.ID == 0 {
+		err := r.Repository.Save(v)
+		return true, err
+	}
 	return r.Repository.SaveIf(v, func(found *Rollback) bool {
 		return found == nil || found.State != autocaller.TaskStateDone
 	})

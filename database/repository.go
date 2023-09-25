@@ -104,6 +104,9 @@ func (r *DefaultRepository[T]) Save(v *T) error {
 	return r.table().Save(v).Error
 }
 
+// SaveIf if predicate func returns true, save the given v.
+// the argument of predicate func is result of query by primary key of given v.
+// note : if given v has not primary key value, the found could be any record
 func (r *DefaultRepository[T]) SaveIf(v *T, predicate func(found *T) bool) (bool, error) {
 	save := false
 	err := r.Transaction(
