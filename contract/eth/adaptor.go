@@ -274,42 +274,29 @@ func (a *Adaptor) MonitorEvent(
 		}
 		return nil
 	}
-	filterLogsByHeader := func(bh *types.Header) error {
-		blkHash := bh.Hash()
-		fq.BlockHash = &blkHash
-		logs, err := a.Client.FilterLogs(ctx, *fq)
-		if err != nil {
-			return err
-		}
-		for _, el := range logs {
-			if err = onBaseEvent(NewBaseEvent(el)); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	var (
-		h *big.Int
-	)
-	onBlockHeader := func(bh *types.Header) error {
-		if h == nil && height > 0 {
-			fq.FromBlock = nil
-			h = big.NewInt(height)
-			for ; h.Cmp(bh.Number) < 0; h = h.Add(h, common.Big1) {
-				a.l.Tracef("onBlockHeader catchup height:%v to:%v", h, bh.Number)
-				if tbh, err := a.Client.HeaderByNumber(context.Background(), h); err != nil {
-					a.l.Errorf("failure HeaderByNumber(%v) err:%+v", h, err)
-					return err
-				} else if err = filterLogsByHeader(tbh); err != nil {
-					return err
-				}
-			}
-		}
-		a.l.Tracef("onBlockHeader height:%v", bh.Number)
-		return filterLogsByHeader(bh)
-	}
 	if err := a.MonitorBySubscribeFilterLogs(ctx, onBaseEvent, fq); err != nil {
 		if err == rpc.ErrNotificationsUnsupported {
+			catchup := height > 0
+			onBlockHeader := func(bh *types.Header) error {
+				fq.ToBlock = bh.Number
+				if catchup {
+					catchup = false
+					a.l.Tracef("FilterLogs range from:%v to:%v", fq.FromBlock, bh.Number)
+				} else {
+					fq.FromBlock = bh.Number
+					a.l.Tracef("FilterLogs height:%v", bh.Number)
+				}
+				logs, err := a.Client.FilterLogs(ctx, *fq)
+				if err != nil {
+					return err
+				}
+				for _, el := range logs {
+					if err = onBaseEvent(NewBaseEvent(el)); err != nil {
+						return err
+					}
+				}
+				return nil
+			}
 			a.l.Debugf("fail to MonitorBySubscribeFilterLogs, try MonitorByPollHead")
 			return monitorByPollHead(a.Client, a.l, ctx, onBlockHeader)
 		}
