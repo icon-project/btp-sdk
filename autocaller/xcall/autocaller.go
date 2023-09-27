@@ -35,8 +35,11 @@ import (
 )
 
 const (
+	EventCallMessageSent     = "CallMessageSent"
 	EventCallMessage         = "CallMessage"
-	EventRollbackMessage     = "RollbackMessage"
+	EventCallExecuted        = "CallExecuted"
+	EventResponseMessage     = "ResponseMessage"
+	EventRollbackExecuted    = "RollbackExecuted"
 	MethodExecuteCall        = "executeCall"
 	MethodExecuteRollback    = "executeRollback"
 	ReasonInvalidRequestId   = "InvalidRequestId"
@@ -44,6 +47,7 @@ const (
 	ReasonRollbackNotEnabled = "RollbackNotEnabled"
 	TaskCall                 = "call"
 	TaskRollback             = "rollback"
+	DefaultGetResultInterval = 2 * time.Second
 )
 
 func init() {
@@ -96,6 +100,7 @@ func NewAutoCaller(s service.Service, networks map[string]autocaller.Network, db
 		signers[network] = n.Signer
 	}
 	for fromNetwork, fn := range nMap {
+		cmsParams := make([]contract.Params, 0)
 		cmParams := make([]contract.Params, 0)
 		for _, fa := range fn.Options.Contracts {
 			from := types.BtpAddress(fmt.Sprintf("btp://%s/%s", fn.Options.NetworkAddress, fa))
@@ -105,6 +110,10 @@ func NewAutoCaller(s service.Service, networks map[string]autocaller.Network, db
 				}
 				for _, ta := range tn.Options.Contracts {
 					to := types.BtpAddress(fmt.Sprintf("btp://%s/%s", tn.Options.NetworkAddress, ta))
+					cmsParams = append(cmsParams, contract.Params{
+						"_from": contract.Address(from.ContractAddress()),
+						"_to":   to.String(),
+					})
 					cmParams = append(cmParams, contract.Params{
 						"_from": to.String(),
 						"_to":   from.ContractAddress(),
@@ -113,8 +122,11 @@ func NewAutoCaller(s service.Service, networks map[string]autocaller.Network, db
 			}
 		}
 		nameToParams := map[string][]contract.Params{
-			EventCallMessage:     cmParams,
-			EventRollbackMessage: nil,
+			EventCallMessage:      cmParams,
+			EventCallExecuted:     nil,
+			EventCallMessageSent:  cmsParams,
+			EventResponseMessage:  nil,
+			EventRollbackExecuted: nil,
 		}
 		l.Debugf("fromNetwork:%s nameToParams:%v", fromNetwork, nameToParams)
 		efs, err := s.EventFilters(fromNetwork, nameToParams)
@@ -140,9 +152,8 @@ func NewAutoCaller(s service.Service, networks map[string]autocaller.Network, db
 		s:    ss,
 		nMap: nMap,
 		l:    l,
-		//
-		cr: cr,
-		rr: rr,
+		cr:   cr,
+		rr:   rr,
 	}, nil
 }
 
@@ -198,13 +209,17 @@ func (c *AutoCaller) Find(fp autocaller.FindParam) (*database.Page[any], error) 
 	}
 }
 
+func (c *AutoCaller) onDatabaseError(err error, format string, args ...interface{}) {
+	c.l.Errorf("err:%+v msg:%s", err, fmt.Sprintf(format, args...))
+}
+
 func (c *AutoCaller) monitorEvent(ctx context.Context, network string, efs []contract.EventFilter, initHeight int64) {
 	for {
 		select {
 		case <-time.After(time.Second):
 			height, err := c.getMonitorHeight(network)
 			if err != nil {
-				c.l.Debugf("monitorEvent fail to getMonitorHeight network:%s err:%v", network, err)
+				c.onDatabaseError(err, "monitorEvent fail to getMonitorHeight network:%s", network)
 				continue
 			}
 			if height < 1 {
@@ -212,12 +227,11 @@ func (c *AutoCaller) monitorEvent(ctx context.Context, network string, efs []con
 			}
 			c.l.Debugf("monitorEvent network:%s height:%v", network, height)
 			if err = c.s.MonitorEvent(ctx, network, func(e contract.Event) error {
-				c.l.Tracef("monitorEvent callback network:%s event:%s height:%v", network, e.Name(), e.BlockHeight())
 				switch e.Name() {
-				case EventCallMessage:
-					return c.onCallMessage(network, e)
-				case EventRollbackMessage:
-					return c.onRollbackMessage(network, e)
+				case EventCallMessage, EventCallExecuted:
+					return c.onCallEvent(network, e)
+				case EventCallMessageSent, EventResponseMessage, EventRollbackExecuted:
+					return c.onRollbackEvent(network, e)
 				}
 				return nil
 			}, efs, height); err != nil {
@@ -250,82 +264,262 @@ func (c *AutoCaller) getMonitorHeight(network string) (height int64, err error) 
 	return height, nil
 }
 
-func (c *AutoCaller) onCallMessage(network string, e contract.Event) error {
+func (c *AutoCaller) onCallEvent(network string, e contract.Event) error {
 	cm, err := NewCall(network, e)
 	if err != nil {
 		return err
 	}
-	old, err := c.cr.FindOneByNetworkAndReqID(network, cm.ReqId)
+	c.l.Tracef("onCallEvent network:%s reqId:%v event:%s", cm.Network, cm.ReqId, e.Name())
+	found, err := c.cr.FindOneByNetworkAndReqID(cm.Network, cm.ReqId)
 	if err != nil {
+		c.onDatabaseError(err, "fail to FindOneByNetworkAndReqID network:%s, reqID:%v",
+			cm.Network, cm.ReqId)
 		return err
 	}
-	if old != nil {
-		if old.Sent {
-			c.l.Debugf("skip old CallMessage:{Network:%s,Sn:%v,ReqID:%v,EventHeight:%d}",
-				cm.Network, cm.Sn, cm.ReqId, cm.EventHeight)
+	switch e.Name() {
+	case EventCallMessage:
+		if found != nil {
+			switch found.State {
+			case autocaller.TaskStateNone:
+				cm.Model = found.Model
+			case autocaller.TaskStateSending:
+				//TODO [TBD] found.Event.Equal(cm.Event)
+				go c.callResult(found)
+				return nil
+			default:
+				c.l.Debugf("redundant CallMessage:{Network:%s,Sn:%v,ReqID:%v,EventHeight:%d}",
+					cm.Network, cm.Sn, cm.ReqId, cm.EventHeight)
+				return nil
+			}
+		}
+		c.executeCall(cm)
+	case EventCallExecuted:
+		if found == nil {
+			c.l.Debugf("missing CallMessage CallExecuted:{Network:%s,ReqID:%v,EventHeight:%d}",
+				cm.Network, cm.ReqId, e.BlockHeight())
 			return nil
 		}
-		cm.Task = old.Task
+		switch found.State {
+		case autocaller.TaskStateDone:
+			c.l.Debugf("redundant CallExecuted:{Network:%s,ReqID:%v,EventHeight:%d}",
+				cm.Network, cm.ReqId, e.BlockHeight())
+			return nil
+		default:
+			found.State = autocaller.TaskStateDone
+			found.TxID = cm.TxID
+			found.BlockHeight = cm.BlockHeight
+			found.BlockID = cm.BlockID
+			found.ExecResultCode = cm.ExecResultCode
+			found.ExecResultMsg = cm.ExecResultMsg
+			if err = c.cr.Save(found); err != nil {
+				c.onDatabaseError(err, "onCallEvent fail to Save CallExecuted:{Network:%s,ReqID:%v,EventHeight:%d}",
+					cm.Network, cm.ReqId, e.BlockHeight())
+			}
+			return err
+		}
 	}
-	txID, err := c.s.Invoke(network, MethodExecuteCall, contract.Params{
+	return nil
+}
+
+func (c *AutoCaller) executeCall(cm *Call) {
+	txID, err := c.s.Invoke(cm.Network, MethodExecuteCall, contract.Params{
 		"_reqId": cm.ReqId,
 		"_data":  cm.Data,
 	}, contract.Options{
 		"estimate": true,
 	})
 	if err != nil {
-		if ee, ok := err.(contract.EstimateError); ok && ee.Reason() == ReasonInvalidRequestId {
-			//TODO to ensure event processed, retry until CallExecuted(_reqId) emitted
-			cm.Sent = true
-			c.l.Debugf("skip %s CallMessage:{Network:%s,Sn:%v,ReqID:%v,EventHeight:%d}",
-				ee.Reason(), cm.Network, cm.Sn, cm.ReqId, cm.EventHeight)
-			return c.cr.Save(cm)
-		}
-		return err
+		c.onCallError(cm, err)
+		return
 	}
+	cm.State = autocaller.TaskStateSending
 	cm.TxID = fmt.Sprintf("%s", txID)
-	cm.Sent = true
 	c.l.Debugf("CallMessage:{Network:%s,Sn:%v,ReqID:%v,TxID:%v}", cm.Network, cm.Sn, cm.ReqId, cm.TxID)
-	return c.cr.Save(cm)
+	if _, err = c.cr.SaveIfFoundStateIsNotDone(cm); err != nil {
+		c.onDatabaseError(err, "executeCall fail to SaveIfFoundStateIsNotDone")
+	}
+	go c.callResult(cm)
 }
 
-func (c *AutoCaller) onRollbackMessage(network string, e contract.Event) error {
+func (c *AutoCaller) onCallError(cm *Call, err error) {
+	if ee, ok := err.(contract.EstimateError); ok && ee.Reason() == ReasonInvalidRequestId {
+		c.l.Debugf("skip %s CallMessage:{Network:%s,Sn:%v,ReqID:%v,EventHeight:%d} TxID:%s",
+			ee.Reason(), cm.Network, cm.Sn, cm.ReqId, cm.EventHeight, cm.TxID)
+		cm.State = autocaller.TaskStateSkip
+		cm.TxID = ""
+	} else {
+		cm.State = autocaller.TaskStateError
+		cm.Failure = err.Error()
+	}
+	if _, re := c.cr.SaveIfFoundStateIsNotDone(cm); re != nil {
+		c.onDatabaseError(re, "onCallError fail to SaveIfFoundStateIsNotDone")
+	}
+}
+
+func (c *AutoCaller) callResult(cm *Call) {
+	c.l.Debugf("callResult TxID:%s", cm.TxID)
+	txr, err := c.nMap[cm.Network].Adaptor.GetResult(cm.TxID)
+	if err != nil {
+		if contract.ErrorCodeNotFoundTransaction.Equals(err) {
+			cm.TxID = ""
+			c.executeCall(cm)
+			return
+		}
+		c.l.Debugf("callResult fail to GetResult TxID:%s err:%+v", cm.TxID, err)
+		<-time.After(DefaultGetResultInterval)
+		go c.callResult(cm)
+		return
+	}
+	if !txr.Success() {
+		c.onCallError(cm, txr.Failure().(error))
+		return
+	}
+	cm.State = autocaller.TaskStateSent
+	cm.BlockID = fmt.Sprintf("%s", txr.BlockID())
+	cm.BlockHeight = txr.BlockHeight()
+	if _, err = c.cr.SaveIfFoundStateIsNotDone(cm); err != nil {
+		c.onDatabaseError(err, "callResult fail to SaveIfFoundStateIsNotDone")
+	}
+}
+
+func (c *AutoCaller) onRollbackEvent(network string, e contract.Event) error {
 	rm, err := NewRollback(network, e)
 	if err != nil {
 		return err
 	}
-	old, err := c.rr.FindOneByNetworkAndSn(network, rm.Sn)
+	c.l.Tracef("onRollbackEvent network:%s sn:%v event:%s", rm.Network, rm.Sn, e.Name())
+	found, err := c.rr.FindOneByNetworkAndSn(rm.Network, rm.Sn)
 	if err != nil {
+		c.onDatabaseError(err, "fail to FindOneByNetworkAndSn network:%s, sn:%v",
+			rm.Network, rm.Sn)
 		return err
 	}
-	if old != nil {
-		if old.Sent {
-			c.l.Debugf("skip old RollbackMessage:{Network:%s,Sn:%v,EventHeight:%d}",
+	switch e.Name() {
+	case EventCallMessageSent:
+		if found != nil {
+			c.l.Debugf("redundant CallMessageSent:{Network:%s,Sn:%v,EventHeight:%d}",
 				rm.Network, rm.Sn, rm.EventHeight)
 			return nil
 		}
-		rm.Task = old.Task
+		return c.rr.Save(rm)
+	case EventResponseMessage:
+		if found == nil {
+			c.l.Debugf("missing CallMessageSent ResponseMessage:{Network:%s,Sn:%v,EventHeight:%d}",
+				rm.Network, rm.Sn, e.BlockHeight())
+			return nil
+		}
+		switch found.State {
+		case autocaller.TaskStateNone:
+			rm.Model = found.Model
+			if rm.State == autocaller.TaskStateNotApplicable {
+				if err = c.rr.Save(rm); err != nil {
+					c.onDatabaseError(err, "onRollbackEvent fail to Save ResponseMessage:{Network:%s,Sn:%v,EventHeight:%d}",
+						rm.Network, rm.Sn, rm.EventHeight)
+				}
+				return err
+			}
+		case autocaller.TaskStateSending:
+			//TODO [TBD] found.Event.Equal(rm.Event)
+			go c.rollbackResult(found)
+			return nil
+		default:
+			c.l.Debugf("redundant ResponseMessage:{Network:%s,Sn:%v,EventHeight:%d}",
+				rm.Network, rm.Sn, rm.EventHeight)
+			return nil
+		}
+		c.executeRollback(rm)
+	case EventRollbackExecuted:
+		if found == nil {
+			c.l.Debugf("missing CallMessageSent RollbackExecuted:{Network:%s,Sn:%v,EventHeight:%d}",
+				rm.Network, rm.Sn, e.BlockHeight())
+			return nil
+		}
+		switch found.State {
+		case autocaller.TaskStateDone:
+			c.l.Debugf("redundant RollbackExecuted:{Network:%s,Sn:%v,EventHeight:%d}",
+				rm.Network, rm.Sn, e.BlockHeight())
+			return nil
+		case autocaller.TaskStateNotApplicable:
+			c.l.Panicf("not applicable RollbackExecuted:{Network:%s,Sn:%v,EventHeight:%d}",
+				rm.Network, rm.Sn, e.BlockHeight())
+			return nil
+		default:
+			found.State = autocaller.TaskStateDone
+			found.TxID = rm.TxID
+			found.BlockHeight = rm.BlockHeight
+			found.BlockID = rm.BlockID
+			found.ExecResultCode = rm.ExecResultCode
+			found.ExecResultMsg = rm.ExecResultMsg
+			if err = c.rr.Save(found); err != nil {
+				c.onDatabaseError(err, "onRollbackEvent fail to Save RollbackExecuted:{Network:%s,Sn:%v,EventHeight:%d}",
+					rm.Network, rm.Sn, e.BlockHeight())
+			}
+			return err
+		}
 	}
-	txID, err := c.s.Invoke(network, MethodExecuteRollback, contract.Params{
+	return nil
+}
+
+func (c *AutoCaller) executeRollback(rm *Rollback) {
+	c.l.Debugf("executeRollback Rollback:{Network:%s,Sn:%v}", rm.Network, rm.Sn)
+	txID, err := c.s.Invoke(rm.Network, MethodExecuteRollback, contract.Params{
 		"_sn": rm.Sn,
 	}, contract.Options{
 		"estimate": true,
 	})
 	if err != nil {
-		if ee, ok := err.(contract.EstimateError); ok &&
-			(ee.Reason() == ReasonInvalidSerialNum || ee.Reason() == ReasonRollbackNotEnabled) {
-			//TODO to ensure event processed, retry until RollbackExecuted(_sn) emitted
-			rm.Sent = true
-			c.l.Debugf("skip %s RollbackMessage:{Network:%s,Sn:%v,EventHeight:%d}",
-				ee.Reason(), rm.Network, rm.Sn, rm.EventHeight)
-			return c.rr.Save(rm)
-		}
-		return err
+		c.onRollbackError(rm, err)
+		return
 	}
+	rm.State = autocaller.TaskStateSending
 	rm.TxID = fmt.Sprintf("%s", txID)
-	rm.Sent = true
 	c.l.Debugf("RollbackMessage:{Network:%s,Sn:%v,TxID:%v}", rm.Network, rm.Sn, rm.TxID)
-	return c.rr.Save(rm)
+	if _, err = c.rr.SaveIfFoundStateIsNotDone(rm); err != nil {
+		c.onDatabaseError(err, "executeRollback fail to SaveIfFoundStateIsNotDone")
+	}
+	go c.rollbackResult(rm)
+}
+
+func (c *AutoCaller) onRollbackError(rm *Rollback, err error) {
+	if ee, ok := err.(contract.EstimateError); ok &&
+		(ee.Reason() == ReasonInvalidSerialNum || ee.Reason() == ReasonRollbackNotEnabled) {
+		c.l.Debugf("skip %s RollbackMessage:{Network:%s,Sn:%v,EventHeight:%d}",
+			ee.Reason(), rm.Network, rm.Sn, rm.EventHeight)
+		rm.State = autocaller.TaskStateSkip
+		rm.TxID = ""
+	} else {
+		rm.State = autocaller.TaskStateError
+		rm.Failure = err.Error()
+	}
+	if _, re := c.rr.SaveIfFoundStateIsNotDone(rm); re != nil {
+		c.onDatabaseError(re, "onRollbackError fail to SaveIfFoundStateIsNotDone")
+	}
+}
+
+func (c *AutoCaller) rollbackResult(rm *Rollback) {
+	c.l.Debugf("rollbackResult TxID:%s", rm.TxID)
+	txr, err := c.nMap[rm.Network].Adaptor.GetResult(rm.TxID)
+	if err != nil {
+		if contract.ErrorCodeNotFoundTransaction.Equals(err) {
+			rm.TxID = ""
+			c.executeRollback(rm)
+			return
+		}
+		c.l.Debugf("rollbackResult fail to GetResult TxID:%s err:%+v", rm.TxID, err)
+		<-time.After(DefaultGetResultInterval)
+		go c.rollbackResult(rm)
+		return
+	}
+	if !txr.Success() {
+		c.onRollbackError(rm, txr.Failure().(error))
+		return
+	}
+	rm.State = autocaller.TaskStateSent
+	rm.BlockID = fmt.Sprintf("%s", txr.BlockID())
+	rm.BlockHeight = txr.BlockHeight()
+	if _, err = c.rr.SaveIfFoundStateIsNotDone(rm); err != nil {
+		c.onDatabaseError(err, "rollbackResult fail to SaveIfFoundStateIsNotDone")
+	}
 }
 
 func eventIndexedValue(p interface{}) interface{} {
@@ -339,11 +533,16 @@ func eventIndexedValue(p interface{}) interface{} {
 }
 
 func stringOf(v interface{}) (string, error) {
-	s, err := contract.StringOf(v)
-	if err != nil {
-		return "", err
+	switch s := v.(type) {
+	case contract.String:
+		return string(s), nil
+	case string:
+		return s, nil
+	case contract.Address:
+		return string(s), nil
+	default:
+		return "", contract.ErrorCodeInvalidParam.Errorf("invalid type %T", v)
 	}
-	return string(s), nil
 }
 
 func uint64Of(v interface{}) (uint64, error) {
@@ -352,4 +551,12 @@ func uint64Of(v interface{}) (uint64, error) {
 		return 0, err
 	}
 	return i.AsUint64()
+}
+
+func int64Of(v interface{}) (int64, error) {
+	i, err := contract.IntegerOf(v)
+	if err != nil {
+		return 0, err
+	}
+	return i.AsInt64()
 }

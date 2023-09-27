@@ -17,6 +17,8 @@
 package autocaller
 
 import (
+	"encoding/json"
+
 	"github.com/icon-project/btp2/common/errors"
 	"github.com/icon-project/btp2/common/log"
 	"gorm.io/gorm"
@@ -69,14 +71,87 @@ func NewAutoCaller(name string, s service.Service, networks map[string]Network, 
 	return nil, errors.Errorf("not found autocaller name:%s", name)
 }
 
+type TaskState int
+
+const (
+	TaskStateNone TaskState = iota
+	TaskStateSending
+	TaskStateSent
+	TaskStateSkip
+	TaskStateDone
+	TaskStateError
+	TaskStateNotApplicable
+)
+
+func (s TaskState) String() string {
+	switch s {
+	case TaskStateNone:
+		return "none"
+	case TaskStateSending:
+		return "sending"
+	case TaskStateSent:
+		return "sent"
+	case TaskStateSkip:
+		return "skip"
+	case TaskStateDone:
+		return "done"
+	case TaskStateError:
+		return "error"
+	case TaskStateNotApplicable:
+		return "not_applicable"
+	default:
+		return ""
+	}
+}
+
+func ParseTaskState(s string) (TaskState, error) {
+	switch s {
+	case "none":
+		return TaskStateNone, nil
+	case "sending":
+		return TaskStateSending, nil
+	case "sent":
+		return TaskStateSent, nil
+	case "skip":
+		return TaskStateSkip, nil
+	case "done":
+		return TaskStateDone, nil
+	case "error":
+		return TaskStateError, nil
+	case "not_applicable":
+		return TaskStateNotApplicable, nil
+	default:
+		return TaskStateNone, errors.Errorf("invalid TaskState str:%s", s)
+	}
+}
+
+func (s *TaskState) UnmarshalJSON(input []byte) error {
+	var str string
+	if err := json.Unmarshal(input, &str); err != nil {
+		return err
+	}
+	v, err := ParseTaskState(str)
+	if err != nil {
+		return err
+	}
+	*s = v
+	return nil
+}
+
+func (s TaskState) MarshalJSON() ([]byte, error) {
+	if s < TaskStateNone || s > TaskStateNotApplicable {
+		return nil, errors.New("invalid TaskState")
+	}
+	return json.Marshal(s.String())
+}
+
 type Task struct {
 	database.Model
-	Name    string `json:"name"`
-	Network string `json:"network" gorm:"index"`
-	Sent    bool   `json:"sent"`
-	TxID    string `json:"tx_id"`
-	//TODO monitor tx result
-	//TxBlockHeight int64  `json:"tx_block_height"`
-	//TxBlockID     string `json:"tx_block_id"`
-	//Done          bool   `json:"done"`
+	Name        string    `json:"name"`
+	Network     string    `json:"network" gorm:"index"`
+	State       TaskState `json:"state"`
+	TxID        string    `json:"tx_id"`
+	BlockHeight int64     `json:"block_height"`
+	BlockID     string    `json:"block_id"`
+	Failure     string    `json:"failure"`
 }

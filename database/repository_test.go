@@ -58,7 +58,7 @@ func Test_Repository(t *testing.T) {
 	if err != nil {
 		assert.FailNow(t, err.Error())
 	}
-	r, err := NewDefaultRepository[Struct](db, "struct", Struct{})
+	r, err := NewDefaultRepository[Struct](db, "struct")
 	if err != nil {
 		assert.FailNow(t, err.Error())
 	}
