@@ -19,6 +19,7 @@ package database
 import (
 	"database/sql"
 	"math"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -61,7 +62,7 @@ func (p *Page[T]) ToAny() *Page[any] {
 
 type Repository[T any] interface {
 	Save(v *T) error
-	SaveIf(v *T, predicate func(found *T) bool) (bool, error)
+	SaveIf(v *T, predicate func(found *T) bool, useLock bool) (bool, error)
 	Delete(query interface{}, conds ...interface{}) error
 	Exists(query interface{}, conds ...interface{}) (bool, error)
 	Count(query interface{}, conds ...interface{}) (int64, error)
@@ -80,6 +81,7 @@ type Repository[T any] interface {
 type DefaultRepository[T any] struct {
 	db   *gorm.DB
 	name string
+	mtx  *sync.Mutex
 }
 
 func NewDefaultRepository[T any](db *gorm.DB, name string) (*DefaultRepository[T], error) {
@@ -89,6 +91,7 @@ func NewDefaultRepository[T any](db *gorm.DB, name string) (*DefaultRepository[T
 	return &DefaultRepository[T]{
 		db:   db,
 		name: name,
+		mtx:  &sync.Mutex{},
 	}, nil
 }
 
@@ -107,23 +110,27 @@ func (r *DefaultRepository[T]) Save(v *T) error {
 // SaveIf if predicate func returns true, save the given v.
 // the argument of predicate func is result of query by primary key of given v.
 // note : if given v has not primary key value, the found could be any record
-func (r *DefaultRepository[T]) SaveIf(v *T, predicate func(found *T) bool) (bool, error) {
-	save := false
-	err := r.Transaction(
-		func(tx Repository[T]) error {
-			ret := tx.(*DefaultRepository[T]).table()
-			found := new(T)
-			*found = *v
-			if err := filterError(ret.First(found).Error); err != nil {
-				return err
+func (r *DefaultRepository[T]) SaveIf(v *T, predicate func(found *T) bool, useLock bool) (save bool, err error) {
+	if useLock {
+		r.mtx.Lock()
+		defer r.mtx.Unlock()
+	}
+	err = r.Transaction(func(tx Repository[T]) error {
+		ret := tx.(*DefaultRepository[T]).table()
+		found := new(T)
+		*found = *v
+		if fe := ret.First(found).Error; fe != nil {
+			if fe != gorm.ErrRecordNotFound {
+				return fe
 			}
-			if save = predicate(found); !save {
-				return nil
-			}
-			return tx.Save(v)
-		},
-	)
-	return save, err
+			found = nil
+		}
+		if save = predicate(found); !save {
+			return nil
+		}
+		return tx.Save(v)
+	})
+	return
 }
 
 func (r *DefaultRepository[T]) Delete(query interface{}, conds ...interface{}) error {
@@ -238,10 +245,11 @@ func (r *DefaultRepository[T]) Page(p Pageable, query interface{}, conds ...inte
 	}, nil
 }
 
-func (r *DefaultRepository[T]) tx(tx *gorm.DB) *DefaultRepository[T] {
+func (r *DefaultRepository[T]) tx(db *gorm.DB) *DefaultRepository[T] {
 	return &DefaultRepository[T]{
-		db:   tx,
+		db:   db,
 		name: r.name,
+		mtx:  r.mtx,
 	}
 }
 
