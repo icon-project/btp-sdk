@@ -26,6 +26,7 @@ const (
 	ErrorCodeInvalidOption
 	ErrorCodeRequireSignature
 	ErrorCodeNotFoundTransaction
+	ErrorCodeNotFoundBlock
 )
 
 var (

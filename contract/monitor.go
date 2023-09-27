@@ -192,25 +192,31 @@ func (m *DefaultFinalityMonitor) Last() (BlockInfo, error) {
 	return m.FinalitySupplier.Latest()
 }
 
-func (m *DefaultFinalityMonitor) IsFinalized(height int64, id BlockID) (bool, error) {
+func (m *DefaultFinalityMonitor) IsFinalized(height int64, id BlockID) (ret bool, err error) {
 	if height < 1 {
 		return false, errors.Errorf("invalid height:%d", height)
 	}
-	last, err := m.Last()
-	if err != nil {
-		return false, err
+	var last BlockInfo
+	if last, err = m.Last(); err != nil {
+		return
 	}
 	if height > last.Height() {
-		return false, nil
+		return
 	} else if height == last.Height() {
-		return last.EqualID(id)
-	} else {
-		ret, err := m.FinalitySupplier.HeightByID(id)
-		if err != nil {
-			return false, err
+		if ret, err = last.EqualID(id); err != nil {
+			return
 		}
-		return height == ret, nil
+	} else {
+		var h int64
+		if h, err = m.FinalitySupplier.HeightByID(id); err != nil {
+			return
+		}
+		ret = height == h
 	}
+	if !ret {
+		err = ErrorCodeNotFoundBlock.Errorf("not found block height:%v id:%s", height, id)
+	}
+	return
 }
 
 func (m *DefaultFinalityMonitor) Subscribe(size uint) FinalitySubscription {

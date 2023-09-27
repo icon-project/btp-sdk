@@ -25,6 +25,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -128,6 +129,9 @@ func (f *FinalitySupplier) HeightByID(id contract.BlockID) (int64, error) {
 	}
 	bh, err := f.Client.HeaderByHash(context.Background(), h)
 	if err != nil {
+		if err == ethereum.NotFound {
+			return 0, contract.ErrorCodeNotFoundBlock.Errorf("not found block:%s", id)
+		}
 		return 0, err
 	}
 	return bh.Number.Int64(), nil
