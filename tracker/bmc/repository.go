@@ -34,7 +34,7 @@ type BlockRepository struct {
 }
 
 func NewBlockRepository(db *gorm.DB) (*BlockRepository, error) {
-	r, err := database.NewDefaultRepository(db, BlockTable, Block{})
+	r, err := database.NewDefaultRepository[Block](db, BlockTable)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ type BTPStatusRepository struct {
 }
 
 func NewBTPStatusRepository(db *gorm.DB) (*BTPStatusRepository, error) {
-	r, err := database.NewDefaultRepository(db, StatusTable, BTPStatus{})
+	r, err := database.NewDefaultRepository[BTPStatus](db, StatusTable)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ type BTPEventRepository struct {
 }
 
 func NewBTPEventRepository(db *gorm.DB) (*BTPEventRepository, error) {
-	r, err := database.NewDefaultRepository(db, EventTable, BTPEvent{})
+	r, err := database.NewDefaultRepository[BTPEvent](db, EventTable)
 	if err != nil {
 		return nil, err
 	}
