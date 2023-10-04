@@ -22,15 +22,29 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/icon-project/btp-sdk/contract"
+	"github.com/icon-project/btp-sdk/database"
 	"github.com/icon-project/btp-sdk/service"
 )
 
 type Tracker interface {
 	Name() string
-	Start() error //default monitorBTPEvent,  TODO xCallEvent, blockFinalize
+	Start() error //TODO xCallEvent, default monitorBTPEvent
 	Stop() error
-	//MonitorXCallEvent() error
-	//APIHandler() *bmc.TrackerAPIHandler
+	Tasks() []string
+	Find(FindParam) (*database.Page[any], error)
+	FindOne(FindOneParam) (any, error)
+	Summary() ([]any, error)
+}
+
+type FindParam struct {
+	Task     string                 `json:"task"`
+	Pageable database.Pageable      `json:"pageable"`
+	Query    map[string]interface{} `json:"query"`
+}
+
+type FindOneParam struct {
+	Task     string                 `json:"task"`
+	Query    map[string]interface{} `json:"query"`
 }
 
 type Network struct {

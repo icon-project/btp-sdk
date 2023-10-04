@@ -43,6 +43,7 @@ const (
 	PathParamServiceOrAddress = "serviceOrAddress"
 	PathParamMethod           = "method"
 	PathParamService          = "service"
+	PathParamId = "id"
 
 	QueryParamNetwork = "network"
 	QueryParamService = "service"
@@ -193,6 +194,7 @@ func (s *Server) Start() error {
 	s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
 	s.RegisterAutoCallerHandler(s.e.Group(GroupUrlAutoCaller))
 	//TODO Register tracker api handler
+	s.RegisterTrackerHandler(s.e.Group(GroupUrlTracker))
 	web.RegisterWebHandler(s.e.Group(GroupUrlWeb))
 	return s.e.Start(s.cfg.Address)
 }
@@ -808,54 +810,109 @@ func (s *Server) RegisterAutoCallerHandler(g *echo.Group) {
 	})
 }
 
-//func (s *Server) RegisterTrackerHandler(g *echo.Group) {
-//	g.GET("/summary", func(c echo.Context) error {
-//		ret, err := repository.SummaryOfBtpStatusByNetworks(s.db)
-//		if err != nil {
-//			return err
-//		}
-//		return c.JSON(http.StatusOK, ret)
-//	})
-//	g.GET("/search", func(c echo.Context) error {
-//		src := c.QueryParam("src")
-//		strNsn := c.QueryParam("nsn")
-//		nsn, _ := strconv.ParseInt(strNsn, 10, 64)
-//		ret, err := repository.GetBtpStatusBySrcAndNsn(s.db, src, nsn)
-//		if err != nil {
-//			return err
-//		}
-//		return c.JSON(http.StatusOK, ret)
-//	})
-//	g.GET("/status/latest", func(c echo.Context) error {
-//		p := utils.DefaultPageable()
-//
-//		var btpStatus []*repository.BTPStatus
-//		page, err := utils.Paginate(s.db, p, btpStatus, repository.BTPStatus{})
-//		if err != nil {
-//			return err
-//		}
-//		return c.JSON(http.StatusOK, page)
-//	})
-//	g.GET("/status", func(c echo.Context) error {
-//		p := utils.GetPageableFromRequest(c)
-//		var btpStatus []*repository.BTPStatus
-//		page, err := utils.Paginate(s.db, p, btpStatus, repository.BTPStatus{})
-//		if err != nil {
-//			return err
-//		}
-//		return c.JSON(http.StatusOK, page)
-//	})
-//	g.GET("/status/:"+PathParamId, func(c echo.Context) error {
-//		id, _ := strconv.Atoi(c.Param(PathParamId))
-//		ret, err := repository.SelectBtpStatusBy(s.db, repository.BTPStatus{
-//			Id: id,
-//		})
-//		if err != nil {
-//			return err
-//		}
-//		return c.JSON(http.StatusOK, ret)
-//	})
-//}
+type TrackerInfo struct { //TODO what?
+	Name  string   `json:"name"`
+	Tasks []string `json:"tasks"`
+}
+type TrackerInfos []TrackerInfo
+
+func (s *Server) RegisterTrackerHandler(g *echo.Group) {
+	g.GET("", func(c echo.Context) error {
+		s.mtx.RLock()
+		defer s.mtx.RUnlock()
+		r := make(TrackerInfos, 0)
+		for _, v := range s.tMap {
+			r = append(r, TrackerInfo{v.Name(), v.Tasks()})
+		}
+		return c.JSON(http.StatusOK, r)
+	})
+	g.GET("/:"+PathParamService, func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		tr := s.GetTracker(p)
+		if tr == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Tracker(%s) not found", p))
+		}
+		task := c.QueryParam("task")
+		if len(task) == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "required query parameter: task")
+		}
+		if !service.StringSetContains(tr.Tasks(), task) {
+			return echo.NewHTTPError(http.StatusBadRequest,
+				fmt.Sprintf("invalid task(%s), must be one of {%s}", task, strings.Join(tr.Tasks(), ",")))
+		}
+		pageable := Pageable{}
+		if err := BindQueryParamsAndUnmarshalBody(c, &pageable); err != nil {
+			s.l.Debugf("fail to BindQueryParamsAndUnmarshalBody Pageable err:%+v", err)
+			return echo.ErrBadRequest
+		}
+		fp := tracker.FindParam{
+			Task: task,
+			Pageable: database.Pageable{
+				Page: uint(pageable.Page),
+				Size: uint(pageable.Size),
+				Sort: pageable.Sort,
+			},
+		}
+		m, err := QueryParamsToMap(c)
+		if err != nil {
+			return err
+		}
+		if tv, ok := m["query"]; ok {
+			if fp.Query, ok = tv.(map[string]interface{}); !ok {
+				return echo.NewHTTPError(http.StatusBadRequest,
+					fmt.Sprintf("invalid query(%v)", tv))
+			}
+		}
+		ret, err := tr.Find(fp)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+	g.GET("/:"+PathParamService+"/status/:" + PathParamId, func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		tr := s.GetTracker(p)
+		if tr == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Tracker(%s) not found", p))
+		}
+		id := c.Param(PathParamId)
+		task := c.QueryParam("task")
+		if len(task) == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "required query parameter: task")
+		}
+		if !service.StringSetContains(tr.Tasks(), task) {
+			return echo.NewHTTPError(http.StatusBadRequest,
+				fmt.Sprintf("invalid task(%s), must be one of {%s}", task, strings.Join(tr.Tasks(), ",")))
+		}
+		pm := make(map[string]interface{})
+		pm["id"] = id
+		fp := tracker.FindOneParam{
+			Task: task,
+			Query: pm,
+		}
+
+		ret, err := tr.FindOne(fp)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+	g.GET("/:"+PathParamService+"/summary", func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		tr := s.GetTracker(p)
+		if tr == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Tracker(%s) not found", p))
+		}
+		ret, err := tr.Summary()
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+}
 
 func (s *Server) Stop() error {
 	s.l.Infoln("shutting down the server")

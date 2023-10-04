@@ -118,7 +118,7 @@ func (r *BTPStatusRepository) FindOneBySrcAndNsn(src string, nsn int64) (*BTPSta
 	})
 }
 
-func (r *BTPStatusRepository) SummaryOfBtpStatusByNetworks() ([]NetworkSummary, error) {
+func (r *BTPStatusRepository) SummaryOfBtpStatusByNetworks() ([]any, error) {
 	//TODO summary table or view??
 	counts := make([]BTPStatusCount, 0)
 	result := r.db.Table(StatusTable).Select(
@@ -153,7 +153,7 @@ func (r *BTPStatusRepository) SummaryOfBtpStatusByNetworks() ([]NetworkSummary, 
 		}
 	}
 
-	sArr := make([]NetworkSummary, 0, len(nSummaries))
+	sArr := make([]any, 0, len(nSummaries))
 	for _, s := range nSummaries {
 		sArr = append(sArr, s)
 	}

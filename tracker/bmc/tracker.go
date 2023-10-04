@@ -31,6 +31,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/icon-project/btp-sdk/contract"
+	"github.com/icon-project/btp-sdk/database"
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
 	"github.com/icon-project/btp-sdk/tracker"
@@ -48,6 +49,9 @@ const (
 	REPLY   = "REPLY"
 	DROP    = "DROP"
 	ERROR   = "ERROR"
+	TaskStatus = "status"
+	TaskEvent = "event"
+	TaskSearch = "search"
 )
 
 const (
@@ -70,7 +74,6 @@ type Tracker struct {
 	br *BlockRepository
 	sr *BTPStatusRepository
 	er *BTPEventRepository
-	ah *TrackerAPIHandler
 }
 
 type Network struct {
@@ -130,7 +133,6 @@ func NewTracker(s service.Service, networks map[string]tracker.Network, db *gorm
 		fmMap[network] = n.Adaptor.FinalityMonitor()
 	}
 
-	//TODO set repository
 	br, err := NewBlockRepository(db)
 	if err != nil {
 		return nil, err
@@ -143,7 +145,6 @@ func NewTracker(s service.Service, networks map[string]tracker.Network, db *gorm
 	if err != nil {
 		return nil, err
 	}
-	ah, err := NewTrackerAPIHandler(sr)
 
 	return &Tracker{
 		db:    db,
@@ -155,7 +156,6 @@ func NewTracker(s service.Service, networks map[string]tracker.Network, db *gorm
 		br: br,
 		sr: sr,
 		er: er,
-		ah: ah,
 	}, nil
 }
 
@@ -165,6 +165,10 @@ func (r *Tracker) DB() *gorm.DB {
 
 func (r *Tracker) Name() string {
 	return r.s.Name()
+}
+
+func (r *Tracker) Tasks() []string {
+	return []string{TaskStatus, TaskEvent, TaskSearch}
 }
 
 func (r *Tracker) Start() error {
@@ -574,7 +578,11 @@ func (r *Tracker) handleFinalizeBlock(network Network, fm contract.FinalityMonit
 func (r *Tracker) finalizeBlock(fm contract.FinalityMonitor, block Block) error {
 	result, err := fm.IsFinalized(block.Height, block.BlockHash)
 	if err != nil {
-		//TODO handle dropped block, also btp status and events
+		//TODO err == ErrorCodeNotFoundBlock
+		// handle dropped block, also btp status and events
+		// suspend monitor event and unsubscribe block
+		// cleanup btp event, btp status and block
+		// resume monitor event and subscribe with recalculated height
 		return err
 	}
 	if result {
@@ -584,6 +592,44 @@ func (r *Tracker) finalizeBlock(fm contract.FinalityMonitor, block Block) error 
 	return err
 }
 
-func (r *Tracker) GetApiHandler() *TrackerAPIHandler {
-	return r.ah
+func (r *Tracker) Find(fp tracker.FindParam) (*database.Page[any], error) {
+	switch fp.Task {
+	case TaskStatus:
+		page, err := r.sr.Page(fp.Pageable, fp.Query)
+		if err != nil {
+			return nil, err
+		}
+		return page.ToAny(), err
+	case TaskEvent:
+		page, err := r.er.Page(fp.Pageable, fp.Query)
+		if err != nil {
+			return nil, err
+		}
+		return page.ToAny(), err
+	case TaskSearch:
+		page, err := r.sr.Page(fp.Pageable, fp.Query)
+		if err != nil {
+			return nil, err
+		}
+		return page.ToAny(), err
+	default:
+		return nil, errors.Errorf("not found task:%s", fp.Task)
+	}
+}
+
+func (r *Tracker) FindOne(fp tracker.FindOneParam) (any, error) {
+	switch fp.Task {
+	case TaskStatus:
+		ret, err := r.sr.FindOne(fp.Query)
+		if err != nil {
+			return nil, err
+		}
+		return ret, err
+	default:
+		return nil, errors.Errorf("not found task:%s", fp.Task)
+	}
+}
+
+func (r *Tracker) Summary() ([]any, error) {
+	return r.sr.SummaryOfBtpStatusByNetworks()
 }
