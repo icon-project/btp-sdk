@@ -25,6 +25,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/icon-project/btp2/chain/icon/client"
 	"github.com/icon-project/btp2/common/errors"
+	"github.com/icon-project/btp2/common/jsonrpc"
 	"github.com/icon-project/btp2/common/log"
 
 	"github.com/icon-project/btp-sdk/contract"
@@ -115,6 +116,9 @@ func (f *FinalitySupplier) HeightByID(id contract.BlockID) (int64, error) {
 	}
 	blk, err := f.Client.GetBlockByHash(p)
 	if err != nil {
+		if je, ok := err.(*jsonrpc.Error); ok && je.Code == client.JsonrpcErrorCodeNotFound {
+			return 0, contract.ErrorCodeNotFoundBlock.Errorf("not found block:%s", id)
+		}
 		return 0, err
 	}
 	return blk.Height, nil
