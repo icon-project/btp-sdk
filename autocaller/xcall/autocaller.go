@@ -209,17 +209,13 @@ func (c *AutoCaller) Find(fp autocaller.FindParam) (*database.Page[any], error) 
 	}
 }
 
-func (c *AutoCaller) onDatabaseError(err error, format string, args ...interface{}) {
-	c.l.Errorf("err:%+v msg:%s", err, fmt.Sprintf(format, args...))
-}
-
 func (c *AutoCaller) monitorEvent(ctx context.Context, network string, efs []contract.EventFilter, initHeight int64) {
 	for {
 		select {
 		case <-time.After(time.Second):
 			height, err := c.getMonitorHeight(network)
 			if err != nil {
-				c.onDatabaseError(err, "monitorEvent fail to getMonitorHeight network:%s", network)
+				c.l.Errorf("monitorEvent fail to getMonitorHeight network:%s err:%+v", network, err)
 				continue
 			}
 			if height < 1 {
@@ -238,7 +234,7 @@ func (c *AutoCaller) monitorEvent(ctx context.Context, network string, efs []con
 				c.l.Debugf("monitorEvent stopped network:%s err:%v", network, err)
 			}
 		case <-ctx.Done():
-			c.l.Debugln("monitorEvent context done")
+			c.l.Debugln("monitorEvent done network:%s", network)
 			return
 		}
 	}
@@ -272,9 +268,8 @@ func (c *AutoCaller) onCallEvent(network string, e contract.Event) error {
 	c.l.Tracef("onCallEvent network:%s reqId:%v event:%s", cm.Network, cm.ReqId, e.Name())
 	found, err := c.cr.FindOneByNetworkAndReqID(cm.Network, cm.ReqId)
 	if err != nil {
-		c.onDatabaseError(err, "fail to FindOneByNetworkAndReqID network:%s, reqID:%v",
-			cm.Network, cm.ReqId)
-		return err
+		return errors.Wrapf(err, "fail to FindOneByNetworkAndReqID network:%s reqID:%v err:%v",
+			cm.Network, cm.ReqId, err)
 	}
 	switch e.Name() {
 	case EventCallMessage:
@@ -312,10 +307,10 @@ func (c *AutoCaller) onCallEvent(network string, e contract.Event) error {
 			found.ExecResultCode = cm.ExecResultCode
 			found.ExecResultMsg = cm.ExecResultMsg
 			if err = c.cr.Save(found); err != nil {
-				c.onDatabaseError(err, "onCallEvent fail to Save CallExecuted:{Network:%s,ReqID:%v,EventHeight:%d}",
-					cm.Network, cm.ReqId, e.BlockHeight())
+				return errors.Wrapf(err, "onCallEvent fail to Save CallExecuted:{Network:%s,ReqID:%v,EventHeight:%d} err:%v",
+					cm.Network, cm.ReqId, e.BlockHeight(), err)
 			}
-			return err
+			return nil
 		}
 	}
 	return nil
@@ -336,7 +331,7 @@ func (c *AutoCaller) executeCall(cm *Call) {
 	cm.TxID = fmt.Sprintf("%s", txID)
 	c.l.Debugf("CallMessage:{Network:%s,Sn:%v,ReqID:%v,TxID:%v}", cm.Network, cm.Sn, cm.ReqId, cm.TxID)
 	if _, err = c.cr.SaveIfFoundStateIsNotDone(cm); err != nil {
-		c.onDatabaseError(err, "executeCall fail to SaveIfFoundStateIsNotDone")
+		c.l.Errorf("executeCall fail to SaveIfFoundStateIsNotDone err:%+v", err)
 	}
 	go c.callResult(cm)
 }
@@ -352,7 +347,7 @@ func (c *AutoCaller) onCallError(cm *Call, err error) {
 		cm.Failure = err.Error()
 	}
 	if _, re := c.cr.SaveIfFoundStateIsNotDone(cm); re != nil {
-		c.onDatabaseError(re, "onCallError fail to SaveIfFoundStateIsNotDone")
+		c.l.Errorf("onCallError fail to SaveIfFoundStateIsNotDone err:%+v", re)
 	}
 }
 
@@ -378,7 +373,7 @@ func (c *AutoCaller) callResult(cm *Call) {
 	cm.BlockID = fmt.Sprintf("%s", txr.BlockID())
 	cm.BlockHeight = txr.BlockHeight()
 	if _, err = c.cr.SaveIfFoundStateIsNotDone(cm); err != nil {
-		c.onDatabaseError(err, "callResult fail to SaveIfFoundStateIsNotDone")
+		c.l.Errorf("callResult fail to SaveIfFoundStateIsNotDone err:%+v", err)
 	}
 }
 
@@ -390,22 +385,21 @@ func (c *AutoCaller) onRollbackEvent(network string, e contract.Event) error {
 	c.l.Tracef("onRollbackEvent network:%s sn:%v event:%s", rm.Network, rm.Sn, e.Name())
 	found, err := c.rr.FindOneByNetworkAndSn(rm.Network, rm.Sn)
 	if err != nil {
-		c.onDatabaseError(err, "fail to FindOneByNetworkAndSn network:%s, sn:%v",
-			rm.Network, rm.Sn)
-		return err
+		return errors.Wrapf(err, "fail to FindOneByNetworkAndSn network:%s, sn:%v err:%v",
+			rm.Network, rm.Sn, err)
 	}
 	switch e.Name() {
 	case EventCallMessageSent:
 		if found != nil {
 			c.l.Debugf("redundant CallMessageSent:{Network:%s,Sn:%v,EventHeight:%d}",
-				rm.Network, rm.Sn, rm.EventHeight)
+				rm.Network, rm.Sn, e.BlockHeight())
 			return nil
 		}
 		return c.rr.Save(rm)
 	case EventResponseMessage:
 		if found == nil {
 			c.l.Debugf("missing CallMessageSent ResponseMessage:{Network:%s,Sn:%v,EventHeight:%d}",
-				rm.Network, rm.Sn, e.BlockHeight())
+				rm.Network, rm.Sn, rm.EventHeight)
 			return nil
 		}
 		switch found.State {
@@ -413,10 +407,10 @@ func (c *AutoCaller) onRollbackEvent(network string, e contract.Event) error {
 			rm.Model = found.Model
 			if rm.State == autocaller.TaskStateNotApplicable {
 				if err = c.rr.Save(rm); err != nil {
-					c.onDatabaseError(err, "onRollbackEvent fail to Save ResponseMessage:{Network:%s,Sn:%v,EventHeight:%d}",
-						rm.Network, rm.Sn, rm.EventHeight)
+					return errors.Wrapf(err, "onRollbackEvent fail to Save ResponseMessage:{Network:%s,Sn:%v,EventHeight:%d} err:%v",
+						rm.Network, rm.Sn, rm.EventHeight, err)
 				}
-				return err
+				return nil
 			}
 		case autocaller.TaskStateSending:
 			//TODO [TBD] found.Event.Equal(rm.Event)
@@ -451,10 +445,10 @@ func (c *AutoCaller) onRollbackEvent(network string, e contract.Event) error {
 			found.ExecResultCode = rm.ExecResultCode
 			found.ExecResultMsg = rm.ExecResultMsg
 			if err = c.rr.Save(found); err != nil {
-				c.onDatabaseError(err, "onRollbackEvent fail to Save RollbackExecuted:{Network:%s,Sn:%v,EventHeight:%d}",
-					rm.Network, rm.Sn, e.BlockHeight())
+				return errors.Wrapf(err, "onRollbackEvent fail to Save RollbackExecuted:{Network:%s,Sn:%v,EventHeight:%d} err:%v",
+					rm.Network, rm.Sn, e.BlockHeight(), err)
 			}
-			return err
+			return nil
 		}
 	}
 	return nil
@@ -475,7 +469,7 @@ func (c *AutoCaller) executeRollback(rm *Rollback) {
 	rm.TxID = fmt.Sprintf("%s", txID)
 	c.l.Debugf("RollbackMessage:{Network:%s,Sn:%v,TxID:%v}", rm.Network, rm.Sn, rm.TxID)
 	if _, err = c.rr.SaveIfFoundStateIsNotDone(rm); err != nil {
-		c.onDatabaseError(err, "executeRollback fail to SaveIfFoundStateIsNotDone")
+		c.l.Errorf("executeRollback fail to SaveIfFoundStateIsNotDone err:%+v", err)
 	}
 	go c.rollbackResult(rm)
 }
@@ -492,7 +486,7 @@ func (c *AutoCaller) onRollbackError(rm *Rollback, err error) {
 		rm.Failure = err.Error()
 	}
 	if _, re := c.rr.SaveIfFoundStateIsNotDone(rm); re != nil {
-		c.onDatabaseError(re, "onRollbackError fail to SaveIfFoundStateIsNotDone")
+		c.l.Errorf("onRollbackError fail to SaveIfFoundStateIsNotDone err:%+v", re)
 	}
 }
 
@@ -518,7 +512,7 @@ func (c *AutoCaller) rollbackResult(rm *Rollback) {
 	rm.BlockID = fmt.Sprintf("%s", txr.BlockID())
 	rm.BlockHeight = txr.BlockHeight()
 	if _, err = c.rr.SaveIfFoundStateIsNotDone(rm); err != nil {
-		c.onDatabaseError(err, "rollbackResult fail to SaveIfFoundStateIsNotDone")
+		c.l.Errorf("rollbackResult fail to SaveIfFoundStateIsNotDone err:%+v", err)
 	}
 }
 
