@@ -42,6 +42,8 @@ type Config struct {
 	DBName   string `json:"dbname"`
 }
 
+var zeroDefaultDatetimePrecision = 0
+
 func OpenDatabase(cfg Config) (*gorm.DB, error) {
 	switch cfg.Driver {
 	case DriverMysql:
@@ -49,8 +51,9 @@ func OpenDatabase(cfg Config) (*gorm.DB, error) {
 			cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
 		return gorm.Open(mysql.New(mysql.Config{
 			DSN:                       dsn,
-			DefaultStringSize:         256,   // default size for string fields
-			DisableDatetimePrecision:  true,  // disable datetime precision, which not supported before MySQL 5.6
+			DefaultStringSize:         256,  // default size for string fields
+			DisableDatetimePrecision:  true, // disable datetime precision, which not supported before MySQL 5.6
+			DefaultDatetimePrecision:  &zeroDefaultDatetimePrecision,
 			DontSupportRenameIndex:    true,  // drop & create when rename index, rename index not supported before MySQL 5.7, MariaDB
 			DontSupportRenameColumn:   true,  // `change` when rename column, rename column not supported before MySQL 8, MariaDB
 			SkipInitializeWithVersion: false, // autoconfigure based on currently MySQL version
