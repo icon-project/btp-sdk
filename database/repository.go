@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Model struct {
@@ -172,7 +173,10 @@ func filterError(err error) error {
 
 func (r *DefaultRepository[T]) FindByID(id interface{}) (*T, error) {
 	v := new(T)
-	err := r.table().First(v, id).Error
+	err := r.table().Clauses(clause.Eq{
+		Column: clause.PrimaryColumn,
+		Value:  id,
+	}).First(v).Error
 	if err != nil {
 		return nil, filterError(err)
 	}
