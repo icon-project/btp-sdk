@@ -27,13 +27,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-var (
-	txOptionLevelSerializable = &sql.TxOptions{
-		Isolation: sql.LevelSerializable,
-		ReadOnly:  false,
-	}
-)
-
 type Model struct {
 	ID        uint      `json:"id" gorm:"primaryKey;autoIncrement"`
 	CreatedAt time.Time `json:"created_at"`
@@ -161,7 +154,7 @@ func (r *DefaultRepository[T]) SaveIf(v *T, predicate func(found *T) bool, lock 
 			return nil
 		}
 		return tx.Save(v)
-	}, txOptionLevelSerializable)
+	})
 	return
 }
 
@@ -301,7 +294,7 @@ func (r *DefaultRepository[T]) TransactionWithLock(fc func(tx Repository[T]) err
 	defer mtx.Unlock()
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		return fc(r.tx(tx))
-	}, txOptionLevelSerializable)
+	})
 }
 
 func (r *DefaultRepository[T]) Begin(opts ...*sql.TxOptions) (tx Repository[T]) {
