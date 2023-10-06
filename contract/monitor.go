@@ -42,16 +42,18 @@ func (s *DefaultFinalitySubscription) Unsubscribe() {
 	s.UnsubscribeFunc()
 }
 
-func (s *DefaultFinalitySubscription) Serve(ctx context.Context, cb func(info BlockInfo)) {
+func (s *DefaultFinalitySubscription) Serve(ctx context.Context, cb func(info BlockInfo) error) error {
 	for {
 		select {
 		case v, ok := <-s.CH:
 			if !ok {
-				return
+				return errors.Errorf("channel closed")
 			}
-			cb(v)
+			if err := cb(v); err != nil {
+				return err
+			}
 		case <-ctx.Done():
-			return
+			return ctx.Err()
 		}
 	}
 }
