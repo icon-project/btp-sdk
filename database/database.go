@@ -22,6 +22,7 @@ import (
 
 	"github.com/glebarez/sqlite"
 	"github.com/icon-project/btp2/common/errors"
+	"github.com/icon-project/btp2/common/log"
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -33,6 +34,8 @@ const (
 	DriverSQLite   = "sqlite"
 )
 
+type DB interface{}
+
 type Config struct {
 	Driver   string `json:"driver"`
 	User     string `json:"user"`
@@ -42,23 +45,31 @@ type Config struct {
 	DBName   string `json:"dbname"`
 }
 
-func OpenDatabase(cfg Config) (*gorm.DB, error) {
+var zeroDefaultDatetimePrecision = 0
+
+func OpenDatabase(cfg Config, l log.Logger) (*gorm.DB, error) {
+	gcfg := &gorm.Config{
+		Logger: &databaseLogger{
+			l: l.WithFields(log.Fields{log.FieldKeyModule: "database"}),
+		},
+	}
 	switch cfg.Driver {
 	case DriverMysql:
 		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True",
 			cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
 		return gorm.Open(mysql.New(mysql.Config{
 			DSN:                       dsn,
-			DefaultStringSize:         256,   // default size for string fields
-			DisableDatetimePrecision:  true,  // disable datetime precision, which not supported before MySQL 5.6
+			DefaultStringSize:         256,  // default size for string fields
+			DisableDatetimePrecision:  true, // disable datetime precision, which not supported before MySQL 5.6
+			DefaultDatetimePrecision:  &zeroDefaultDatetimePrecision,
 			DontSupportRenameIndex:    true,  // drop & create when rename index, rename index not supported before MySQL 5.7, MariaDB
 			DontSupportRenameColumn:   true,  // `change` when rename column, rename column not supported before MySQL 8, MariaDB
 			SkipInitializeWithVersion: false, // autoconfigure based on currently MySQL version
-		}), &gorm.Config{})
+		}), gcfg)
 	case DriverPostgres:
 		dsn := fmt.Sprintf("user=%s password=%s host=%s port=%d dbname=%s sslmode=disable",
 			cfg.User, cfg.Password, cfg.Host, cfg.Port, cfg.DBName)
-		return gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		return gorm.Open(postgres.Open(dsn), gcfg)
 	case DriverSQLite:
 		dsn := fmt.Sprintf("file:%s", cfg.DBName)
 		if len(cfg.User) > 0 {
@@ -69,7 +80,7 @@ func OpenDatabase(cfg Config) (*gorm.DB, error) {
 			}
 			dsn = dsn + auth
 		}
-		return gorm.Open(sqlite.Open(dsn), &gorm.Config{})
+		return gorm.Open(sqlite.Open(dsn), gcfg)
 	default:
 		return nil, errors.Errorf("not support db type:%s", cfg.Driver)
 	}

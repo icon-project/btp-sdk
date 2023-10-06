@@ -22,7 +22,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/icon-project/btp2/common/errors"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Model struct {
@@ -62,7 +64,9 @@ func (p *Page[T]) ToAny() *Page[any] {
 
 type Repository[T any] interface {
 	Save(v *T) error
-	SaveIf(v *T, predicate func(found *T) bool, useLock bool) (bool, error)
+	SaveIf(v *T, predicate func(found *T) bool, lock interface{}) (bool, error)
+	Update(column string, value interface{}, query interface{}, conds ...interface{}) error
+	Updates(value interface{}, query interface{}, conds ...interface{}) error
 	Delete(query interface{}, conds ...interface{}) error
 	Exists(query interface{}, conds ...interface{}) (bool, error)
 	Count(query interface{}, conds ...interface{}) (int64, error)
@@ -73,15 +77,21 @@ type Repository[T any] interface {
 	FindWithOrder(order string, query interface{}, conds ...interface{}) ([]T, error)
 	Page(p Pageable, query interface{}, conds ...interface{}) (*Page[T], error)
 	Transaction(fc func(tx Repository[T]) error, opts ...*sql.TxOptions) error
+	TransactionWithLock(fc func(tx Repository[T]) error, lock interface{}) error
 	Begin(opts ...*sql.TxOptions) (tx Repository[T])
 	Rollback()
 	Commit()
+	DB() DB
+	WithDB(db DB) (tx Repository[T], err error)
+	TransactionNested(db DB, fc func(tx Repository[T]) error, opts ...*sql.TxOptions) error
+	BeginNested(db DB, opts ...*sql.TxOptions) (tx Repository[T], err error)
 }
 
 type DefaultRepository[T any] struct {
 	db   *gorm.DB
 	name string
-	mtx  *sync.Mutex
+	mtx  *sync.RWMutex
+	mtxs map[interface{}]*sync.Mutex
 }
 
 func NewDefaultRepository[T any](db *gorm.DB, name string) (*DefaultRepository[T], error) {
@@ -91,7 +101,8 @@ func NewDefaultRepository[T any](db *gorm.DB, name string) (*DefaultRepository[T
 	return &DefaultRepository[T]{
 		db:   db,
 		name: name,
-		mtx:  &sync.Mutex{},
+		mtx:  &sync.RWMutex{},
+		mtxs: make(map[interface{}]*sync.Mutex),
 	}, nil
 }
 
@@ -107,14 +118,30 @@ func (r *DefaultRepository[T]) Save(v *T) error {
 	return r.table().Save(v).Error
 }
 
+func (r *DefaultRepository[T]) getOrNewLock(k interface{}) *sync.Mutex {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	l, ok := r.mtxs[k]
+	if !ok {
+		l = &sync.Mutex{}
+		r.mtxs[k] = l
+	}
+	return l
+}
+
 // SaveIf if predicate func returns true, save the given v.
 // the argument of predicate func is result of query by primary key of given v.
 // note : if given v has not primary key value, the found could be any record
-func (r *DefaultRepository[T]) SaveIf(v *T, predicate func(found *T) bool, useLock bool) (save bool, err error) {
-	if useLock {
-		r.mtx.Lock()
-		defer r.mtx.Unlock()
+func (r *DefaultRepository[T]) SaveIf(v *T, predicate func(found *T) bool, lock interface{}) (save bool, err error) {
+	if v == nil {
+		return false, errors.Errorf("invalid v, must be not nil")
 	}
+	if predicate == nil {
+		return false, errors.Errorf("invalid predicate, must be not nil")
+	}
+	mtx := r.getOrNewLock(lock)
+	mtx.Lock()
+	defer mtx.Unlock()
 	err = r.Transaction(func(tx Repository[T]) error {
 		ret := tx.(*DefaultRepository[T]).table()
 		found := new(T)
@@ -131,6 +158,14 @@ func (r *DefaultRepository[T]) SaveIf(v *T, predicate func(found *T) bool, useLo
 		return tx.Save(v)
 	})
 	return
+}
+
+func (r *DefaultRepository[T]) Update(column string, value interface{}, query interface{}, conds ...interface{}) error {
+	return r.where(query, conds...).Update(column, value).Error
+}
+
+func (r *DefaultRepository[T]) Updates(value interface{}, query interface{}, conds ...interface{}) error {
+	return r.where(query, conds...).Updates(value).Error
 }
 
 func (r *DefaultRepository[T]) Delete(query interface{}, conds ...interface{}) error {
@@ -172,7 +207,10 @@ func filterError(err error) error {
 
 func (r *DefaultRepository[T]) FindByID(id interface{}) (*T, error) {
 	v := new(T)
-	err := r.table().First(v, id).Error
+	err := r.table().Clauses(clause.Eq{
+		Column: clause.PrimaryColumn,
+		Value:  id,
+	}).First(v).Error
 	if err != nil {
 		return nil, filterError(err)
 	}
@@ -250,6 +288,7 @@ func (r *DefaultRepository[T]) tx(db *gorm.DB) *DefaultRepository[T] {
 		db:   db,
 		name: r.name,
 		mtx:  r.mtx,
+		mtxs: r.mtxs,
 	}
 }
 
@@ -257,6 +296,15 @@ func (r *DefaultRepository[T]) Transaction(fc func(tx Repository[T]) error, opts
 	return r.db.Transaction(func(tx *gorm.DB) error {
 		return fc(r.tx(tx))
 	}, opts...)
+}
+
+func (r *DefaultRepository[T]) TransactionWithLock(fc func(tx Repository[T]) error, lock interface{}) error {
+	mtx := r.getOrNewLock(lock)
+	mtx.Lock()
+	defer mtx.Unlock()
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		return fc(r.tx(tx))
+	})
 }
 
 func (r *DefaultRepository[T]) Begin(opts ...*sql.TxOptions) (tx Repository[T]) {
@@ -269,4 +317,42 @@ func (r *DefaultRepository[T]) Rollback() {
 
 func (r *DefaultRepository[T]) Commit() {
 	r.db.Commit()
+}
+
+func (r *DefaultRepository[T]) DB() DB {
+	return r.db
+}
+
+func cast(db DB) (*gorm.DB, error) {
+	gdb, ok := db.(*gorm.DB)
+	if !ok {
+		return nil, errors.Errorf("not supported DB type:%T", db)
+	}
+	return gdb, nil
+}
+
+func (r *DefaultRepository[T]) WithDB(db DB) (tx Repository[T], err error) {
+	gdb, err := cast(db)
+	if err != nil {
+		return nil, err
+	}
+	return r.tx(gdb), nil
+}
+
+func (r *DefaultRepository[T]) TransactionNested(db DB, fc func(tx Repository[T]) error, opts ...*sql.TxOptions) error {
+	gdb, err := cast(db)
+	if err != nil {
+		return err
+	}
+	return gdb.Transaction(func(tx *gorm.DB) error {
+		return fc(r.tx(tx))
+	}, opts...)
+}
+
+func (r *DefaultRepository[T]) BeginNested(db DB, opts ...*sql.TxOptions) (tx Repository[T], err error) {
+	gdb, err := cast(db)
+	if err != nil {
+		return nil, err
+	}
+	return r.tx(gdb.Begin(opts...)), nil
 }

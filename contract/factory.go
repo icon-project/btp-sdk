@@ -102,6 +102,7 @@ type FinalityMonitor interface {
 type FinalitySubscription interface {
 	C() <-chan BlockInfo
 	Unsubscribe()
+	Serve(ctx context.Context, cb func(info BlockInfo) error) error
 }
 
 type FinalitySupplier interface {

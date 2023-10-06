@@ -153,5 +153,6 @@ type Task struct {
 	TxID        string    `json:"tx_id"`
 	BlockHeight int64     `json:"block_height"`
 	BlockID     string    `json:"block_id"`
+	Finalized   bool      `json:"finalized"`
 	Failure     string    `json:"failure"`
 }

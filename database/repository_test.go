@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/icon-project/btp2/common/log"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -54,7 +55,7 @@ func assertEqualStruct(t *testing.T, expected, actual Struct) bool {
 }
 
 func Test_Repository(t *testing.T) {
-	db, err := OpenDatabase(dbConfig)
+	db, err := OpenDatabase(dbConfig, log.GlobalLogger())
 	if err != nil {
 		assert.FailNow(t, err.Error())
 	}
