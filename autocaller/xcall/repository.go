@@ -167,7 +167,7 @@ type CallRepository struct {
 }
 
 func (r *CallRepository) FindOneByNetworkAndReqID(network string, reqID uint64) (*Call, error) {
-	return r.FindOne(&Call{
+	return r.Repository.FindOne(&Call{
 		Task: autocaller.Task{
 			Network: network,
 		},
@@ -176,7 +176,7 @@ func (r *CallRepository) FindOneByNetworkAndReqID(network string, reqID uint64) 
 }
 
 func (r *CallRepository) FindOneByNetworkOrderByEventHeightDesc(network string) (*Call, error) {
-	return r.FindOneWithOrder(orderByEventHeightDesc, &Call{
+	return r.Repository.FindOneWithOrder(orderByEventHeightDesc, &Call{
 		Task: autocaller.Task{
 			Network: network,
 		},

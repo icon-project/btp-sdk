@@ -390,7 +390,7 @@ func (c *AutoCaller) onRollbackEvent(network string, e contract.Event) error {
 	}
 	switch e.Name() {
 	case EventCallMessageSent:
-		if found != nil {
+		if found != nil && found.To == rm.To && found.From == rm.From {
 			c.l.Debugf("redundant CallMessageSent:{Network:%s,Sn:%v,EventHeight:%d}",
 				rm.Network, rm.Sn, e.BlockHeight())
 			return nil
@@ -402,9 +402,11 @@ func (c *AutoCaller) onRollbackEvent(network string, e contract.Event) error {
 				rm.Network, rm.Sn, rm.EventHeight)
 			return nil
 		}
+		rm.Model = found.Model
+		rm.From = found.From
+		rm.To = found.To
 		switch found.State {
 		case autocaller.TaskStateNone:
-			rm.Model = found.Model
 			if rm.State == autocaller.TaskStateNotApplicable {
 				if err = c.rr.Save(rm); err != nil {
 					return errors.Wrapf(err, "onRollbackEvent fail to Save ResponseMessage:{Network:%s,Sn:%v,EventHeight:%d} err:%v",
