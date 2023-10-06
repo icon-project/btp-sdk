@@ -413,7 +413,7 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 				}
 				s.SetService(svc)
 			}
-			db, err := database.OpenDatabase(cfg.Database)
+			db, err := database.OpenDatabase(cfg.Database, l)
 			if err != nil {
 				return err
 			}
