@@ -48,6 +48,8 @@ const (
 	TaskCall                 = "call"
 	TaskRollback             = "rollback"
 	DefaultGetResultInterval = 2 * time.Second
+
+	DefaultFinalitySubscribeBuffer = 1
 )
 
 func init() {
@@ -57,6 +59,7 @@ func init() {
 type AutoCaller struct {
 	s         service.Service
 	nMap      map[string]Network
+	runCtx    context.Context
 	runCancel context.CancelFunc
 	runMtx    sync.RWMutex
 	l         log.Logger
@@ -71,6 +74,8 @@ type Network struct {
 	Signer       service.Signer
 	Options      AutoCallerOptions
 	EventFilters []contract.EventFilter
+	Ctx          context.Context
+	Cancel       context.CancelFunc
 }
 
 type AutoCallerOptions struct {
@@ -171,11 +176,12 @@ func (c *AutoCaller) Start() error {
 	if c.runCancel != nil {
 		return errors.Errorf("already started")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	c.runCtx, c.runCancel = context.WithCancel(context.Background())
 	for network, n := range c.nMap {
-		go c.monitorEvent(ctx, network, n.EventFilters, n.Options.InitHeight)
+		go c.monitorFinality(c.runCtx, network)
+		n.Ctx, n.Cancel = context.WithCancel(c.runCtx)
+		go c.monitorEvent(n.Ctx, network, n.EventFilters, n.Options.InitHeight)
 	}
-	c.runCancel = cancel
 	return nil
 }
 
@@ -187,6 +193,7 @@ func (c *AutoCaller) Stop() error {
 	}
 	c.runCancel()
 	c.runCancel = nil
+	c.runCtx = nil
 	return nil
 }
 
@@ -403,6 +410,8 @@ func (c *AutoCaller) onRollbackEvent(network string, e contract.Event) error {
 			return nil
 		}
 		rm.Model = found.Model
+		rm.TriggerHeight = found.TriggerHeight
+		rm.TriggerBlockID = found.TriggerBlockID
 		rm.From = found.From
 		rm.To = found.To
 		switch found.State {
@@ -516,6 +525,196 @@ func (c *AutoCaller) rollbackResult(rm *Rollback) {
 	if _, err = c.rr.SaveIfFoundStateIsNotDone(rm); err != nil {
 		c.l.Errorf("rollbackResult fail to SaveIfFoundStateIsNotDone err:%+v", err)
 	}
+}
+
+func (c *AutoCaller) monitorFinality(ctx context.Context, network string) {
+	fm := c.nMap[network].Adaptor.FinalityMonitor()
+	s := fm.Subscribe(DefaultFinalitySubscribeBuffer)
+	for {
+		select {
+		case bi, ok := <-s.C():
+			if !ok {
+				c.l.Debugf("monitorFinality close channel network:%s")
+				s = fm.Subscribe(DefaultFinalitySubscribeBuffer)
+				continue
+			}
+			if err := c.finalizeCall(fm, network, bi); err != nil {
+				c.l.Errorf("monitorFinality fail finalizeCall network:%s err:%+v", network, err)
+			}
+			if err := c.finalizeRollback(fm, network, bi); err != nil {
+				c.l.Errorf("monitorFinality fail finalizeRollback network:%s err:%+v", network, err)
+			}
+		case <-ctx.Done():
+			c.l.Debugf("monitorFinality done network:%s")
+			return
+		}
+	}
+}
+
+func (c *AutoCaller) finalizeCall(fm contract.FinalityMonitor, network string, bi contract.BlockInfo) error {
+	return c.cr.TransactionWithLock(func(tx *CallRepository) error {
+		var (
+			cl        []Call
+			err       error
+			finalized bool
+		)
+		//FindByNetworkAndEventFinalizedIsFalseAndEventHeightBetweenFromOne
+		if cl, err = tx.Find(QueryNetworkAndEventFinalizedAndEventHeightBetween,
+			network, false, 1, bi.Height()); err != nil {
+			return err
+		}
+		if len(cl) > 0 {
+			for _, t := range cl {
+				if finalized, err = fm.IsFinalized(t.EventHeight, t.EventBlockID); err != nil {
+					if contract.ErrorCodeNotFoundBlock.Equals(err) {
+						return c.dropBlock(tx, network, t.EventHeight)
+					}
+					return err
+				}
+				if !finalized {
+					return errors.Errorf("invalid FinalityMonitor state for height:%v", t.EventHeight)
+				}
+			}
+			if err = tx.Update(ColumnEventFinalized, true, QueryNetworkAndEventFinalizedAndEventHeightBetween,
+				network, false, 1, bi.Height()); err != nil {
+				return err
+			}
+		}
+
+		//FindByNetworkAndFinalizedIsFalseAndBlockHeightBetweenFromOne
+		if cl, err = tx.Find(QueryNetworkAndFinalizedAndBlockHeightBetween,
+			network, false, 1, bi.Height()); err != nil {
+			return err
+		}
+		if len(cl) > 0 {
+			for _, t := range cl {
+				if finalized, err = fm.IsFinalized(t.BlockHeight, t.BlockID); err != nil {
+					if contract.ErrorCodeNotFoundBlock.Equals(err) {
+						return c.dropBlock(tx, network, t.BlockHeight)
+					}
+					return err
+				}
+				if !finalized {
+					return errors.Errorf("invalid FinalityMonitor state for height:%v", t.BlockHeight)
+				}
+			}
+			if err = tx.Update(ColumnFinalized, true, QueryNetworkAndFinalizedAndBlockHeightBetween,
+				network, false, 1, bi.Height()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, network)
+
+}
+
+func (c *AutoCaller) finalizeRollback(fm contract.FinalityMonitor, network string, bi contract.BlockInfo) error {
+	return c.rr.TransactionWithLock(func(tx *RollbackRepository) error {
+		var (
+			rl        []Rollback
+			err       error
+			finalized bool
+		)
+		//FindByNetworkAndTriggerFinalizedIsFalseAndTriggerHeightBetweenFromOne
+		if rl, err = tx.Find(QueryNetworkAndTriggerFinalizedAndTriggerHeightBetween,
+			network, false, 1, bi.Height()); err != nil {
+			return err
+		}
+		if len(rl) > 0 {
+			for _, t := range rl {
+				if finalized, err = fm.IsFinalized(t.TriggerHeight, t.TriggerBlockID); err != nil {
+					if contract.ErrorCodeNotFoundBlock.Equals(err) {
+						return c.dropBlock(tx, network, t.TriggerHeight)
+					}
+					return err
+				}
+				if !finalized {
+					return errors.Errorf("invalid FinalityMonitor state for height:%v", t.TriggerHeight)
+				}
+			}
+			if err = tx.Update(ColumnTriggerFinalized, true, QueryNetworkAndTriggerFinalizedAndTriggerHeightBetween,
+				network, false, 1, bi.Height()); err != nil {
+				return err
+			}
+		}
+
+		//FindByNetworkAndEventFinalizedIsFalseAndEventHeightBetweenFromOne
+		if rl, err = tx.Find(QueryNetworkAndEventFinalizedAndEventHeightBetween,
+			network, false, 1, bi.Height()); err != nil {
+			return err
+		}
+		if len(rl) > 0 {
+			for _, t := range rl {
+				if finalized, err = fm.IsFinalized(t.EventHeight, t.EventBlockID); err != nil {
+					if contract.ErrorCodeNotFoundBlock.Equals(err) {
+						return c.dropBlock(tx, network, t.EventHeight)
+					}
+					return err
+				}
+				if !finalized {
+					return errors.Errorf("invalid FinalityMonitor state for height:%v", t.EventHeight)
+				}
+			}
+			if err = tx.Update(ColumnEventFinalized, true, QueryNetworkAndEventFinalizedAndEventHeightBetween,
+				network, false, 1, bi.Height()); err != nil {
+				return err
+			}
+		}
+
+		//FindByNetworkAndFinalizedIsFalseAndBlockHeightBetweenFromOne
+		if rl, err = tx.Find(QueryNetworkAndFinalizedAndBlockHeightBetween,
+			network, false, 1, bi.Height()); err != nil {
+			return err
+		}
+		if len(rl) > 0 {
+			for _, t := range rl {
+				if finalized, err = fm.IsFinalized(t.BlockHeight, t.BlockID); err != nil {
+					if contract.ErrorCodeNotFoundBlock.Equals(err) {
+						return c.dropBlock(tx, network, t.BlockHeight)
+					}
+					return err
+				}
+				if !finalized {
+					return errors.Errorf("invalid FinalityMonitor state for height:%v", t.BlockHeight)
+				}
+			}
+			if err = tx.Update(ColumnFinalized, true, QueryNetworkAndFinalizedAndBlockHeightBetween,
+				network, false, 1, bi.Height()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, network)
+}
+
+func (c *AutoCaller) dropBlock(tx database.DB, network string, height int64) error {
+	c.runMtx.RLock()
+	defer c.runMtx.RUnlock()
+	c.l.Infof("dropBlock network:%s height:%v", network, height)
+	n := c.nMap[network]
+	if n.Cancel != nil {
+		n.Cancel()
+	}
+	cr, err := c.cr.WithDB(tx)
+	if err = cr.Delete(QueryNetworkAndEventHeightGreaterThanEqual, network, height); err != nil {
+		return err
+	}
+	if err = cr.Updates(AsStateSending, QueryNetworkAndBlockHeightGreaterThanEqual, network, height); err != nil {
+		return err
+	}
+	rr, err := c.rr.WithDB(tx)
+	if err = rr.Delete(QueryNetworkAndTriggerHeightGreaterThanEqual, network, height); err != nil {
+		return err
+	}
+	if err = rr.Updates(AsStateNone, QueryNetworkAndEventHeightGreaterThanEqual, network, height); err != nil {
+		return err
+	}
+	if err = rr.Updates(AsStateSending, QueryNetworkAndBlockHeightGreaterThanEqual, network, height); err != nil {
+		return err
+	}
+	n.Ctx, n.Cancel = context.WithCancel(c.runCtx)
+	go c.monitorEvent(n.Ctx, network, n.EventFilters, n.Options.InitHeight)
+	return nil
 }
 
 func eventIndexedValue(p interface{}) interface{} {
