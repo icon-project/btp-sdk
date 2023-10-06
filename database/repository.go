@@ -65,6 +65,8 @@ func (p *Page[T]) ToAny() *Page[any] {
 type Repository[T any] interface {
 	Save(v *T) error
 	SaveIf(v *T, predicate func(found *T) bool, lock interface{}) (bool, error)
+	Update(column string, value interface{}, query interface{}, conds ...interface{}) error
+	Updates(value interface{}, query interface{}, conds ...interface{}) error
 	Delete(query interface{}, conds ...interface{}) error
 	Exists(query interface{}, conds ...interface{}) (bool, error)
 	Count(query interface{}, conds ...interface{}) (int64, error)
@@ -156,6 +158,14 @@ func (r *DefaultRepository[T]) SaveIf(v *T, predicate func(found *T) bool, lock 
 		return tx.Save(v)
 	})
 	return
+}
+
+func (r *DefaultRepository[T]) Update(column string, value interface{}, query interface{}, conds ...interface{}) error {
+	return r.where(query, conds...).Update(column, value).Error
+}
+
+func (r *DefaultRepository[T]) Updates(value interface{}, query interface{}, conds ...interface{}) error {
+	return r.where(query, conds...).Updates(value).Error
 }
 
 func (r *DefaultRepository[T]) Delete(query interface{}, conds ...interface{}) error {
