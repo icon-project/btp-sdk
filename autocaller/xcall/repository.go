@@ -190,7 +190,8 @@ func (r *CallRepository) SaveIfFoundStateIsNotDone(v *Call) (bool, error) {
 	}
 	return r.Repository.SaveIf(v, func(found *Call) bool {
 		return found == nil || found.State != autocaller.TaskStateDone
-	}, true)
+	}, v.ID)
+}
 }
 
 func NewCallRepository(db *gorm.DB) (*CallRepository, error) {
@@ -231,7 +232,8 @@ func (r *RollbackRepository) SaveIfFoundStateIsNotDone(v *Rollback) (bool, error
 	}
 	return r.Repository.SaveIf(v, func(found *Rollback) bool {
 		return found == nil || found.State != autocaller.TaskStateDone
-	}, true)
+	}, v.ID)
+}
 }
 
 func NewRollbackRepository(db *gorm.DB) (*RollbackRepository, error) {
