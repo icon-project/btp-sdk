@@ -33,6 +33,8 @@ const (
 	DriverSQLite   = "sqlite"
 )
 
+type DB interface{}
+
 type Config struct {
 	Driver   string `json:"driver"`
 	User     string `json:"user"`

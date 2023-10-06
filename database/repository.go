@@ -86,6 +86,10 @@ type Repository[T any] interface {
 	Begin(opts ...*sql.TxOptions) (tx Repository[T])
 	Rollback()
 	Commit()
+	DB() DB
+	WithDB(db DB) (tx Repository[T], err error)
+	TransactionNested(db DB, fc func(tx Repository[T]) error, opts ...*sql.TxOptions) error
+	BeginNested(db DB, opts ...*sql.TxOptions) (tx Repository[T], err error)
 }
 
 type DefaultRepository[T any] struct {
@@ -310,4 +314,42 @@ func (r *DefaultRepository[T]) Rollback() {
 
 func (r *DefaultRepository[T]) Commit() {
 	r.db.Commit()
+}
+
+func (r *DefaultRepository[T]) DB() DB {
+	return r.db
+}
+
+func cast(db DB) (*gorm.DB, error) {
+	gdb, ok := db.(*gorm.DB)
+	if !ok {
+		return nil, errors.Errorf("not supported DB type:%T", db)
+	}
+	return gdb, nil
+}
+
+func (r *DefaultRepository[T]) WithDB(db DB) (tx Repository[T], err error) {
+	gdb, err := cast(db)
+	if err != nil {
+		return nil, err
+	}
+	return r.tx(gdb), nil
+}
+
+func (r *DefaultRepository[T]) TransactionNested(db DB, fc func(tx Repository[T]) error, opts ...*sql.TxOptions) error {
+	gdb, err := cast(db)
+	if err != nil {
+		return err
+	}
+	return gdb.Transaction(func(tx *gorm.DB) error {
+		return fc(r.tx(tx))
+	}, opts...)
+}
+
+func (r *DefaultRepository[T]) BeginNested(db DB, opts ...*sql.TxOptions) (tx Repository[T], err error) {
+	gdb, err := cast(db)
+	if err != nil {
+		return nil, err
+	}
+	return r.tx(gdb.Begin(opts...)), nil
 }
