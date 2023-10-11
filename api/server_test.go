@@ -20,11 +20,13 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/icon-project/btp2/common/log"
 	"github.com/icon-project/btp2/common/types"
+	"github.com/icon-project/btp2/common/wallet"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/icon-project/btp-sdk/contract"
@@ -141,13 +143,13 @@ var (
 )
 
 func init() {
-	//typeToSpec := make(map[string][]byte)
-	//for network, config := range configs {
-	//	typeToSpec[config.NetworkType] = contracts[network].Spec
-	//}
-	//service.RegisterFactory(serviceTest, func(networks map[string]service.Network, l log.Logger) (service.Service, error) {
-	//	return service.NewDefaultService(serviceTest, networks, typeToSpec, l)
-	//})
+	typeToSpec := make(map[string][]byte)
+	for network, config := range configs {
+		typeToSpec[config.NetworkType] = contracts[network].Spec
+	}
+	service.RegisterFactory(serviceTest, func(networks map[string]service.Network, l log.Logger) (service.Service, error) {
+		return service.NewDefaultService(serviceTest, networks, typeToSpec, l)
+	})
 }
 
 type TestConfig struct {
@@ -163,22 +165,20 @@ type Contract struct {
 }
 
 func MustLoadWallet(keyStoreFile, keyStoreSecret string) types.Wallet {
-	//w, err := wallet.DecryptKeyStore(MustReadFile(keyStoreFile), MustReadFile(keyStoreSecret))
-	//if err != nil {
-	//	log.Panicf("keyStoreFile:%s, keyStoreSecret:%s, %+v",
-	//		keyStoreFile, keyStoreSecret, err)
-	//}
-	//return w
-	return nil
+	w, err := wallet.DecryptKeyStore(MustReadFile(keyStoreFile), MustReadFile(keyStoreSecret))
+	if err != nil {
+		log.Panicf("keyStoreFile:%s, keyStoreSecret:%s, %+v",
+			keyStoreFile, keyStoreSecret, err)
+	}
+	return w
 }
 
 func MustReadFile(f string) []byte {
-	//b, err := os.ReadFile(f)
-	//if err != nil {
-	//	log.Panicf("fail to ReadFile err:%+v", err)
-	//}
-	//return b
-	return nil
+	b, err := os.ReadFile(f)
+	if err != nil {
+		log.Panicf("fail to ReadFile err:%+v", err)
+	}
+	return b
 }
 
 func MustEncodeOptions(v interface{}) contract.Options {
@@ -250,14 +250,14 @@ func server(t *testing.T, withSignerService bool) *Server {
 	if withSignerService {
 		s.Signers = signers
 	}
-	//aMap := adaptors(t)
-	//for network, a := range aMap {
-	//	s.SetAdaptor(network, a)
-	//}
-	//sMap := services(t, aMap, withSignerService)
-	//for _, svc := range sMap {
-	//	s.SetService(svc)
-	//}
+	aMap := adaptors(t)
+	for network, a := range aMap {
+		s.SetAdaptor(network, a)
+	}
+	sMap := services(t, aMap, withSignerService)
+	for _, svc := range sMap {
+		s.SetService(svc)
+	}
 	go func() {
 		err := s.Start()
 		if err != nil && err != http.ErrServerClosed {
@@ -665,11 +665,4 @@ func Test_ServerMonitorEvent(t *testing.T) {
 			cancel()
 		}
 	}
-}
-
-func Test_ServerTrackerAPIWithoutSignerService(t *testing.T) {
-	s := server(t, false)
-	defer s.Stop()
-
-	<-time.After(time.Minute * 10)
 }

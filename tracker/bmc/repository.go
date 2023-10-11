@@ -17,6 +17,11 @@ const (
 	EventTable = TablePrefix + "_btp_event"
 	orderByHeightDesc = "height desc"
 	orderBySrcAsc = "src asc"
+
+	ColumnFinalized        = "finalized"
+	QueryNetworkAndFinalizedAndHeightSmallerThanEqual = "network_address = ? AND finalized = ? AND height <= ?"
+	QueryBlockId = "block_id = ?"
+	QueryId = "id = ?"
 )
 
 type Block struct {
@@ -30,7 +35,7 @@ type Block struct {
 }
 
 type BlockRepository struct {
-	*database.DefaultRepository[Block]
+	database.Repository[Block]
 }
 
 func NewBlockRepository(db *gorm.DB) (*BlockRepository, error) {
@@ -39,12 +44,8 @@ func NewBlockRepository(db *gorm.DB) (*BlockRepository, error) {
 		return nil, err
 	}
 	return &BlockRepository{
-		DefaultRepository: r,
+		Repository: r,
 	}, nil
-}
-
-func (r *BlockRepository) SaveBlock(block Block) error {
-	return r.Save(&block)
 }
 
 func (r *BlockRepository) FindOneByNetworkAddressOrderByHeightDesc(na string) (*Block, error) {
@@ -53,16 +54,24 @@ func (r *BlockRepository) FindOneByNetworkAddressOrderByHeightDesc(na string) (*
 	})
 }
 
-func (r *BlockRepository) FindByNetworkAddressOrderByHeightDesc(query interface{}) ([]Block, error) {
-	return r.FindWithOrder(orderByHeightDesc, query)
-}
-
 func (r *BlockRepository) FindOneByNetworkAddressAndHeightAndHash(na, hash string, height int64) (*Block, error) {
 	return r.FindOne(&Block{
 		NetworkAddress: na,
 		BlockHash: hash,
 		Height: height,
 	})
+}
+
+func (r *BlockRepository) TransactionWithLock(fc func(tx *BlockRepository) error, lock interface{}) error {
+	return r.Repository.TransactionWithLock(func(tx database.Repository[Block]) error {
+		return fc(r.tx(tx))
+	}, lock)
+}
+
+func (r *BlockRepository) tx(tx database.Repository[Block]) *BlockRepository {
+	return &BlockRepository{
+		Repository: tx,
+	}
 }
 
 type BTPStatusRepository struct {
@@ -105,10 +114,6 @@ type NetworkSummary struct {
 	Total      int64  `json:"status_total"`
 	InDelivery int64  `json:"status_in_delivery"`
 	Completed  int64  `json:"status_completed"`
-}
-
-func (r *BTPStatusRepository) SaveBtpStatus(btpStatus BTPStatus) error {
-	return r.Save(&btpStatus)
 }
 
 func (r *BTPStatusRepository) FindOneBySrcAndNsn(src string, nsn int64) (*BTPStatus, error) {
@@ -190,14 +195,9 @@ type BTPEvent struct {
 	//BtpStatus BTPStatus   `gorm:"foreignKey:btp_status_id;references:id"`
 }
 
-func (r *BTPEventRepository) SaveBtpEvent(btpEvent BTPEvent) error {
-	return r.Save(&btpEvent)
-}
-
 func (r *BTPEventRepository) FindBySrcAndNsn(src string, nsn int64) ([]BTPEvent, error) {
 	return r.Find(BTPEvent{
 		Src: src,
 		Nsn: nsn,
 	})
 }
-

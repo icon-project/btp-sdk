@@ -52,10 +52,7 @@ const (
 	TaskStatus = "status"
 	TaskEvent = "event"
 	TaskSearch = "search"
-)
-
-const (
-	subscriptionBufferSize = 5
+	DefaultFinalitySubscribeBuffer = 1
 )
 
 func init() {
@@ -63,10 +60,9 @@ func init() {
 }
 
 type Tracker struct {
-	db        *gorm.DB
 	s         service.Service
 	nMap      map[string]Network
-	fmMap     map[string]contract.FinalityMonitor
+	runCtx 	  context.Context
 	runCancel context.CancelFunc
 	runMtx    sync.RWMutex
 	l         log.Logger
@@ -81,6 +77,8 @@ type Network struct {
 	Adaptor      contract.Adaptor
 	Options      TrackerOptions
 	EventFilters []contract.EventFilter
+	Ctx 		 context.Context
+	Cancel 		 context.CancelFunc
 }
 
 type TrackerOptions struct {
@@ -128,11 +126,6 @@ func NewTracker(s service.Service, networks map[string]tracker.Network, db *gorm
 		nMap[fromNetwork] = fn
 	}
 
-	fmMap := make(map[string]contract.FinalityMonitor)
-	for network, n := range nMap {
-		fmMap[network] = n.Adaptor.FinalityMonitor()
-	}
-
 	br, err := NewBlockRepository(db)
 	if err != nil {
 		return nil, err
@@ -147,20 +140,13 @@ func NewTracker(s service.Service, networks map[string]tracker.Network, db *gorm
 	}
 
 	return &Tracker{
-		db:    db,
 		s:     s,
 		nMap:  nMap,
-		fmMap: fmMap,
 		l:     l,
-
 		br: br,
 		sr: sr,
 		er: er,
 	}, nil
-}
-
-func (r *Tracker) DB() *gorm.DB {
-	return r.db
 }
 
 func (r *Tracker) Name() string {
@@ -177,18 +163,12 @@ func (r *Tracker) Start() error {
 	if r.runCancel != nil {
 		return errors.Errorf("already started")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	r.runCtx, r.runCancel = context.WithCancel(context.Background())
 	for network, n := range r.nMap {
-		height, err := r.getMonitorHeight(network)
-		if err != nil {
-			cancel()
-			return err
-		}
-		go r.monitorEvent(ctx, network, n.EventFilters, height)
-
-		go r.finalityMonitor(ctx, network)
+		go r.monitorFinality(r.runCtx, network)
+		n.Ctx, n.Cancel = context.WithCancel(r.runCtx)
+		go r.monitorEvent(n.Ctx, network, n.EventFilters, n.Options.InitHeight)
 	}
-	r.runCancel = cancel
 	return nil
 }
 
@@ -200,6 +180,7 @@ func (r *Tracker) Stop() error {
 	}
 	r.runCancel()
 	r.runCancel = nil
+	r.runCtx = nil
 	return nil
 }
 
@@ -220,16 +201,23 @@ func (r *Tracker) getMonitorHeight(network string) (int64, error) {
 	return ih, nil
 }
 
-func (r *Tracker) monitorEvent(ctx context.Context, network string, efs []contract.EventFilter, height int64) {
-	r.l.Debugf("monitorEvent network:%s height:%d", network, height)
+func (r *Tracker) monitorEvent(ctx context.Context, network string, efs []contract.EventFilter, initHeight int64) {
 	for {
 		select {
 		case <-time.After(time.Second):
+			height, err := r.getMonitorHeight(network)
+			if err != nil {
+				r.l.Errorf("monitorEvent fail to getMonitorHeight network:%s err:%+v", network, err)
+				continue
+			}
+			if height < 1 {
+				height = initHeight
+			}
+			r.l.Debugf("monitorEvent network:%s height:%v", network, height)
 			if err := r.s.MonitorEvent(ctx, network, func(e contract.Event) error {
-				r.l.Tracef("monitorEvent callback network:%s event:%s height:%s", network, e.Name(), e.BlockHeight())
 				switch e.Name() {
 				case EventBTP:
-					return r.handleBTPEvent(network, e) // TODO handle BTP Event
+					return r.handleBTPEvent(network, e)
 				}
 				return nil
 			}, efs, height); err != nil {
@@ -275,19 +263,14 @@ func getParamString(e contract.Event, param string) (string , error){
 	switch param {
 	case "src":
 		p = e.Params()["_src"]
-		log.Debugf("_src type: %T value: %v", p, p)
 	case "next":
 		p = e.Params()["_next"]
-		log.Debugf("_next type: %T value: %v", p, p)
 	case "event":
 		p = e.Params()["_event"]
-		log.Debugf("_event type: %T value: %v", p, p)
 	case "blockId":
 		p = e.BlockID()
-		log.Debugf("_blockId type: %T value: %v", p, p)
 	case "txId":
 		p = e.TxID()
-		log.Debugf("_txId type: %T value: %v", p, p)
 	}
 	value, err := contract.StringOf(eventIndexedValue(p))
 	if err != nil {
@@ -302,7 +285,6 @@ func getParamInt64(e contract.Event, param string) (int64, error){
 	switch param {
 	case "nsn":
 		p, err = e.Params()["_nsn"].(contract.Integer).AsInt64()
-		log.Debugf("_nsn type: %T value: %v", p, p)
 	}
 	return p.(int64), err
 }
@@ -530,66 +512,82 @@ func findNextEvent(candidates []BTPEvent, links []int) BTPEvent {
 	return BTPEvent{}
 }
 
-func (r *Tracker) finalityMonitor(ctx context.Context, network string) {
-	r.l.Debugf("FinalityBlock network: %s", network)
-	n := r.nMap[network]
-	fm := r.fmMap[network]
-
-	subscribe:
-	s := fm.Subscribe(subscriptionBufferSize)
+func (r *Tracker) monitorFinality(ctx context.Context, network string) {
+	fm := r.nMap[network].Adaptor.FinalityMonitor()
+	s := fm.Subscribe(DefaultFinalitySubscribeBuffer)
 	for {
 		select {
-		case bi, opened := <-s.C():
-			r.l.Debugf("Subscribe bi:%+v, opened:%v network: %s", bi, opened, network)
-			if !opened {
-				r.l.Debugf("Subscribe closed, network: %s", network)
-				goto subscribe
+		case bi, ok := <-s.C():
+			if !ok {
+				r.l.Debugf("monitorFinality close channel network:%s", network)
+				s = fm.Subscribe(DefaultFinalitySubscribeBuffer)
+				continue
 			}
-			err := r.handleFinalizeBlock(n, fm, bi)
-			if err != nil {
-				return
+			if err := r.finalizeEvent(fm, network, bi); err != nil {
+				r.l.Errorf("monitorFinality fail finalizeEvent network:%s err:%+v", network, err)
 			}
 		case <-ctx.Done():
-			s.Unsubscribe()
-			r.l.Debugf("FinalityBlock context done, unsubscribe: %s", network)
+			r.l.Debugf("monitorFinality done network:%s", network)
 			return
 		}
 	}
 }
 
-func (r *Tracker) handleFinalizeBlock(network Network, fm contract.FinalityMonitor, info contract.BlockInfo) error {
-	na := network.Options.NetworkAddress
-	blocks, err := r.br.FindByNetworkAddressOrderByHeightDesc(
-		fmt.Sprintf("network_address = '%s' AND height <= %d AND finalized = %t", na, info.Height(), false))
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			log.Debugf("No results were found, network: %s, height: %s", network, info.Height())
-		}
-	}
-	for _, block := range blocks {
-		err = r.finalizeBlock(fm, block)
-		if err != nil {
+func (r *Tracker) finalizeEvent(fm contract.FinalityMonitor, network string, bi contract.BlockInfo) error {
+	//Get NetworkAddress
+	na := r.nMap[network].Options.NetworkAddress
+	return r.br.TransactionWithLock(func(tx *BlockRepository) error {
+		var (
+			bl []Block
+			err error
+			finalized bool
+		)
+		//FindByNetworkAndFinalizedAndHeight
+		if bl, err = tx.Find(QueryNetworkAndFinalizedAndHeightSmallerThanEqual,
+			na, false, bi.Height()); err != nil {
 			return err
 		}
-	}
-	return nil
+		if len(bl) > 0 {
+			for _, t := range bl {
+				if finalized, err = fm.IsFinalized(t.Height, t.BlockHash); err != nil {
+					if contract.ErrorCodeNotFoundBlock.Equals(err) {
+						return r.dropBlock(tx, network, t.Height, t.Id)
+					}
+					return err
+				}
+				if !finalized {
+					return errors.Errorf("invalid FinalityMonitor state for height:%v", t.Height)
+				}
+			}
+			if err = tx.Update(ColumnFinalized, true, QueryNetworkAndFinalizedAndHeightSmallerThanEqual,
+				na, false, bi.Height()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, network)
 }
 
-func (r *Tracker) finalizeBlock(fm contract.FinalityMonitor, block Block) error {
-	result, err := fm.IsFinalized(block.Height, block.BlockHash)
-	if err != nil {
-		//TODO err == ErrorCodeNotFoundBlock
-		// handle dropped block, also btp status and events
-		// suspend monitor event and unsubscribe block
-		// cleanup btp event, btp status and block
-		// resume monitor event and subscribe with recalculated height
+//TODO update btp status
+func (r *Tracker) dropBlock(tx database.DB, network string, height int64, id int) error {
+	r.runMtx.RLock()
+	defer r.runMtx.Unlock()
+	r.l.Infof("dropBlock network:%s height:%v", network, height)
+	n := r.nMap[network]
+	if n.Cancel != nil {
+		n.Cancel()
+	}
+	er, err := r.er.WithDB(tx)
+	if err = er.Delete(QueryBlockId, id); err != nil {
 		return err
 	}
-	if result {
-		block.Finalized = true
-		err = r.br.SaveBlock(block)
+	br, err := r.br.WithDB(tx)
+	if err = br.Delete(QueryId, id); err != nil {
+		return err
 	}
-	return err
+	n.Ctx, n.Cancel = context.WithCancel(r.runCtx)
+	go r.monitorEvent(n.Ctx, network, n.EventFilters, n.Options.InitHeight)
+	return nil
 }
 
 func (r *Tracker) Find(fp tracker.FindParam) (*database.Page[any], error) {

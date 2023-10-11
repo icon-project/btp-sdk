@@ -120,7 +120,7 @@ func Test_Tracker(t *testing.T) {
 	s := NewTestService(t, l)
 	fmt.Println("Service Name: ", s.Name())
 
-	db, _ := database.OpenDatabase(Database)
+	db, _ := database.OpenDatabase(Database, l)
 
 	tkr := NewTestTracker(t, s, db, l)
 	fmt.Println("Tracker Name: ", tkr.Name())
