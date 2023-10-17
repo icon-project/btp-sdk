@@ -169,7 +169,8 @@ func (r *DefaultRepository[T]) Updates(value interface{}, query interface{}, con
 }
 
 func (r *DefaultRepository[T]) Delete(query interface{}, conds ...interface{}) error {
-	return r.table().Delete(query, conds...).Error
+	v := new(T)
+	return r.where(query, conds...).Delete(v).Error
 }
 
 func (r *DefaultRepository[T]) Exists(query interface{}, conds ...interface{}) (bool, error) {

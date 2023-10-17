@@ -567,7 +567,7 @@ func (c *AutoCaller) finalizeCall(fm contract.FinalityMonitor, network string, b
 			for _, t := range cl {
 				if finalized, err = fm.IsFinalized(t.EventHeight, t.EventBlockID); err != nil {
 					if contract.ErrorCodeNotFoundBlock.Equals(err) {
-						return c.dropBlock(tx, network, t.EventHeight)
+						return c.dropBlock(tx.DB(), network, t.EventHeight)
 					}
 					return err
 				}
@@ -590,7 +590,7 @@ func (c *AutoCaller) finalizeCall(fm contract.FinalityMonitor, network string, b
 			for _, t := range cl {
 				if finalized, err = fm.IsFinalized(t.BlockHeight, t.BlockID); err != nil {
 					if contract.ErrorCodeNotFoundBlock.Equals(err) {
-						return c.dropBlock(tx, network, t.BlockHeight)
+						return c.dropBlock(tx.DB(), network, t.BlockHeight)
 					}
 					return err
 				}
@@ -624,7 +624,7 @@ func (c *AutoCaller) finalizeRollback(fm contract.FinalityMonitor, network strin
 			for _, t := range rl {
 				if finalized, err = fm.IsFinalized(t.TriggerHeight, t.TriggerBlockID); err != nil {
 					if contract.ErrorCodeNotFoundBlock.Equals(err) {
-						return c.dropBlock(tx, network, t.TriggerHeight)
+						return c.dropBlock(tx.DB(), network, t.TriggerHeight)
 					}
 					return err
 				}
@@ -647,7 +647,7 @@ func (c *AutoCaller) finalizeRollback(fm contract.FinalityMonitor, network strin
 			for _, t := range rl {
 				if finalized, err = fm.IsFinalized(t.EventHeight, t.EventBlockID); err != nil {
 					if contract.ErrorCodeNotFoundBlock.Equals(err) {
-						return c.dropBlock(tx, network, t.EventHeight)
+						return c.dropBlock(tx.DB(), network, t.EventHeight)
 					}
 					return err
 				}
@@ -670,7 +670,7 @@ func (c *AutoCaller) finalizeRollback(fm contract.FinalityMonitor, network strin
 			for _, t := range rl {
 				if finalized, err = fm.IsFinalized(t.BlockHeight, t.BlockID); err != nil {
 					if contract.ErrorCodeNotFoundBlock.Equals(err) {
-						return c.dropBlock(tx, network, t.BlockHeight)
+						return c.dropBlock(tx.DB(), network, t.BlockHeight)
 					}
 					return err
 				}
@@ -696,6 +696,9 @@ func (c *AutoCaller) dropBlock(tx database.DB, network string, height int64) err
 		n.Cancel()
 	}
 	cr, err := c.cr.WithDB(tx)
+	if err != nil {
+		return err
+	}
 	if err = cr.Delete(QueryNetworkAndEventHeightGreaterThanEqual, network, height); err != nil {
 		return err
 	}
@@ -703,6 +706,9 @@ func (c *AutoCaller) dropBlock(tx database.DB, network string, height int64) err
 		return err
 	}
 	rr, err := c.rr.WithDB(tx)
+	if err != nil {
+		return err
+	}
 	if err = rr.Delete(QueryNetworkAndTriggerHeightGreaterThanEqual, network, height); err != nil {
 		return err
 	}
