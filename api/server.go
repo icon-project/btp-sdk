@@ -821,11 +821,17 @@ func (s *Server) RegisterTrackerHandler(g *echo.Group) {
 		s.mtx.RLock()
 		defer s.mtx.RUnlock()
 		r := make(TrackerInfos, 0)
-		for _, v := range s.tMap {
-			r = append(r, TrackerInfo{v.Name(), v.Tasks()})
+		for _, t := range s.tMap {
+			r = append(r, TrackerInfo{t.Name(), t.Tasks()})
 		}
 		return c.JSON(http.StatusOK, r)
 	})
+	//g.GET("/network", func(c echo.Context) error {
+	//	for _, t := range s.tMap {
+	//		t.Icon()
+	//	}
+	//	return nil
+	//})
 	g.GET("/:"+PathParamService, func(c echo.Context) error {
 		p := c.Param(PathParamService)
 		tr := s.GetTracker(p)
@@ -892,7 +898,6 @@ func (s *Server) RegisterTrackerHandler(g *echo.Group) {
 			Task: task,
 			Query: pm,
 		}
-
 		ret, err := tr.FindOne(fp)
 		if err != nil {
 			return err
@@ -907,6 +912,32 @@ func (s *Server) RegisterTrackerHandler(g *echo.Group) {
 				fmt.Sprintf("Tracker(%s) not found", p))
 		}
 		ret, err := tr.Summary()
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+	g.GET("/:"+PathParamService+"/search", func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		tr := s.GetTracker(p)
+		if tr == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Tracker(%s) not found", p))
+		}
+		fp := tracker.FindOneParam{
+			Task:  "search",
+		}
+		m, err := QueryParamsToMap(c)
+		if err != nil {
+			return err
+		}
+		if tv, ok := m["query"]; ok {
+			if fp.Query, ok = tv.(map[string]interface{}); !ok {
+				return echo.NewHTTPError(http.StatusBadRequest,
+					fmt.Sprintf("invalid query(%v)", tv))
+			}
+		}
+		ret, err := tr.FindOne(fp)
 		if err != nil {
 			return err
 		}

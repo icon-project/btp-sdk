@@ -2,7 +2,6 @@ package bmc
 
 import (
 	"database/sql"
-	"time"
 
 	"gorm.io/gorm"
 
@@ -18,20 +17,21 @@ const (
 	orderByHeightDesc = "height desc"
 	orderBySrcAsc = "src asc"
 
-	ColumnFinalized        = "finalized"
-	QueryNetworkAndFinalizedAndHeightSmallerThanEqual = "network_address = ? AND finalized = ? AND height <= ?"
+	ColumnFinalized = "finalized"
+	QueryNetworkAddressAndFinalizedAndHeightBetween = "network_address = ? AND finalized = ? AND height BETWEEN ? AND ?"
+	QueryBlockIdIn = "block_id IN ?"
 	QueryBlockId = "block_id = ?"
 	QueryId = "id = ?"
+	QueryIdIn = "id IN ?"
 )
 
 type Block struct {
-	Id             int       `gorm:"column:id;primary_key;AUTO_INCREMENT" json:"id"`
-	NetworkAddress string    `gorm:"column:network_address" json:"network_address"`
-	BlockHash      string    `gorm:"column:block_hash" json:"block_hash"`
-	Height         int64     `gorm:"column:height" json:"height"`
-	Finalized      bool      `gorm:"column:finalized" json:"finalized"`
-	CreatedAt      time.Time `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt      time.Time `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	database.Model
+	BlockId        string    `json:"block_id" gorm:"column:block_id"`
+	Height         int64     `json:"height" gorm:"column:height"`
+	NetworkName	   string    `json:"network_name" gorm:"column:network_name"`
+	NetworkAddress string    `json:"network_address" gorm:"column:network_address"`
+	Finalized      bool      `json:"finalized" gorm:"column:finalized"`
 }
 
 type BlockRepository struct {
@@ -54,10 +54,10 @@ func (r *BlockRepository) FindOneByNetworkAddressOrderByHeightDesc(na string) (*
 	})
 }
 
-func (r *BlockRepository) FindOneByNetworkAddressAndHeightAndHash(na, hash string, height int64) (*Block, error) {
+func (r *BlockRepository) FindOneByNetworkAddressAndHeightAndHash(na, blockId string, height int64) (*Block, error) {
 	return r.FindOne(&Block{
 		NetworkAddress: na,
-		BlockHash: hash,
+		BlockId: blockId,
 		Height: height,
 	})
 }
@@ -91,15 +91,15 @@ func NewBTPStatusRepository(db *gorm.DB) (*BTPStatusRepository, error) {
 }
 
 type BTPStatus struct {
-	Id          int            `gorm:"column:id;primary_key;AUTO_INCREMENT" json:"id"`
-	Src         string         `gorm:"column:src" json:"src"`
-	Nsn         int64          `gorm:"column:nsn" json:"nsn"`
-	LastNetwork sql.NullString `gorm:"column:last_network" json:"last_network"`
-	Status      sql.NullString `gorm:"column:status" json:"status"`
-	Finalized   bool           `gorm:"column:finalized" json:"finalized"`
-	Links       sql.NullString `gorm:"column:links" json:"links"`
-	CreatedAt   time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	UpdatedAt   time.Time      `gorm:"column:updated_at;autoUpdateTime" json:"updated_at"`
+	database.Model
+	Src         		string         `json:"src" gorm:"column:src"`
+	Nsn         		int64          `json:"nsn" gorm:"column:nsn"`
+	Status      		sql.NullString `json:"status" gorm:"column:status"`
+	LastNetworkName 	sql.NullString `json:"last_network_name" gorm:"column:last_network_name"`
+	LastNetworkAddress 	sql.NullString `json:"last_network_address" gorm:"column:last_network_address"`
+	Links       		sql.NullString `json:"links" gorm:"column:links"`
+	Finalized   		bool           `json:"finalized" gorm:"column:finalized"`
+	BTPEvents   		[]BTPEvent     `json:"btp_events" gorm:"foreignKey:BtpStatusId;references:id"`
 }
 
 type BTPStatusCount struct {
@@ -121,6 +121,28 @@ func (r *BTPStatusRepository) FindOneBySrcAndNsn(src string, nsn int64) (*BTPSta
 		Src: src,
 		Nsn: nsn,
 	})
+}
+
+func (r *BTPStatusRepository) FindOneWithBtpEventsById(id interface{}) (*BTPStatus, error) {
+	var btpStatus *BTPStatus
+	result := r.db.Table(StatusTable).Preload("BTPEvents", func(db *gorm.DB) *gorm.DB {
+		return db.Table(EventTable).Order(EventTable+".created_at ASC")
+	}).First(&btpStatus, id)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return btpStatus, nil
+}
+
+func (r *BTPStatusRepository) FindOneWithBtpEventsBySrcAndNsn(src, nsn interface{}) (*BTPStatus, error) {
+	var btpStatus *BTPStatus
+	result := r.db.Table(StatusTable).Preload("BTPEvents", func(db *gorm.DB) *gorm.DB {
+		return db.Table(EventTable).Order(EventTable+".created_at ASC")
+	}).Where("src = ? AND nsn = ?", src, nsn).First(&btpStatus)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	return btpStatus, nil
 }
 
 func (r *BTPStatusRepository) SummaryOfBtpStatusByNetworks() ([]any, error) {
@@ -180,19 +202,18 @@ func NewBTPEventRepository(db *gorm.DB) (*BTPEventRepository, error) {
 }
 
 type BTPEvent struct {
-	Id          int       `gorm:"column:id;primary_key;AUTO_INCREMENT" json:"id"`
-	Src         string    `gorm:"column:src" json:"src"`
-	Nsn         int64     `gorm:"column:nsn" json:"nsn"`
-	Next        string    `gorm:"column:next" json:"next"`
-	Event       string    `gorm:"column:event" json:"event"`
-	BlockId     int       `gorm:"column:block_id" json:"block_id"`
-	BtpStatusId int       `gorm:"column:btp_status_id" json:"btp_status_id"`
-	TxHash      string    `gorm:"column:tx_hash" json:"tx_hash"`
-	EventId     []byte    `gorm:"column:event_id" json:"event_id"`
-	OccurredIn  string    `gorm:"column:occurred_in" json:"occurred_in"`
-	CreatedAt time.Time   `gorm:"column:created_at;autoCreateTime" json:"created_at"`
-	//Block     Block       `gorm:"foreignKey:block_id;references:id"`
-	//BtpStatus BTPStatus   `gorm:"foreignKey:btp_status_id;references:id"`
+	database.Model
+	Src         	string    `json:"src" gorm:"column:src"`
+	Nsn         	int64     `json:"nsn" gorm:"column:nsn"`
+	Next        	string    `json:"next" gorm:"column:next"`
+	Event       	string    `json:"event" gorm:"column:event"`
+	BlockId     	uint      `json:"block_id" gorm:"column:block_id"`
+	BtpStatusId 	uint      `json:"btp_status_id" gorm:"column:btp_status_id"`
+	TxHash      	string    `json:"tx_hash" gorm:"column:tx_hash"`
+	EventId     	[]byte    `json:"event_id" gorm:"column:event_id"`
+	NetworkName	   	string    `json:"network_name" gorm:"column:network_name"`
+	NetworkAddress 	string    `json:"network_address" gorm:"column:network_address"`
+	Finalized      	bool      `json:"finalized" gorm:"column:finalized"`
 }
 
 func (r *BTPEventRepository) FindBySrcAndNsn(src string, nsn int64) ([]BTPEvent, error) {

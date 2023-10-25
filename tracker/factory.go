@@ -34,6 +34,7 @@ type Tracker interface {
 	Find(FindParam) (*database.Page[any], error)
 	FindOne(FindOneParam) (any, error)
 	Summary() ([]any, error)
+	Networks() []Network
 }
 
 type FindParam struct {
