@@ -154,16 +154,15 @@ func (r *Tracker) Name() string {
 	return r.s.Name()
 }
 
-func (r *Tracker) Networks() []tracker.Network {
+func (r *Tracker) Networks() []tracker.NetworkOfTracker {
 	//TODO images
-	keys := make([]string, 0, len(r.nMap))
-	values := make([]tracker.Network, 0, len(r.nMap))
-
+	values := make([]tracker.NetworkOfTracker, 0, len(r.nMap))
 	for k, v := range r.nMap {
-		keys = append(keys, k)
-		values = append(values, tracker.Network{
-			NetworkType: v.NetworkType,
-			Options: make(contract.Options),
+		values = append(values, tracker.NetworkOfTracker{
+			Name: k,
+			Address: v.Options.NetworkAddress,
+			Type: v.NetworkType,
+			Image: v.Options.NetworkIcon,
 		})
 	}
 	return values
@@ -587,7 +586,6 @@ func (r *Tracker) finalizeBlock(fm contract.FinalityMonitor, network string, bi 
 		}
 		if len(bl) > 0 {
 			for _, t := range bl {
-				r.l.Infof("AAA finalize btp block, block id: %v", t.ID)
 				if finalized, err = fm.IsFinalized(t.Height, t.BlockId); err != nil {
 					if contract.ErrorCodeNotFoundBlock.Equals(err) {
 						return r.dropBlock(tx.DB(), network, t.Height, t.ID)

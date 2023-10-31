@@ -34,7 +34,7 @@ type Tracker interface {
 	Find(FindParam) (*database.Page[any], error)
 	FindOne(FindOneParam) (any, error)
 	Summary() ([]any, error)
-	Networks() []Network
+	Networks() []NetworkOfTracker
 }
 
 type FindParam struct {
@@ -52,6 +52,13 @@ type Network struct {
 	NetworkType string
 	Adaptor     contract.Adaptor
 	Options     contract.Options
+}
+
+type NetworkOfTracker struct {
+	Name 		string 		`json:"name"`
+	Address	 	string		`json:"address"`
+	Type 		string		`json:"type"`
+	Image 		string		`json:"imageBase64"`
 }
 
 type Options map[string]interface{}

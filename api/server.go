@@ -826,12 +826,15 @@ func (s *Server) RegisterTrackerHandler(g *echo.Group) {
 		}
 		return c.JSON(http.StatusOK, r)
 	})
-	//g.GET("/network", func(c echo.Context) error {
-	//	for _, t := range s.tMap {
-	//		t.Icon()
-	//	}
-	//	return nil
-	//})
+	g.GET("/:"+PathParamService+"/network", func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		tr := s.GetTracker(p)
+		if tr == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Tracker(%s) not found", p))
+		}
+		return c.JSON(http.StatusOK, tr.Networks())
+	})
 	g.GET("/:"+PathParamService, func(c echo.Context) error {
 		p := c.Param(PathParamService)
 		tr := s.GetTracker(p)
