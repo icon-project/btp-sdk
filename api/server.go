@@ -193,7 +193,6 @@ func (s *Server) Start() error {
 	s.RegisterAPIDocHandler(s.e.Group(GroupUrlApiDocs))
 	s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
 	s.RegisterAutoCallerHandler(s.e.Group(GroupUrlAutoCaller))
-	//TODO Register tracker api handler
 	s.RegisterTrackerHandler(s.e.Group(GroupUrlTracker))
 	web.RegisterWebHandler(s.e.Group(GroupUrlWeb))
 	return s.e.Start(s.cfg.Address)
@@ -810,7 +809,7 @@ func (s *Server) RegisterAutoCallerHandler(g *echo.Group) {
 	})
 }
 
-type TrackerInfo struct { //TODO what?
+type TrackerInfo struct {
 	Name  string   `json:"name"`
 	Tasks []string `json:"tasks"`
 }

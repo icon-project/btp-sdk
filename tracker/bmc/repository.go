@@ -110,7 +110,6 @@ type BTPStatusCount struct {
 
 type NetworkSummary struct {
 	Address    string `json:"network_address"`
-	Name       string `json:"network_name"`
 	Total      int64  `json:"status_total"`
 	InDelivery int64  `json:"status_in_delivery"`
 	Completed  int64  `json:"status_completed"`
@@ -123,22 +122,22 @@ func (r *BTPStatusRepository) FindOneBySrcAndNsn(src string, nsn int64) (*BTPSta
 	})
 }
 
-func (r *BTPStatusRepository) FindOneWithBtpEventsById(id interface{}) (*BTPStatus, error) {
+func (r *BTPStatusRepository) FindOneByIdWithBtpEvents(id interface{}) (*BTPStatus, error) {
 	var btpStatus *BTPStatus
-	result := r.db.Table(StatusTable).Preload("BTPEvents", func(db *gorm.DB) *gorm.DB {
-		return db.Table(EventTable).Order(EventTable+".created_at ASC")
-	}).First(&btpStatus, id)
+	result := r.db.Preload("BTPEvents", func(db *gorm.DB) *gorm.DB {
+		return db.Table(EventTable).Where("btp_status_id = ?", id).Order(EventTable+".created_at ASC")
+	}).Table(StatusTable).Where("id = ?", id).First(&btpStatus)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	return btpStatus, nil
 }
 
-func (r *BTPStatusRepository) FindOneWithBtpEventsBySrcAndNsn(src, nsn interface{}) (*BTPStatus, error) {
+func (r *BTPStatusRepository) FindOneBySrcAndNsnWithBtpEvents(src, nsn interface{}) (*BTPStatus, error) {
 	var btpStatus *BTPStatus
-	result := r.db.Table(StatusTable).Preload("BTPEvents", func(db *gorm.DB) *gorm.DB {
+	result := r.db.Preload("BTPEvents", func(db *gorm.DB) *gorm.DB {
 		return db.Table(EventTable).Order(EventTable+".created_at ASC")
-	}).Where("src = ? AND nsn = ?", src, nsn).First(&btpStatus)
+	}).Table(StatusTable).Where("src = ? AND nsn = ?", src, nsn).First(&btpStatus)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -149,37 +148,34 @@ func (r *BTPStatusRepository) SummaryOfBtpStatusByNetworks() ([]any, error) {
 	//TODO summary table or view??
 	counts := make([]BTPStatusCount, 0)
 	result := r.db.Table(StatusTable).Select(
-		"src, status, count(*) as count").Group("src, status").Order(orderBySrcAsc).Scan(&counts)
+		"src, status, count(*) as count").Group("src, status").Scan(&counts)
 	if result.Error != nil {
 		return nil, result.Error
 	}
-	//TODO More specific level about btp status
-	nSummaries := make(map[string]NetworkSummary, 0)
+	nSummaries := make(map[string]NetworkSummary)
 	for _, count := range counts {
-		var inDelivery, completed int64
-		switch count.Status {
-		case BTPInDelivery:
+		var total, inDelivery, completed int64
+		total = count.Count
+		if count.Status == BTPInDelivery {
 			inDelivery = count.Count
-		case BTPCompleted:
-			completed = count.Count
-		case "ERROR", "DONE":
 		}
-		summary, ok := nSummaries[count.Src]
-		if ok {
-			summary.Total += count.Count
+		if count.Status == BTPCompleted {
+			completed = count.Count
+		}
+		if summary, ok := nSummaries[count.Src]; ok {
+			summary.Total += total
 			summary.InDelivery += inDelivery
 			summary.Completed += completed
+			nSummaries[count.Src] = summary
 		} else {
 			nSummaries[count.Src] = NetworkSummary{
 				Address:    count.Src,
-				Name:       count.Src,
-				Total:      count.Count,
+				Total:      total,
 				InDelivery: inDelivery,
 				Completed:  completed,
 			}
 		}
 	}
-
 	sArr := make([]any, 0, len(nSummaries))
 	for _, s := range nSummaries {
 		sArr = append(sArr, s)
