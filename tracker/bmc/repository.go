@@ -98,7 +98,6 @@ type BTPStatus struct {
 	LastNetworkName 	sql.NullString `json:"last_network_name" gorm:"column:last_network_name"`
 	LastNetworkAddress 	sql.NullString `json:"last_network_address" gorm:"column:last_network_address"`
 	Links       		sql.NullString `json:"links" gorm:"column:links"`
-	Finalized   		bool           `json:"finalized" gorm:"column:finalized"`
 	BTPEvents   		[]BTPEvent     `json:"btp_events" gorm:"foreignKey:BtpStatusId;references:id"`
 }
 
@@ -156,11 +155,11 @@ func (r *BTPStatusRepository) SummaryOfBtpStatusByNetworks() ([]any, error) {
 	for _, count := range counts {
 		var total, inDelivery, completed int64
 		total = count.Count
-		if count.Status == BTPInDelivery {
-			inDelivery = count.Count
-		}
-		if count.Status == BTPCompleted {
+		switch count.Status {
+		case Completed :
 			completed = count.Count
+		default:
+			inDelivery = count.Count
 		}
 		if summary, ok := nSummaries[count.Src]; ok {
 			summary.Total += total

@@ -38,7 +38,6 @@ import (
 )
 
 const (
-	CallMethodGetNetworkAddress = "getNetworkAddress"
 	EventBTP                    = "BTPEvent"
 	BTPInDelivery               = "In Delivery"
 	BTPCompleted                = "Completed"
@@ -241,7 +240,7 @@ func (r *Tracker) monitorEvent(ctx context.Context, network string, efs []contra
 }
 
 func (r *Tracker) onBTPEvent(network string, e contract.Event) error {
-	na := r.getNetworkAddress(network)
+	na := r.nMap[network].Options.NetworkAddress
 	hash, err := getParamString(e, "blockId")
 	height := e.BlockHeight()
 
@@ -249,11 +248,11 @@ func (r *Tracker) onBTPEvent(network string, e contract.Event) error {
 	if err != nil {
 		return err
 	}
-	src, err := getParamString(e, "src")
+	src, err := getParamString(e, EpSrc)
 	if err != nil {
 		return errors.Errorf("invalid _src type:%T", e.Params()["_src"])
 	}
-	nsn, err := getParamInt64(e, "nsn")
+	nsn, err := getParamInt64(e, EpNsn)
 	if err != nil {
 		return errors.Errorf("invalid _nsn type:%T", e.Params()["_nsn"])
 	}
@@ -271,15 +270,15 @@ func getParamString(e contract.Event, param string) (string , error){
 	var p interface{}
 	var err error
 	switch param {
-	case "src":
-		p = e.Params()["_src"]
-	case "next":
-		p = e.Params()["_next"]
-	case "event":
-		p = e.Params()["_event"]
-	case "blockId":
+	case EpSrc:
+		p = e.Params()[EpSrc]
+	case EpNext:
+		p = e.Params()[EpNext]
+	case EpEvent:
+		p = e.Params()[EpEvent]
+	case EpBlockId:
 		p = e.BlockID()
-	case "txId":
+	case EpTxId:
 		p = e.TxID()
 	}
 	value, err := contract.StringOf(eventIndexedValue(p))
@@ -293,8 +292,8 @@ func getParamInt64(e contract.Event, param string) (int64, error){
 	var p interface{}
 	var err error
 	switch param {
-	case "nsn":
-		p, err = e.Params()["_nsn"].(contract.Integer).AsInt64()
+	case EpNsn:
+		p, err = e.Params()[EpNsn].(contract.Integer).AsInt64()
 	}
 	return p.(int64), err
 }
@@ -343,10 +342,9 @@ func (r *Tracker) storeBtpStatus(src, network, na string, nsn int64) (*BTPStatus
 		Src:         		src,
 		LastNetworkName: 	sql.NullString{String: network, Valid: true},
 		LastNetworkAddress: sql.NullString{String: na, Valid: true},
-		Status:      		sql.NullString{String: BTPInDelivery, Valid: true},
+		Status:      		sql.NullString{String: InDelivery, Valid: true},
 		Links:       		sql.NullString{String: "", Valid: true},
 		Nsn:         		nsn,
-		Finalized:   		false,
 	}
 	err = r.sr.Save(bs)
 	if err != nil {
@@ -360,9 +358,9 @@ func (r *Tracker) storeBtpStatus(src, network, na string, nsn int64) (*BTPStatus
 
 func (r *Tracker)storeBtpEvent(e contract.Event, src string, nsn int64, bId, bsId uint, network, na string) error {
 	// Insert BTP Event with block id and btp status id
-	next, err := getParamString(e, "next")
-	event, err := getParamString(e, "event")
-	txHash, err := getParamString(e, "txId")
+	next, err := getParamString(e, EpNext)
+	event, err := getParamString(e, EpEvent)
+	txHash, err := getParamString(e, EpTxId)
 	if err != nil {
 		return errors.Errorf("invalid _txId type:%T", e.Params()["_txId"])
 	}
@@ -386,7 +384,7 @@ func (r *Tracker)storeBtpEvent(e contract.Event, src string, nsn int64, bId, bsI
 }
 
 func (r *Tracker) updateLink(bs *BTPStatus, src, network, na string, nsn int64) error {
-	links, status, finalized := r.getLinks(src, nsn)
+	links, status := r.getLinks(src, nsn)
 	b, err := json.Marshal(links)
 	if err != nil {
 		log.Errorf("JSON marshaling failed: %s", err)
@@ -407,69 +405,42 @@ func (r *Tracker) updateLink(bs *BTPStatus, src, network, na string, nsn int64) 
 		String: na,
 		Valid:  true,
 	}
-	bs.Finalized = finalized
 	err = r.sr.Save(bs)
 	return err
 }
 
-func (r *Tracker) getNetworkAddress(network string) string {
-	rv, _ := r.s.Call(network, CallMethodGetNetworkAddress, nil, nil)
-	return string(rv.(contract.String))
-}
-
-func (r *Tracker) getLinks(src string, nsn int64) ([]uint, string, bool) {
-	finalized := true
+func (r *Tracker) getLinks(src string, nsn int64) ([]uint, string) {
 	links := make([]uint, 0)
-	status := BTPInDelivery
+	status := InDelivery
 	//Find BTPEvents by src and nsn, order by createdAt(time) asc
 	events, err := r.er.FindBySrcAndNsn(src, nsn)
 	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Debugf("No results were found, src: %s, nsn: %s", src, nsn)
 	}
-	if len(events) == 0 { return links, status, false }
-	for _, e := range events {
-		if !e.Finalized {
-			finalized = false
-			break
-		}
-	}
-	//Find first link that BTP event value is "SEND", The starting point
-	curLink, startingPoint := findStartingEvent(events)
-	if reflect.DeepEqual(BTPEvent{}, curLink) { return links, status, false }
+	if len(events) == 0 { return links, status }
+
+	//Find starting point that BTPEvent.Event is "SEND"
+	curLink, location := findStartingEvent(events)
+	if location == -1 { return links, status }
 	links = append(links, curLink.ID)
-	events, _ = trimBTPEvents(events, startingPoint)
+	status = Outgoing
+	events, _ = trimBTPEvents(events, location)
 
 	//Find next links, after find "SEND" event
 	for i := 0; i <= len(events); i++ {
 		//Find next link by BTPEvent.Next and BTPEvent.Event
 		//If next link does not exist, break loop and return links
-		candidates := findCandidatesForNextEvent(events, curLink)
-		if candidates == nil {
-			break
-		}
-
-		if len(candidates) == 1 {
-			curLink = candidates[0]
-		} else if len(candidates) > 1 {
-			//If there is multiple next events cause same occurredAt(networkAddress),
-			//Check which event happened first.
-			curLink = findNextEvent(candidates, links)
+		curLink = findNextLink(events, curLink)
+		if reflect.DeepEqual(curLink, BTPEvent{}) {
+			return links, status
 		}
 		links = append(links, curLink.ID)
-
 		events, i = trimBTPEventsById(events, curLink.ID, i)
 
-		// Reset tmpEvents
-		candidates = nil
-
 		// It means the transfer closed. so return links
-		if isTransferClosed(curLink) {
-			status = BTPCompleted
-			break
-		}
+		if status = inferStatus(curLink, status); status == Completed { break }
 	}
-	if finalized && (status == BTPCompleted) { return links, status, true }
-	return links, status, false
+	return links, status
 }
 
 func trimBTPEvents(events []BTPEvent, index int) ([]BTPEvent, int) {
@@ -494,57 +465,53 @@ func trimBTPEventsById(events []BTPEvent, id uint, index int) ([]BTPEvent, int) 
 	return events, index
 }
 
-// If current link's event is "DROP" or "RECEIVE", BTPEvent.Next is empty string.
-func isTransferClosed(event BTPEvent) bool {
-	if (event.Event == RECEIVE || event.Event == DROP) && event.Next == "" {
-		return true
+// If current link's event is "DROP" or "RECEIVE", BTPEvent.Next is Empty.
+func inferStatus(event BTPEvent, status string) string {
+	if event.Event == DROP { return Completed }
+	switch status {
+	case Outgoing:
+		if event.Event == RECEIVE {
+			if len(event.Next) > 0 {
+				status = WaitReply
+			} else {
+				status = Completed
+			}
+		}
+	case WaitReply:
+		if event.Event == REPLY || event.Event == ERROR {
+			status = Incoming
+		}
+	case Incoming:
+		if event.Event == RECEIVE {
+			status = Completed
+		}
 	}
-	return false
+	return status
 }
 
 func findStartingEvent(events []BTPEvent) (BTPEvent, int) {
 	var curLink BTPEvent
-	var index int
-	for i := 0; i < len(events); i++ {
-		if events[i].Event == SEND {
-			curLink = events[i]
-			index = i
-			break
+	for i, event := range events {
+		if event.Event == SEND {
+			return event, i
 		}
 	}
-	return curLink, index
+	return curLink, -1
 }
 
-func findCandidatesForNextEvent(events []BTPEvent, curLink BTPEvent) []BTPEvent {
-	var nextEvents []BTPEvent = nil
+func findNextLink(events []BTPEvent, curLink BTPEvent) BTPEvent {
 	for _, event := range events {
-		if curLink.Event == RECEIVE {
+		switch curLink.Event {
+		case RECEIVE:
 			if event.Event == REPLY || event.Event == ERROR || event.Event == DROP {
-				nextEvents = append(nextEvents, event)
-				break
+				return event
 			}
-			continue
-		} else if curLink.Next == event.NetworkAddress {
-			nextEvents = append(nextEvents, event)
-		}
-	}
-	return nextEvents
-}
-
-func findNextEvent(candidates []BTPEvent, links []uint) BTPEvent {
-	//If Event is "ROUTE" or "RECEIVE", compare createdAt(time)
-	if candidates[0].Event == ROUTE || candidates[0].Event == RECEIVE {
-		checkVal := false
-		for _, link := range links {
-			if link == candidates[0].ID {
-				checkVal = true
+		default:
+			if curLink.Next == event.NetworkAddress {
+				if curLink.NetworkAddress != event.Next {
+					return event
+				}
 			}
-		}
-
-		if checkVal {
-			return candidates[1]
-		} else {
-			return candidates[0]
 		}
 	}
 	return BTPEvent{}
@@ -564,7 +531,6 @@ func (r *Tracker) monitorFinality(ctx context.Context, network string) {
 			if err := r.finalizeBlock(fm, network, bi); err != nil {
 				r.l.Errorf("monitorFinality fail finalizeEvent network:%s err:%+v", network, err)
 			}
-			// TODO how to update finalized field of btpstatus
 		case <-ctx.Done():
 			r.l.Debugf("monitorFinality done network:%s", network)
 			return
@@ -674,15 +640,15 @@ func (r *Tracker) Find(fp tracker.FindParam) (*database.Page[any], error) {
 func (r *Tracker) FindOne(fp tracker.FindOneParam) (any, error) {
 	switch fp.Task {
 	case TaskStatus:
-		id := fp.Query["id"]
+		id := fp.Query[RpId]
 		ret, err := r.sr.FindOneByIdWithBtpEvents(id)
 		if err != nil {
 			return nil, err
 		}
 		return ret, err
 	case TaskSearch:
-		src := fp.Query["src"]
-		nsn := fp.Query["nsn"]
+		src := fp.Query[RpSrc]
+		nsn := fp.Query[RpNsn]
 		ret, err := r.sr.FindOneBySrcAndNsnWithBtpEvents(src, nsn)
 		if err != nil {
 			return nil, err
@@ -696,3 +662,28 @@ func (r *Tracker) FindOne(fp tracker.FindOneParam) (any, error) {
 func (r *Tracker) Summary() ([]any, error) {
 	return r.sr.SummaryOfBtpStatusByNetworks()
 }
+
+type DeliveryStatus struct {
+	Events []BTPEvent
+}
+
+/** Param Name */
+const (
+	EpSrc   = "_src"
+	EpNsn    = "_nsn"
+	EpNext     = "_next"
+	EpEvent   = "_event"
+	EpBlockId = "blockId"
+	EpTxId    = "txId"
+	RpId = "id"
+	RpSrc = "src"
+	RpNsn = "nsn"
+)
+/** Status of BTP Message */
+const (
+	InDelivery = "InDelivery"
+	Outgoing = "Outgoing"
+	WaitReply = "WaitReply"
+	Incoming = "Incoming"
+	Completed = "Completed"
+)
