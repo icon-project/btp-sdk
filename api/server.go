@@ -105,6 +105,11 @@ func NewServer(cfg ServerConfig, l log.Logger) (*Server, error) {
 	e.Validator = NewValidator()
 	e.HTTPErrorHandler = HttpErrorHandler
 	sl := Logger(l)
+	u := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
 	return &Server{
 		e:       e,
 		cfg:     cfg,
@@ -113,6 +118,7 @@ func NewServer(cfg ServerConfig, l log.Logger) (*Server, error) {
 		cMap:    make(map[string]autocaller.AutoCaller),
 		oasp:    NewOpenAPISpecProvider(sl),
 		l:       sl,
+		u:       u,
 		Signers: make(map[string]service.Signer),
 	}, nil
 }
