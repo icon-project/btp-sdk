@@ -39,8 +39,6 @@ import (
 
 const (
 	EventBTP                    = "BTPEvent"
-	BTPInDelivery               = "In Delivery"
-	BTPCompleted                = "Completed"
 
 	SEND    = "SEND"
 	ROUTE   = "ROUTE"
