@@ -110,6 +110,11 @@ func NewServer(cfg ServerConfig, l log.Logger) (*Server, error) {
 	e.HTTPErrorHandler = HttpErrorHandler
 
 	sl := Logger(l)
+	u := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			return true
+		},
+	}
 	return &Server{
 		e:       e,
 		cfg:     cfg,
@@ -119,6 +124,7 @@ func NewServer(cfg ServerConfig, l log.Logger) (*Server, error) {
 		tMap: 	 make(map[string]tracker.Tracker),
 		oasp:    NewOpenAPISpecProvider(sl),
 		l:       sl,
+		u:       u,
 		Signers: make(map[string]service.Signer),
 	}, nil
 }
