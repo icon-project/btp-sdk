@@ -23,6 +23,7 @@ const (
 	QueryBlockId = "block_id = ?"
 	QueryId = "id = ?"
 	QueryIdIn = "id IN ?"
+	QuerySrcAndStatusIsNot = "src = ? AND status != ?"
 )
 
 type Block struct {
@@ -141,6 +142,11 @@ func (r *BTPStatusRepository) FindOneBySrcAndNsnWithBtpEvents(src, nsn interface
 		return nil, result.Error
 	}
 	return btpStatus, nil
+}
+
+func (r *BTPStatusRepository) FindUncompletedBySrc(src string) ([]BTPStatus, error) {
+	statuses, err := r.Find(QuerySrcAndStatusIsNot, src, Completed)
+	return statuses, err
 }
 
 func (r *BTPStatusRepository) SummaryOfBtpStatusByNetworks() ([]any, error) {

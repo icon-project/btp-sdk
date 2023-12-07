@@ -164,6 +164,28 @@ func (r *Tracker) Tasks() []string {
 	return []string{TaskStatus, TaskEvent, TaskSearch}
 }
 
+func (r *Tracker) Relink() error {
+	for _, n := range r.nMap {
+		statuses := r.getUncompletedBtpStatus(n.Options.NetworkAddress)
+		for _, status := range statuses {
+			err := r.updateReLink(&status, status.Src, status.Nsn)
+			if err != nil {
+				r.l.Errorf("Fail to Relink BTP Events src:%s nsn:%+v nsn:%+v", status.Src, status.Nsn, err)
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (r *Tracker)getUncompletedBtpStatus(src string) []BTPStatus {
+	 statuses, err := r.sr.FindUncompletedBySrc(src)
+	 if err != nil {
+		 return []BTPStatus{}
+	 }
+	return statuses
+}
+
 func (r *Tracker) Start() error {
 	r.runMtx.Lock()
 	defer r.runMtx.Unlock()
@@ -340,7 +362,7 @@ func (r *Tracker) storeBtpStatus(src, network, na string, nsn int64) (*BTPStatus
 		Src:         		src,
 		LastNetworkName: 	sql.NullString{String: network, Valid: true},
 		LastNetworkAddress: sql.NullString{String: na, Valid: true},
-		Status:      		sql.NullString{String: InDelivery, Valid: true},
+		Status:      		sql.NullString{String: Unknown, Valid: true},
 		Links:       		sql.NullString{String: "", Valid: true},
 		Nsn:         		nsn,
 	}
@@ -407,9 +429,27 @@ func (r *Tracker) updateLink(bs *BTPStatus, src, network, na string, nsn int64) 
 	return err
 }
 
+func (r *Tracker) updateReLink(bs *BTPStatus, src string, nsn int64) error {
+	links, status := r.getLinks(src, nsn)
+	b, err := json.Marshal(links)
+	if err != nil {
+		log.Errorf("JSON marshaling failed: %s", err)
+	}
+	bs.Links = sql.NullString{
+		String: string(b),
+		Valid:  true,
+	}
+	bs.Status = sql.NullString{
+		String: status,
+		Valid:  true,
+	}
+	err = r.sr.Save(bs)
+	return err
+}
+
 func (r *Tracker) getLinks(src string, nsn int64) ([]uint, string) {
 	links := make([]uint, 0)
-	status := InDelivery
+	status := Unknown
 	//Find BTPEvents by src and nsn, order by createdAt(time) asc
 	events, err := r.er.FindBySrcAndNsn(src, nsn)
 	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
@@ -421,7 +461,7 @@ func (r *Tracker) getLinks(src string, nsn int64) ([]uint, string) {
 	curLink, location := findStartingEvent(events)
 	if location == -1 { return links, status }
 	links = append(links, curLink.ID)
-	status = Outgoing
+	status = Sending
 	events, _ = trimBTPEvents(events, location)
 
 	//Find next links, after find "SEND" event
@@ -467,7 +507,7 @@ func trimBTPEventsById(events []BTPEvent, id uint, index int) ([]BTPEvent, int) 
 func inferStatus(event BTPEvent, status string) string {
 	if event.Event == DROP { return Completed }
 	switch status {
-	case Outgoing:
+	case Sending:
 		if event.Event == RECEIVE {
 			if len(event.Next) > 0 {
 				status = WaitReply
@@ -477,9 +517,9 @@ func inferStatus(event BTPEvent, status string) string {
 		}
 	case WaitReply:
 		if event.Event == REPLY || event.Event == ERROR {
-			status = Incoming
+			status = Replying
 		}
-	case Incoming:
+	case Replying:
 		if event.Event == RECEIVE {
 			status = Completed
 		}
@@ -499,16 +539,19 @@ func findStartingEvent(events []BTPEvent) (BTPEvent, int) {
 
 func findNextLink(events []BTPEvent, curLink BTPEvent) BTPEvent {
 	for _, event := range events {
-		switch curLink.Event {
-		case RECEIVE:
+		if curLink.Event == RECEIVE {
 			if event.Event == REPLY || event.Event == ERROR || event.Event == DROP {
 				return event
 			}
-		default:
+		} else {
 			if curLink.Next == event.NetworkAddress {
-				if curLink.NetworkAddress != event.Next {
-					return event
+				if event.Next == curLink.NetworkAddress {
+					if event.Event == RECEIVE {
+						return event
+					}
+					continue
 				}
+				return event
 			}
 		}
 	}
@@ -661,10 +704,6 @@ func (r *Tracker) Summary() ([]any, error) {
 	return r.sr.SummaryOfBtpStatusByNetworks()
 }
 
-type DeliveryStatus struct {
-	Events []BTPEvent
-}
-
 /** Param Name */
 const (
 	EpSrc   = "_src"
@@ -679,9 +718,9 @@ const (
 )
 /** Status of BTP Message */
 const (
-	InDelivery = "InDelivery"
-	Outgoing = "Outgoing"
+	Unknown = "Unknown"
+	Sending = "Sending"
 	WaitReply = "WaitReply"
-	Incoming = "Incoming"
+	Replying = "Replying"
 	Completed = "Completed"
 )

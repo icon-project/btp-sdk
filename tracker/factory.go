@@ -36,6 +36,8 @@ type Tracker interface {
 	FindOne(FindOneParam) (any, error)
 	Summary() ([]any, error)
 	Networks() []NetworkOfTracker
+
+	Relink() error
 }
 
 type FindParam struct {

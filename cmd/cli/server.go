@@ -300,6 +300,7 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 							Trackers: map[string]TrackerConfig{
 								bmc.ServiceName: {
 									Options: MustEncodeOptions(_bmc.TrackerOptions{
+
 										InitHeight:     0,
 										NetworkAddress: "0x0.eth2",
 									}),
@@ -443,7 +444,6 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 						Options:     to.Options,
 					}
 				}
-
 			}
 
 			for name, networks := range svcToNetworks {
@@ -476,6 +476,10 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 				tr, err := tracker.NewTracker(name, s.GetService(name), networks, db, l)
 				if err != nil {
 					return err
+				}
+				err = tr.Relink()
+				if err != nil {
+					log.Errorf("Fail to Relink BTP Events")
 				}
 				if err = tr.Start(); err != nil {
 					return err
