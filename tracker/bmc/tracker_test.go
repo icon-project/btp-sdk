@@ -128,6 +128,8 @@ func Test_Tracker(t *testing.T) {
 	tkr := NewTestTracker(t, s, db, l)
 	fmt.Println("Tracker Name: ", tkr.Name())
 
+	tkr.Relink()
+
 	err := tkr.Start()
 	if err != nil {
 		assert.FailNow(t, "fail to monitor event", err)
@@ -149,6 +151,7 @@ func NewTestTracker(t *testing.T, s service.Service, db *gorm.DB, l log.Logger) 
 		assert.FailNow(t, "fail to NewTracker", err)
 	}
 	assert.Equal(t, bmc.ServiceName, tkr.Name())
+
 	return tkr
 }
 
@@ -167,4 +170,46 @@ func NewTestService(t *testing.T, l log.Logger) service.Service {
 	}
 	assert.Equal(t, bmc.ServiceName, s.Name())
 	return s
+}
+
+func Test_GetLink(t *testing.T) {
+	l := log.GlobalLogger()
+	db, _ := database.OpenDatabase(Database, l)
+
+	er, _ := NewBTPEventRepository(db)
+	getLinks(*er, "0x111.icon", 5250)
+}
+
+func getLinks(er BTPEventRepository, src string, nsn int64) ([]uint, string) {
+	links := make([]uint, 0)
+	status := Unknown
+	//Find BTPEvents by src and nsn, order by createdAt(time) asc
+	events, err := er.FindBySrcAndNsn(src, nsn)
+	if err != nil && errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Debugf("No results were found, src: %s, nsn: %s", src, nsn)
+	}
+	if len(events) == 0 { return links, status }
+
+	//Find starting point that BTPEvent.Event is "SEND"
+	curLink, location := findStartingEvent(events)
+	if location == -1 { return links, status }
+	links = append(links, curLink.ID)
+	status = Sending
+	events, _ = trimBTPEvents(events, location)
+
+	//Find next links, after find "SEND" event
+	for i := 0; i <= len(events); i++ {
+		//Find next link by BTPEvent.Next and BTPEvent.Event
+		//If next link does not exist, break loop and return links
+		curLink = findNextLink(events, curLink)
+		if reflect.DeepEqual(curLink, BTPEvent{}) {
+			return links, status
+		}
+		links = append(links, curLink.ID)
+		events, i = trimBTPEventsById(events, curLink.ID, i)
+
+		// It means the transfer closed. so return links
+		if status = inferStatus(curLink, status); status == Completed { break }
+	}
+	return links, status
 }

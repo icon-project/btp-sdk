@@ -64,6 +64,8 @@ type NetworkOfTracker struct {
 	Image 		string		`json:"imageBase64"`
 }
 
+type NetworkOfTrackers []NetworkOfTracker
+
 type Options map[string]interface{}
 type Factory func(service.Service, map[string]Network, *gorm.DB, log.Logger) (Tracker, error)
 

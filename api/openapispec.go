@@ -32,6 +32,8 @@ import (
 	"github.com/icon-project/btp-sdk/contract"
 	"github.com/icon-project/btp-sdk/database"
 	"github.com/icon-project/btp-sdk/service"
+	"github.com/icon-project/btp-sdk/tracker"
+	"github.com/icon-project/btp-sdk/tracker/bmc"
 )
 
 const (
@@ -44,6 +46,7 @@ const (
 	tagGeneral          = "General"
 	tagExperimental     = "Experimental"
 	tagAutoCaller       = "AutoCaller"
+	tagTracker 			= "Tracker"
 	schemaRefPrefix     = "#/components/schemas/"
 	schemaTxID          = "TxID"
 	schemaBlockID       = "BlockID"
@@ -519,6 +522,90 @@ func NewOpenAPISpecProvider(l log.Logger) *OpenAPISpecProvider {
 					MustGenerateSchema(database.Page[autocaller.Task]{}).
 						WithProperty("content", openapi3.NewArraySchema().WithItems(
 							MustGenerateSchema(autocaller.Task{}).WithAnyAdditionalProperties())))),
+		},
+	}
+	//Open API Spec of Tracker
+	oas.Tags = append(openapi3.Tags{NewTag(tagTracker, "BTP Event Tracker")}, oas.Tags...)
+	oas.Paths[GroupUrlTracker] = &openapi3.PathItem{
+		Get: &openapi3.Operation{
+			Tags:        []string{tagTracker},
+			Summary:     "Tracking BTP Events",
+			Description: "",
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(MustGenerateSchema(TrackerInfos{}))),
+		},
+	}
+	tsn := fmt.Sprintf("%s/{%s}/network", GroupUrlTracker, PathParamService)
+	oas.Paths[tsn] = &openapi3.PathItem{
+		Get: &openapi3.Operation{
+			Tags:        []string{tagTracker},
+			Summary:     "BTP Network Info",
+			Description: "",
+			OperationID: "",
+			Parameters: NewParameters(append([]*openapi3.Parameter{NewPathParameterWithSchema(PathParamService, openapi3.NewStringSchema())})...),
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(MustGenerateSchema(tracker.NetworkOfTrackers{}))),
+		},
+	}
+	tssu := fmt.Sprintf("%s/{%s}/summary", GroupUrlTracker, PathParamService)
+	oas.Paths[tssu] = &openapi3.PathItem{
+		Get: &openapi3.Operation{
+			Tags:        []string{tagTracker},
+			Summary:     "BTP Message Summary each Network",
+			Description: "",
+			OperationID: "",
+			Parameters: NewParameters(append([]*openapi3.Parameter{NewPathParameterWithSchema(PathParamService, openapi3.NewStringSchema())})...),
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(MustGenerateSchema(bmc.NetworkSummaries{}))),
+		},
+	}
+	ts := fmt.Sprintf("%s/{%s}", GroupUrlTracker, PathParamService)
+	oas.Paths[ts] = &openapi3.PathItem{
+		Get: &openapi3.Operation{
+			Tags:        []string{tagTracker},
+			Summary:     "BTP Message Statuses",
+			Description: "",
+			OperationID: "",
+			Parameters: NewParameters(append([]*openapi3.Parameter{NewPathParameterWithSchema(PathParamService, openapi3.NewStringSchema())},
+				openapi3.NewQueryParameter("task").WithRequired(true).WithSchema(openapi3.NewStringSchema()),
+				openapi3.NewQueryParameter("pageable").WithSchema(MustGenerateSchema(Pageable{})),
+				openapi3.NewQueryParameter("query").WithSchema(MustGenerateSchema(struct {
+					Query map[string]interface{} `json:"query"`
+				}{})))...),
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(
+					MustGenerateSchema(database.Page[bmc.BTPStatus]{}).
+						WithProperty("content", openapi3.NewArraySchema().WithItems(
+							MustGenerateSchema(bmc.BTPStatuses{}).WithAnyAdditionalProperties())))),
+		},
+	}
+	tss := fmt.Sprintf("%s/{%s}/search", GroupUrlTracker, PathParamService)
+	oas.Paths[tss] = &openapi3.PathItem{
+		Get: &openapi3.Operation{
+			Tags:        []string{tagTracker},
+			Summary:     "Search Specific BTP Message Status",
+			Description: "",
+			OperationID: "",
+			Parameters: NewParameters(append([]*openapi3.Parameter{NewPathParameterWithSchema(PathParamService, openapi3.NewStringSchema())},
+				openapi3.NewQueryParameter("query").WithSchema(MustGenerateSchema(struct {
+					Query map[string]interface{} `json:"query"`
+				}{})))...),
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(MustGenerateSchema(bmc.BTPStatus{}))),
+		},
+	}
+	tso := fmt.Sprintf("%s/{%s}/status/{%s}", GroupUrlTracker, PathParamService, PathParamId)
+	oas.Paths[tso] = &openapi3.PathItem{
+		Get: &openapi3.Operation{
+			Tags:        []string{tagTracker},
+			Summary:     "BTP Message Status",
+			Description: "",
+			OperationID: "",
+			Parameters: NewParameters(append([]*openapi3.Parameter{NewPathParameterWithSchema(PathParamService, openapi3.NewStringSchema()),
+				NewPathParameterWithSchema(PathParamId, openapi3.NewStringSchema())},
+				openapi3.NewQueryParameter("task").WithRequired(true).WithSchema(openapi3.NewStringSchema()))...),
+			Responses: ResponsesWithResponse(nil, http.StatusOK,
+				NewSuccessResponseWithSchema(MustGenerateSchema(bmc.BTPStatus{}))),
 		},
 	}
 	return &OpenAPISpecProvider{

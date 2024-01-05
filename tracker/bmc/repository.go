@@ -102,6 +102,8 @@ type BTPStatus struct {
 	BTPEvents   		[]BTPEvent     `json:"btp_events" gorm:"foreignKey:BtpStatusId;references:id"`
 }
 
+type BTPStatuses []BTPStatus
+
 type BTPStatusCount struct {
 	Src    string
 	Status string
@@ -114,6 +116,8 @@ type NetworkSummary struct {
 	InDelivery int64  `json:"status_in_delivery"`
 	Completed  int64  `json:"status_completed"`
 }
+
+type NetworkSummaries []NetworkSummary
 
 func (r *BTPStatusRepository) FindOneBySrcAndNsn(src string, nsn int64) (*BTPStatus, error) {
 	return r.FindOne(BTPStatus{
