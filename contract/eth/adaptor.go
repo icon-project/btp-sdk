@@ -243,11 +243,16 @@ func newFilterQuery(topicToAddrs map[common.Hash][]common.Address) *ethereum.Fil
 	return fq
 }
 
+const (
+	MaxLogQueryRange = 2048
+)
+
 func (a *Adaptor) MonitorEvent(
 	ctx context.Context,
 	cb contract.EventCallback,
 	efs []contract.EventFilter,
 	height int64) error {
+	BigOne := big.NewInt(1)
 	if len(efs) == 0 {
 		return errors.New("EventFilter required")
 	}
@@ -276,16 +281,17 @@ func (a *Adaptor) MonitorEvent(
 	}
 	if err := a.MonitorBySubscribeFilterLogs(ctx, onBaseEvent, fq); err != nil {
 		if err == rpc.ErrNotificationsUnsupported {
-			catchup := height > 0
 			onBlockHeader := func(bh *types.Header) error {
-				fq.ToBlock = bh.Number
-				if catchup {
-					catchup = false
-					a.l.Tracef("FilterLogs range from:%v to:%v", fq.FromBlock, bh.Number)
+				if fq.FromBlock == nil {
+					fq.FromBlock = new(big.Int).Set(bh.Number)
+					fq.ToBlock = new(big.Int).Set(bh.Number)
+				} else if bh.Number.Uint64()-fq.FromBlock.Uint64() > MaxLogQueryRange {
+					fq.ToBlock = bh.Number.Add(fq.FromBlock, big.NewInt(MaxLogQueryRange))
 				} else {
-					fq.FromBlock = bh.Number
-					a.l.Tracef("FilterLogs height:%v", bh.Number)
+					fq.ToBlock = bh.Number
 				}
+
+				a.l.Tracef("FilterLogs range from:%v to:%v cur:%v", fq.FromBlock, fq.ToBlock, bh.Number)
 				logs, err := a.Client.FilterLogs(ctx, *fq)
 				if err != nil {
 					return err
@@ -295,6 +301,7 @@ func (a *Adaptor) MonitorEvent(
 						return err
 					}
 				}
+				fq.FromBlock = fq.ToBlock.Add(fq.ToBlock, BigOne)
 				return nil
 			}
 			a.l.Debugf("fail to MonitorBySubscribeFilterLogs, try MonitorByPollHead")

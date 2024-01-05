@@ -81,7 +81,7 @@ var (
 var (
 	configs = map[string]TestConfig{
 		networkIconTest: {
-			Endpoint: "http://localhost:9080/api/v3/icon_dex",
+			Endpoint:    "http://localhost:9080/api/v3/icon_dex",
 			NetworkType: icon.NetworkTypeIcon,
 			AdaptorOption: icon.AdaptorOption{
 				NetworkID:         "0x3",
@@ -100,7 +100,7 @@ var (
 			},
 		},
 		networkEth2Test: {
-			Endpoint: "http://localhost:8545",
+			Endpoint:    "http://localhost:8545",
 			NetworkType: eth.NetworkTypeEth2,
 			AdaptorOption: eth.AdaptorOption{
 				FinalityMonitor: MustEncodeOptions(eth.FinalityMonitorOptions{

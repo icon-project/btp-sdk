@@ -27,6 +27,7 @@ import (
 	"github.com/icon-project/btp-sdk/service/bmc"
 	"github.com/icon-project/btp-sdk/service/dappsample"
 	"github.com/icon-project/btp-sdk/service/xcall"
+	"github.com/icon-project/btp-sdk/tracker"
 	"github.com/icon-project/btp-sdk/web"
 )
 
@@ -42,6 +43,7 @@ const (
 	PathParamServiceOrAddress = "serviceOrAddress"
 	PathParamMethod           = "method"
 	PathParamService          = "service"
+	PathParamId = "id"
 
 	QueryParamNetwork = "network"
 	QueryParamService = "service"
@@ -57,6 +59,7 @@ const (
 	GroupUrlApiDocs    = "/api-docs"
 	GroupUrlAutoCaller = "/autocaller"
 	GroupUrlWeb        = "/web"
+	GroupUrlTracker    = "/tracker"
 
 	UrlGetResult    = "/result"
 	UrlGetFinality  = "/finality"
@@ -71,9 +74,9 @@ func Logger(l log.Logger) log.Logger {
 }
 
 type ServerConfig struct {
-	Address           string            `json:"address"`
-	TransportLogLevel contract.LogLevel `json:"transport_log_level,omitempty"`
-	PingIntervalSec   int               `json:"ping_interval_sec,omitempty"`
+	Address           string               `json:"address"`
+	TransportLogLevel contract.LogLevel    `json:"transport_log_level,omitempty"`
+	PingIntervalSec   int                  `json:"ping_interval_sec,omitempty"`
 }
 
 type Server struct {
@@ -82,6 +85,7 @@ type Server struct {
 	aMap map[string]contract.Adaptor
 	sMap map[string]service.Service
 	cMap map[string]autocaller.AutoCaller
+	tMap map[string]tracker.Tracker
 	mtx  sync.RWMutex
 	oasp *OpenAPISpecProvider
 	u    websocket.Upgrader
@@ -104,6 +108,7 @@ func NewServer(cfg ServerConfig, l log.Logger) (*Server, error) {
 	e.HidePort = true
 	e.Validator = NewValidator()
 	e.HTTPErrorHandler = HttpErrorHandler
+
 	sl := Logger(l)
 	u := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
@@ -116,6 +121,7 @@ func NewServer(cfg ServerConfig, l log.Logger) (*Server, error) {
 		aMap:    make(map[string]contract.Adaptor),
 		sMap:    make(map[string]service.Service),
 		cMap:    make(map[string]autocaller.AutoCaller),
+		tMap: 	 make(map[string]tracker.Tracker),
 		oasp:    NewOpenAPISpecProvider(sl),
 		l:       sl,
 		u:       u,
@@ -168,6 +174,19 @@ func (s *Server) GetAutoCaller(name string) autocaller.AutoCaller {
 	return s.cMap[name]
 }
 
+func (s *Server) SetTracker(t tracker.Tracker) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	s.tMap[t.Name()] = t
+	s.l.Debugf("SetTracker %s", t.Name())
+}
+
+func (s *Server) GetTracker(name string) tracker.Tracker {
+	s.mtx.RLock()
+	defer s.mtx.RUnlock()
+	return s.tMap[name]
+}
+
 func (s *Server) Start() error {
 	s.l.Infoln("starting the server")
 	// CORS middleware
@@ -180,6 +199,7 @@ func (s *Server) Start() error {
 	s.RegisterAPIDocHandler(s.e.Group(GroupUrlApiDocs))
 	s.RegisterMonitorHandler(s.e.Group(GroupUrlMonitor))
 	s.RegisterAutoCallerHandler(s.e.Group(GroupUrlAutoCaller))
+	s.RegisterTrackerHandler(s.e.Group(GroupUrlTracker))
 	web.RegisterWebHandler(s.e.Group(GroupUrlWeb))
 	return s.e.Start(s.cfg.Address)
 }
@@ -788,6 +808,144 @@ func (s *Server) RegisterAutoCallerHandler(g *echo.Group) {
 		}
 
 		ret, err := ac.Find(fp)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+}
+
+type TrackerInfo struct {
+	Name  string   `json:"name"`
+	Tasks []string `json:"tasks"`
+}
+type TrackerInfos []TrackerInfo
+
+func (s *Server) RegisterTrackerHandler(g *echo.Group) {
+	g.GET("", func(c echo.Context) error {
+		s.mtx.RLock()
+		defer s.mtx.RUnlock()
+		r := make(TrackerInfos, 0)
+		for _, t := range s.tMap {
+			r = append(r, TrackerInfo{t.Name(), t.Tasks()})
+		}
+		return c.JSON(http.StatusOK, r)
+	})
+	g.GET("/:"+PathParamService+"/network", func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		tr := s.GetTracker(p)
+		if tr == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Tracker(%s) not found", p))
+		}
+		return c.JSON(http.StatusOK, tr.Networks())
+	})
+	g.GET("/:"+PathParamService, func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		tr := s.GetTracker(p)
+		if tr == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Tracker(%s) not found", p))
+		}
+		task := c.QueryParam("task")
+		if len(task) == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "required query parameter: task")
+		}
+		if !service.StringSetContains(tr.Tasks(), task) {
+			return echo.NewHTTPError(http.StatusBadRequest,
+				fmt.Sprintf("invalid task(%s), must be one of {%s}", task, strings.Join(tr.Tasks(), ",")))
+		}
+		pageable := Pageable{}
+		if err := BindQueryParamsAndUnmarshalBody(c, &pageable); err != nil {
+			s.l.Debugf("fail to BindQueryParamsAndUnmarshalBody Pageable err:%+v", err)
+			return echo.ErrBadRequest
+		}
+		fp := tracker.FindParam{
+			Task: task,
+			Pageable: database.Pageable{
+				Page: uint(pageable.Page),
+				Size: uint(pageable.Size),
+				Sort: pageable.Sort,
+			},
+		}
+		m, err := QueryParamsToMap(c)
+		if err != nil {
+			return err
+		}
+		if tv, ok := m["query"]; ok {
+			if fp.Query, ok = tv.(map[string]interface{}); !ok {
+				return echo.NewHTTPError(http.StatusBadRequest,
+					fmt.Sprintf("invalid query(%v)", tv))
+			}
+		}
+		ret, err := tr.Find(fp)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+	g.GET("/:"+PathParamService+"/status/:" + PathParamId, func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		tr := s.GetTracker(p)
+		if tr == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Tracker(%s) not found", p))
+		}
+		id := c.Param(PathParamId)
+		task := c.QueryParam("task")
+		if len(task) == 0 {
+			return echo.NewHTTPError(http.StatusBadRequest, "required query parameter: task")
+		}
+		if !service.StringSetContains(tr.Tasks(), task) {
+			return echo.NewHTTPError(http.StatusBadRequest,
+				fmt.Sprintf("invalid task(%s), must be one of {%s}", task, strings.Join(tr.Tasks(), ",")))
+		}
+		pm := make(map[string]interface{})
+		pm["id"] = id
+		fp := tracker.FindOneParam{
+			Task: task,
+			Query: pm,
+		}
+		ret, err := tr.FindOne(fp)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+	g.GET("/:"+PathParamService+"/summary", func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		tr := s.GetTracker(p)
+		if tr == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Tracker(%s) not found", p))
+		}
+		ret, err := tr.Summary()
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusOK, ret)
+	})
+	g.GET("/:"+PathParamService+"/search", func(c echo.Context) error {
+		p := c.Param(PathParamService)
+		tr := s.GetTracker(p)
+		if tr == nil {
+			return echo.NewHTTPError(http.StatusNotFound,
+				fmt.Sprintf("Tracker(%s) not found", p))
+		}
+		fp := tracker.FindOneParam{
+			Task:  "search",
+		}
+		m, err := QueryParamsToMap(c)
+		if err != nil {
+			return err
+		}
+		if tv, ok := m["query"]; ok {
+			if fp.Query, ok = tv.(map[string]interface{}); !ok {
+				return echo.NewHTTPError(http.StatusBadRequest,
+					fmt.Sprintf("invalid query(%v)", tv))
+			}
+		}
+		ret, err := tr.FindOne(fp)
 		if err != nil {
 			return err
 		}

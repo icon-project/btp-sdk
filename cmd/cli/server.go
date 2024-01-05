@@ -24,6 +24,8 @@ import (
 	"github.com/icon-project/btp-sdk/service"
 	"github.com/icon-project/btp-sdk/service/bmc"
 	"github.com/icon-project/btp-sdk/service/xcall"
+	"github.com/icon-project/btp-sdk/tracker"
+	_bmc "github.com/icon-project/btp-sdk/tracker/bmc"
 )
 
 type Config struct {
@@ -45,6 +47,7 @@ type NetworkConfig struct {
 	Services    map[string]contract.Options `json:"services,omitempty"`
 	Signer      *SignerConfig               `json:"signer,omitempty"`
 	AutoCallers map[string]AutoCallerConfig `json:"auto_callers,omitempty"`
+	Trackers    map[string]TrackerConfig    `json:"trackers,omitempty"`
 }
 
 type SignerConfig struct {
@@ -54,6 +57,10 @@ type SignerConfig struct {
 
 type AutoCallerConfig struct {
 	Signer  SignerConfig     `json:"signer,omitempty"`
+	Options contract.Options `json:"options,omitempty"`
+}
+
+type TrackerConfig struct {
 	Options contract.Options `json:"options,omitempty"`
 }
 
@@ -198,6 +205,14 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 									}),
 								},
 							},
+							Trackers: map[string]TrackerConfig{
+								bmc.ServiceName: {
+									Options: MustEncodeOptions(_bmc.TrackerOptions{
+										InitHeight:     0,
+										NetworkAddress: "0x3.icon",
+									}),
+								},
+							},
 						},
 						eth.NetworkTypeEth2 + "Network": {
 							NetworkType: eth.NetworkTypeEth2,
@@ -236,6 +251,14 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 									}),
 								},
 							},
+							Trackers: map[string]TrackerConfig{
+								bmc.ServiceName: {
+									Options: MustEncodeOptions(_bmc.TrackerOptions{
+										InitHeight:     0,
+										NetworkAddress: "0x0.eth2",
+									}),
+								},
+							},
 						},
 						eth.NetworkTypeBSC + "Network": {
 							NetworkType: eth.NetworkTypeBSC,
@@ -271,6 +294,15 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 										Contracts: []contract.Address{
 											"0x0000000000000000000000000000000000000000",
 										},
+									}),
+								},
+							},
+							Trackers: map[string]TrackerConfig{
+								bmc.ServiceName: {
+									Options: MustEncodeOptions(_bmc.TrackerOptions{
+
+										InitHeight:     0,
+										NetworkAddress: "0x0.eth2",
 									}),
 								},
 							},
@@ -351,6 +383,7 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 			}
 			svcToNetworks := make(map[string]map[string]service.Network)
 			acToNetworks := make(map[string]map[string]autocaller.Network)
+			trToNetworks := make(map[string]map[string]tracker.Network)
 			for network, n := range cfg.Networks {
 				opt, err := contract.EncodeOptions(n.Options)
 				if err != nil {
@@ -399,6 +432,18 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 						Options:     co.Options,
 					}
 				}
+				for name, to := range n.Trackers {
+					networks, ok := trToNetworks[name]
+					if !ok {
+						networks = make(map[string]tracker.Network)
+						trToNetworks[name] = networks
+					}
+					networks[network] = tracker.Network{
+						NetworkType: n.NetworkType,
+						Adaptor:     a,
+						Options:     to.Options,
+					}
+				}
 			}
 
 			for name, networks := range svcToNetworks {
@@ -426,6 +471,20 @@ func NewServerCommand(parentCmd *cobra.Command, parentVc *viper.Viper, version, 
 					return err
 				}
 				s.SetAutoCaller(ac)
+			}
+			for name, networks := range trToNetworks {
+				tr, err := tracker.NewTracker(name, s.GetService(name), networks, db, l)
+				if err != nil {
+					return err
+				}
+				err = tr.Relink()
+				if err != nil {
+					log.Errorf("Fail to Relink BTP Events")
+				}
+				if err = tr.Start(); err != nil {
+					return err
+				}
+				s.SetTracker(tr)
 			}
 			return s.Start()
 		},

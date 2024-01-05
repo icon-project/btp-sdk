@@ -1,0 +1,47 @@
+version: '3.9'
+
+services:
+  mariadb:
+    image: mariadb:10.11.5
+    env_file:
+      - mariadb.env
+    expose:
+      - "3306"
+    volumes:
+      - ./db:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh","--connect","--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+  server:
+    platform: linux/amd64
+    image: bykim/btp-sdk/server
+    build:
+      context: ..
+      dockerfile: ./docker-compose/Dockerfile
+    environment:
+      - BTP_SDK_CLI_CONFIG=/btp-sdk/config/config.json
+      - LOG
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/btp-sdk/config:ro
+      - ./logs:/btp-sdk/logs
+    depends_on:
+      mariadb:
+        condition: service_healthy
+  client:
+    platform: linux/amd64
+    image: bykim/btp-sdk/frontend
+    build:
+      context: /Users/by.kim/github/btp-tracker-frontend
+      dockerfile: ./Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      server:
+        condition: service_started
