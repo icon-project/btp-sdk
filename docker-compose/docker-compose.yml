@@ -19,15 +19,12 @@ services:
       retries: 3
   server:
     platform: linux/amd64
-    image: bykim/btp-sdk/server
-    build:
-      context: ..
-      dockerfile: ./docker-compose/Dockerfile
+    image: btp-sdk/server
+    build: https://github.com/icon-project/btp-sdk.git#main
     environment:
       - BTP_SDK_CLI_CONFIG=/btp-sdk/config/config.json
-      - LOG
     ports:
-      - "8080:8080"
+      - 8080:8080
     volumes:
       - ./config:/btp-sdk/config:ro
       - ./logs:/btp-sdk/logs
@@ -36,12 +33,10 @@ services:
         condition: service_healthy
   client:
     platform: linux/amd64
-    image: bykim/btp-sdk/frontend
-    build:
-      context: /Users/by.kim/github/btp-tracker-frontend
-      dockerfile: ./Dockerfile
+    image: btp-sdk/frontend
+    build: https://github.com/icon-project/btp-tracker-frontend.git#main
     ports:
-      - "3000:3000"
+      - 3000:3000
     depends_on:
       server:
         condition: service_started
